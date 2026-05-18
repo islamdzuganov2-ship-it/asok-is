@@ -95,7 +95,7 @@ export const DashboardPage: React.FC = () => {
     ];
 
     // Mock данных для таблицы (в реальности приходит из `data.problematicSystems`)
-    const mockProblematicSystems = [
+    const data.problematicSystems = [
         { id: '1', name: 'CRM ОПК', criticality: 'MISSION CRITICAL', lowMetricsCount: 12 },
         { id: '2', name: 'АБС Core', criticality: 'MISSION CRITICAL', lowMetricsCount: 8 },
         { id: '3', name: 'Портал HR', criticality: 'BUSINESS OPERATIONAL', lowMetricsCount: 5 },

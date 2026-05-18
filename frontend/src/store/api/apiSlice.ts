@@ -1,20 +1,22 @@
-/**
- * Базовый API срез для RTK Query.
- * Отвечает за взаимодействие с Backend FastAPI.
- * Содержит эндпоинты для получения данных дашборда и отправки экспертных суждений.
- */
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import { RootState } from '../index';
 
-// Типизация ответа для дашборда
+export interface ProblematicSystem {
+    id: string;
+    name: string;
+    criticality: string;
+    lowMetricsCount: number;
+}
+
 export interface DashboardData {
     globalHealthScore: number;
     aiInsights: string;
-    heatmapData: Array<[number, number, number]>; // [x, y, value]
+    heatmapData: Array<[number, number, number]>;
     xAxisLabels: string[];
     yAxisLabels: string[];
+    problematicSystems: ProblematicSystem[]; // Добавлено для DashboardPage
 }
 
-// Типизация DTO для экспертного суждения (согласно ТЗ п.3.2)
 export interface ExpertJudgmentDto {
     metricId: string;
     calculatedLevel: 'Низкий' | 'Средний' | 'Высокий';
@@ -23,20 +25,38 @@ export interface ExpertJudgmentDto {
     linkedRiskTask?: string;
 }
 
+// Добавленные интерфейсы для экранов ввода и ревью
+export interface EditableMetric {
+    id: string;
+    name: string;
+    description: string;
+    val_a: number | null;
+    val_b: number | null;
+    expert_comment: string;
+}
+
+export interface CalculatedMetric {
+    id: string;
+    name: string;
+    calculatedX: number;
+    systemLevel: 'Низкий' | 'Средний' | 'Высокий';
+    adjustedLevel?: 'Низкий' | 'Средний' | 'Высокий';
+    expertComment?: string;
+}
+
 export const apiSlice = createApi({
     reducerPath: 'api',
     baseQuery: fetchBaseQuery({ 
         baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
-        prepareHeaders: (headers) => {
-            // Внедрение токена из стейта/localStorage
-            const token = localStorage.getItem('token');
+        prepareHeaders: (headers, { getState }) => {
+            const token = (getState() as RootState).auth.token || localStorage.getItem('token');
             if (token) {
                 headers.set('authorization', `Bearer ${token}`);
             }
             return headers;
         },
     }),
-    tagTypes: ['Assessment', 'Dashboard'],
+    tagTypes: ['Assessment', 'Dashboard', 'Metrics'],
     endpoints: (builder) => ({
         getExecutiveDashboard: builder.query<DashboardData, void>({
             query: () => '/reports/executive-dashboard',
@@ -50,7 +70,30 @@ export const apiSlice = createApi({
             }),
             invalidatesTags: ['Assessment', 'Dashboard'],
         }),
+        // Новые эндпоинты
+        getAssessmentMetrics: builder.query<EditableMetric[], string>({
+            query: (id) => `/assessments/${id}/metrics`,
+            providesTags: ['Metrics'],
+        }),
+        saveAssessmentMetrics: builder.mutation<void, { id: string; metrics: EditableMetric[] }>({
+            query: ({ id, metrics }) => ({
+                url: `/assessments/${id}/metrics`,
+                method: 'PUT',
+                body: metrics,
+            }),
+            invalidatesTags: ['Metrics', 'Assessment'],
+        }),
+        getCalculatedMetrics: builder.query<CalculatedMetric[], string>({
+            query: (id) => `/assessments/${id}/calculated`,
+            providesTags: ['Assessment'],
+        }),
     }),
 });
 
-export const { useGetExecutiveDashboardQuery, useSubmitExpertJudgmentMutation } = apiSlice;
+export const { 
+    useGetExecutiveDashboardQuery, 
+    useSubmitExpertJudgmentMutation,
+    useGetAssessmentMetricsQuery,
+    useSaveAssessmentMetricsMutation,
+    useGetCalculatedMetricsQuery
+} = apiSlice;

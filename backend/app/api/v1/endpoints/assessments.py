@@ -13,6 +13,55 @@ router = APIRouter(prefix="/assessments", tags=["assessments"])
 from pydantic import BaseModel, Field, field_validator
 import uuid as uuid_module
 
+from pydantic import BaseModel
+from typing import List, Tuple, Optional
+from uuid import UUID
+
+# --- СХЕМЫ ДЛЯ ДАШБОРДА (C-LEVEL) ---
+class ProblematicSystemOut(BaseModel):
+    id: UUID
+    name: str
+    criticality: str
+    lowMetricsCount: int
+
+class DashboardDataOut(BaseModel):
+    globalHealthScore: float
+    aiInsights: str
+    heatmapData: List[Tuple[int, int, int]]  # [x_index, y_index, quality_score_0_to_5]
+    xAxisLabels: List[str]
+    yAxisLabels: List[str]
+    problematicSystems: List[ProblematicSystemOut]
+
+# --- СХЕМЫ ДЛЯ ВВОДА МЕТРИК (ТЕСТ-АНАЛИТИК) ---
+class EditableMetricBase(BaseModel):
+    id: str  # В реальности тут может быть int или UUID метрики
+    name: str
+    description: str
+    val_a: float | None = None
+    val_b: float | None = None
+    expert_comment: str
+
+class EditableMetricIn(EditableMetricBase):
+    pass
+
+class EditableMetricOut(EditableMetricBase):
+    pass
+
+# --- СХЕМЫ ДЛЯ РЕВЬЮ И ПРОФ. СУЖДЕНИЯ (МЕНЕДЖЕР) ---
+class CalculatedMetricOut(BaseModel):
+    id: str
+    name: str
+    calculatedX: float
+    systemLevel: str
+    adjustedLevel: Optional[str] = None
+    expertComment: Optional[str] = None
+
+class ExpertJudgmentCreate(BaseModel):
+    metricId: str # Или UUID, в зависимости от вашей БД
+    calculatedLevel: str
+    adjustedLevel: Optional[str] = None
+    justificationText: str
+    linkedRiskTask: Optional[str] = None
 class CreateAssessmentPeriodRequest(BaseModel):
     system_id: str = Field(..., description="UUID системы")
     period: str = Field(..., pattern=r"^Q[1-4]-\d{4}$", description="Q1-2026")
@@ -35,7 +84,7 @@ async def create_assessment_period(
 ):
     system_id = uuid.UUID(request.system_id)  # Конвертация после валидации
     # ... остальная логика
-    
+
 @router.put("/{assessment_id}/metrics/{metric_id}", response_model=AssessmentValueResponse)
 async def update_assessment_metric(
     assessment_id: uuid.UUID,
