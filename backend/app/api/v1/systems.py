@@ -1,5 +1,0 @@
-- GET /systems — список с фильтрацией (status_lc, criticality_class, is_active) + пагинация
-- POST /systems — создание (ADMIN only), проверка уникальности code
-- PATCH /systems/{id} — частичное обновление (exclude_unset=True)
-- DELETE /systems/{id} — Soft Delete через system.soft_delete()
-- Все мутации → AuditLog (action: CREATE/UPDATE/DELETE)

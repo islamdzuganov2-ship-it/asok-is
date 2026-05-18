@@ -1,0 +1,19 @@
+### Создание периода оценки
+POST http://localhost:8000/api/v1/assessments?system_id=550e8400-e29b-41d4-a716-446655440000&period=Q1-2026
+Content-Type: application/json
+
+{}
+
+### Ввод метрики (функциональное покрытие, INVERSE: X = 1 - 5/100 = 0.95)
+PUT http://localhost:8000/api/v1/assessments/{{assessment_id}}/metrics/1
+Content-Type: application/json
+
+{
+  "val_a": 5,
+  "val_b": 100,
+  "expert_comment": "Тестовый ввод",
+  "data_source": "MANUAL"
+}
+
+### Получение всех метрик периода
+GET http://localhost:8000/api/v1/assessments/{{assessment_id}}/metrics
