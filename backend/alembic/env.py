@@ -1,6 +1,5 @@
 import sys
 import os
-# Добавляем директорию backend/ в sys.path, чтобы работали импорты 'app.*'
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from logging.config import fileConfig
@@ -12,16 +11,18 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Импортируем Base и модели, чтобы они были в target_metadata
+# ЗДЕСЬ ИСПРАВЛЕННЫЙ ИМПОРТ
 from app.core.database import Base
 from app.models.system import System
 from app.models.metric_catalog import MetricCatalog
 from app.models.assessment import AssessmentPeriod, AssessmentValue, ExpertJudgmentHistory
+from app.models.user import User 
+from app.models.audit import AuditLog
 
+target_metadata = Base.metadata
 # Если есть модель User, импортируйте её здесь, иначе FK users.id может не сработать
 # from app.models.user import User 
 
-target_metadata = Base.metadata
 
 def get_url():
     """Получение DATABASE_URL из env. 

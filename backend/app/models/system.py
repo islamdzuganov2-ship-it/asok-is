@@ -1,9 +1,9 @@
-# backend/app/models/system.py — ИСПРАВЛЕННЫЙ ФАЙЛ
 from sqlalchemy import Column, String, Boolean, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 import enum
-from app.core.database import Base, TimestampMixin
+from app.core.database import Base
+from app.models.base_mixin import TimestampMixin
 
 class LifecycleStatus(enum.Enum):
     OE = "ОЭ"
@@ -16,7 +16,7 @@ class CriticalityClass(enum.Enum):
     BUSINESS_OPERATIONAL = "BUSINESS OPERATIONAL"
 
 class System(Base, TimestampMixin):
-    __tablename__ = "systems"  # ✅ ДВА подчеркивания
+    __tablename__ = "systems"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String(255), nullable=False, index=True)

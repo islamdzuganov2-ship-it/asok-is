@@ -1,4 +1,3 @@
-# backend/app/models/assessment.py — ИСПРАВЛЕННЫЙ ФАЙЛ
 from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, Text, UniqueConstraint, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -8,7 +7,7 @@ from app.core.database import Base
 from app.models.base_mixin import TimestampMixin
 
 class AssessmentPeriod(Base, TimestampMixin):
-    __tablename__ = "assessment_periods"  # ✅ ДВА подчеркивания
+    __tablename__ = "assessment_periods"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     system_id = Column(UUID(as_uuid=True), ForeignKey("systems.id"), nullable=False, index=True)
@@ -20,9 +19,8 @@ class AssessmentPeriod(Base, TimestampMixin):
     system = relationship("System", backref="periods")
     values = relationship("AssessmentValue", backref="period", cascade="all, delete-orphan")
 
-
 class AssessmentValue(Base, TimestampMixin):
-    __tablename__ = "assessment_values"  # ✅ ДВА подчеркивания
+    __tablename__ = "assessment_values"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id"), nullable=False, index=True)
@@ -39,9 +37,8 @@ class AssessmentValue(Base, TimestampMixin):
     
     metric = relationship("MetricCatalog", lazy="select")
 
-
 class ExpertJudgmentHistory(Base, TimestampMixin):
-    __tablename__ = "expert_judgment_history"  # ✅ ДВА подчеркивания
+    __tablename__ = "expert_judgment_history"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     assessment_value_id = Column(UUID(as_uuid=True), ForeignKey("assessment_values.id"), nullable=False, index=True)
