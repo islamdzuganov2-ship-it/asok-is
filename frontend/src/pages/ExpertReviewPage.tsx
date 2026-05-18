@@ -1,106 +1,167 @@
 /**
- * Апогей восприятия (Executive Dashboard) для C-Level.
- * Отображает Global Health Score, AI Insights и Heatmap Matrix (ТЗ п.3.3).
+ * Экран "Экспертиза и ревью" (Роль: Менеджер по качеству, Администратор).
+ * Реализует паттерн Management by Exception (ТЗ п.3.2).
+ * Отображает рассчитанные ядром метрики, подсвечивает проблемные зоны (<40%) 
+ * и позволяет применять эвристические корректировки.
  */
-import React from 'react';
-import { Card, Row, Col, Typography, Alert, Spin } from 'antd';
-import ReactECharts from 'echarts-for-react';
-import { useGetExecutiveDashboardQuery } from '../store/api/apiSlice';
+import React, { useState } from 'react';
+import { Table, Typography, Tag, Button, Space, Card, Progress } from 'antd';
+import { useParams } from 'react-router-dom';
+import { ExpertJudgmentModal } from '../components/ExpertJudgmentModal';
 
-const { Title, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
-export const ExecutiveDashboard: React.FC = () => {
-    const { data, isLoading, isError } = useGetExecutiveDashboardQuery();
+// DTO для отображения рассчитанных метрик (в реальности приходит из API)
+interface CalculatedMetric {
+    id: string;
+    name: string;
+    calculatedX: number; // От 0 до 100%
+    systemLevel: 'Низкий' | 'Средний' | 'Высокий';
+    adjustedLevel?: 'Низкий' | 'Средний' | 'Высокий';
+    expertComment?: string;
+}
 
-    if (isLoading) return <Spin size="large" style={{ display: 'flex', justifyContent: 'center', marginTop: '20vh' }} />;
-    if (isError || !data) return <Alert message="Ошибка загрузки данных дашборда" type="error" />;
+export const ExpertReviewPage: React.FC = () => {
+    const { id } = useParams<{ id: string }>();
+    
+    // Стейт для управления модальным окном проф. суждения
+    const [modalConfig, setModalConfig] = useState<{
+        isOpen: boolean;
+        metricId: string;
+        currentLevel: 'Низкий' | 'Средний' | 'Высокий';
+    }>({ isOpen: false, metricId: '', currentLevel: 'Средний' });
+
+    // Mock-данные (ожидается использование useGetCalculatedMetricsQuery(id))
+    const [metrics] = useState<CalculatedMetric[]>([
+        { id: '1', name: 'Плотность дефектов', calculatedX: 85, systemLevel: 'Высокий' },
+        { id: '2', name: 'Покрытие автотестами', calculatedX: 35, systemLevel: 'Низкий' },
+        { id: '3', name: 'Частота релизов', calculatedX: 55, systemLevel: 'Средний', adjustedLevel: 'Высокий', expertComment: 'Согласовано с архитектором: специфика legacy системы.' },
+    ]);
 
     /**
-     * Конфигурация для кольцевой диаграммы (Donut Chart) Global Health Score.
+     * Обработчик открытия модального окна для оспаривания оценки.
      */
-    const donutOptions = {
-        title: {
-            text: `${data.globalHealthScore}%`,
-            left: 'center',
-            top: 'center',
-            textStyle: { fontSize: 32, fontWeight: 'bold' }
-        },
-        tooltip: { trigger: 'item' },
-        series: [
-            {
-                type: 'pie',
-                radius: ['60%', '80%'],
-                avoidLabelOverlap: false,
-                itemStyle: {
-                    borderRadius: 10,
-                    borderColor: '#fff',
-                    borderWidth: 2
-                },
-                label: { show: false },
-                data: [
-                    { value: data.globalHealthScore, name: 'Качество', itemStyle: { color: '#52c41a' } },
-                    { value: 100 - data.globalHealthScore, name: 'Дефицит', itemStyle: { color: '#f5222d' } }
-                ]
-            }
-        ]
+    const handleChallenge = (record: CalculatedMetric) => {
+        setModalConfig({
+            isOpen: true,
+            metricId: record.id,
+            currentLevel: record.systemLevel
+        });
     };
 
     /**
-     * Конфигурация для тепловой карты (Heatmap Matrix).
+     * Закрытие модального окна и рефетч данных (в реальном приложении через invalidateTags).
      */
-    const heatmapOptions = {
-        tooltip: { position: 'top' },
-        grid: { height: '50%', top: '10%' },
-        xAxis: { type: 'category', data: data.xAxisLabels, splitArea: { show: true } },
-        yAxis: { type: 'category', data: data.yAxisLabels, splitArea: { show: true } },
-        visualMap: {
-            min: 0,
-            max: 100,
-            calculable: true,
-            orient: 'horizontal',
-            left: 'center',
-            bottom: '15%',
-            inRange: { color: ['#f5222d', '#faad14', '#52c41a'] } // От красного к зеленому
-        },
-        series: [{
-            name: 'Качество',
-            type: 'heatmap',
-            data: data.heatmapData,
-            label: { show: true },
-            emphasis: {
-                itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' }
-            }
-        }]
+    const handleModalClose = () => {
+        setModalConfig({ ...modalConfig, isOpen: false });
+        // Здесь должен быть refetch() если бы мы использовали RTK Query
     };
+
+    /**
+     * Функция для определения цвета тега уровня.
+     */
+    const getLevelColor = (level: string) => {
+        switch (level) {
+            case 'Высокий': return 'success';
+            case 'Средний': return 'warning';
+            case 'Низкий': return 'error';
+            default: return 'default';
+        }
+    };
+
+    const columns = [
+        { 
+            title: 'Метрика', 
+            dataIndex: 'name', 
+            key: 'name',
+            width: '25%',
+        },
+        {
+            title: 'Расчет (Ядро)',
+            dataIndex: 'calculatedX',
+            key: 'calculatedX',
+            width: '15%',
+            render: (val: number) => (
+                <Progress 
+                    percent={val} 
+                    size="small" 
+                    status={val < 40 ? 'exception' : val < 80 ? 'normal' : 'success'} 
+                />
+            )
+        },
+        {
+            title: 'Системный уровень',
+            dataIndex: 'systemLevel',
+            key: 'systemLevel',
+            width: '15%',
+            render: (val: string) => <Tag color={getLevelColor(val)}>{val}</Tag>
+        },
+        {
+            title: 'Корректировка (Суждение)',
+            key: 'adjustedLevel',
+            width: '25%',
+            render: (_: any, record: CalculatedMetric) => {
+                if (record.adjustedLevel) {
+                    return (
+                        <Space direction="vertical" size="small">
+                            <Tag color={getLevelColor(record.adjustedLevel)}>{record.adjustedLevel} (Ручн.)</Tag>
+                            <Text type="secondary" style={{ fontSize: '12px' }}>{record.expertComment}</Text>
+                        </Space>
+                    );
+                }
+                return <Text type="secondary">Нет корректировок</Text>;
+            }
+        },
+        {
+            title: 'Действия',
+            key: 'actions',
+            width: '20%',
+            render: (_: any, record: CalculatedMetric) => (
+                <Button 
+                    type={record.calculatedX < 40 ? "primary" : "default"} 
+                    danger={record.calculatedX < 40}
+                    onClick={() => handleChallenge(record)}
+                >
+                    Оспорить (Суждение)
+                </Button>
+            )
+        }
+    ];
 
     return (
-        <div style={{ padding: '24px' }}>
-            <Title level={2}>Executive Dashboard (C-Level)</Title>
+        <div>
+            <Title level={3}>Экспертиза и утверждение оценки (ID: {id})</Title>
             
-            <Row gutter={[24, 24]}>
-                {/* Global Health Score */}
-                <Col span={8}>
-                    <Card title="Global Health Score" style={{ height: '100%' }}>
-                        <ReactECharts option={donutOptions} style={{ height: '300px' }} />
-                    </Card>
-                </Col>
+            <Card style={{ marginBottom: 24 }}>
+                <Text strong type="danger">Внимание: </Text>
+                <Text>Метрики с результатом ниже 40% (Красная зона) требуют обязательного анализа. Вы можете принять системный расчет или применить эвристическую корректировку.</Text>
+            </Card>
 
-                {/* AI Insights Component */}
-                <Col span={16}>
-                    <Card title="🤖 AI Insights (Резюме по ландшафту)" style={{ height: '100%' }}>
-                        <Paragraph style={{ fontSize: '16px', lineHeight: '1.6' }}>
-                            {data.aiInsights}
-                        </Paragraph>
-                    </Card>
-                </Col>
+            <Table 
+                dataSource={metrics} 
+                columns={columns} 
+                rowKey="id" 
+                pagination={false}
+                bordered
+                // Подсветка строк в красной зоне (ТЗ п.3.2)
+                rowClassName={(record) => record.calculatedX < 40 && !record.adjustedLevel ? 'red-zone-row' : ''}
+            />
 
-                {/* Heatmap Matrix */}
-                <Col span={24}>
-                    <Card title="Heatmap Matrix (Матрица качества)">
-                        <ReactECharts option={heatmapOptions} style={{ height: '500px' }} />
-                    </Card>
-                </Col>
-            </Row>
+            <ExpertJudgmentModal 
+                isOpen={modalConfig.isOpen}
+                onClose={handleModalClose}
+                metricId={modalConfig.metricId}
+                calculatedLevel={modalConfig.currentLevel}
+            />
+
+            {/* Добавляем стили прямо в компонент для подсветки */}
+            <style>{`
+                .red-zone-row {
+                    background-color: #fff1f0;
+                }
+            `}</style>
         </div>
     );
 };
+
+export default ExpertReviewPage;

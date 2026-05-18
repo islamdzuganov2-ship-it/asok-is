@@ -2,6 +2,12 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { ConfigProvider } from 'antd'
 import ruRU from 'antd/locale/ru_RU'
+import { Provider } from 'react-redux';
+import { store } from './store';
+// ...
+<Provider store={store}>
+    <App />
+</Provider>
 
 const App = () => (
   <ConfigProvider locale={ruRU}>

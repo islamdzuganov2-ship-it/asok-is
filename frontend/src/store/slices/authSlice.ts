@@ -1,47 +1,51 @@
+/**
+ * Слайс для управления состоянием аутентификации.
+ * Хранит JWT токен, роль и данные пользователя.
+ */
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
-export type UserRole = 'TEST_ANALYST' | 'QUALITY_MANAGER' | 'CTO' | 'CEO' | 'ADMIN';
-
 interface AuthState {
-  accessToken: string | null;
-  refreshToken: string | null;
-  role: UserRole | null;
-  isAuthenticated: boolean;
+    token: string | null;
+    role: string | null;
+    fullName: string | null;
+    isAuthenticated: boolean;
 }
 
+const initialState: AuthState = {
+    token: localStorage.getItem('token'),
+    role: localStorage.getItem('role'),
+    fullName: localStorage.getItem('full_name'),
+    isAuthenticated: !!localStorage.getItem('token'),
+};
+
 const authSlice = createSlice({
-  name: 'auth',
-  initialState: {
-    accessToken: localStorage.getItem('asok_access_token'),
-    refreshToken: localStorage.getItem('asok_refresh_token'),
-    role: localStorage.getItem('asok_role') as UserRole | null,
-    isAuthenticated: !!localStorage.getItem('asok_access_token'),
-  } as AuthState,
-  reducers: {
-    setCredentials(state, action: PayloadAction<{ accessToken: string; refreshToken: string; role: UserRole }>) {
-      const { accessToken, refreshToken, role } = action.payload;
-      state.accessToken = accessToken;
-      state.refreshToken = refreshToken;
-      state.role = role;
-      state.isAuthenticated = true;
-      localStorage.setItem('asok_access_token', accessToken);
-      localStorage.setItem('asok_refresh_token', refreshToken);
-      localStorage.setItem('asok_role', role);
+    name: 'auth',
+    initialState,
+    reducers: {
+        setCredentials: (
+            state,
+            action: PayloadAction<{ token: string; role: string; fullName: string }>
+        ) => {
+            state.token = action.payload.token;
+            state.role = action.payload.role;
+            state.fullName = action.payload.fullName;
+            state.isAuthenticated = true;
+            
+            // Синхронизация с localStorage для сохранения сессии при перезагрузке
+            localStorage.setItem('token', action.payload.token);
+            localStorage.setItem('role', action.payload.role);
+            localStorage.setItem('full_name', action.payload.fullName);
+        },
+        logout: (state) => {
+            state.token = null;
+            state.role = null;
+            state.fullName = null;
+            state.isAuthenticated = false;
+            
+            localStorage.clear();
+        },
     },
-    clearCredentials(state) {
-      state.accessToken = null;
-      state.refreshToken = null;
-      state.role = null;
-      state.isAuthenticated = false;
-      localStorage.removeItem('asok_access_token');
-      localStorage.removeItem('asok_refresh_token');
-      localStorage.removeItem('asok_role');
-    },
-  },
 });
 
-export const { setCredentials, clearCredentials } = authSlice.actions;
-export const authReducer = authSlice.reducer;
-export const selectIsAuthenticated = (s: { auth: AuthState }) => s.auth.isAuthenticated;
-export const selectUserRole = (s: { auth: AuthState }) => s.auth.role;
-export const selectAccessToken = (s: { auth: AuthState }) => s.auth.accessToken;
+export const { setCredentials, logout } = authSlice.actions;
+export default authSlice.reducer;
