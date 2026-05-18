@@ -1,9 +1,3 @@
-```python
-"""
-Переиспользуемые миксины для ORM моделей.
-TimestampMixin — created_at/updated_at.
-SoftDeleteMixin — логическое удаление согласно ТЗ п.2.
-"""
 from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -25,4 +19,3 @@ class SoftDeleteMixin:
     def soft_delete(self) -> None:
         self.is_deleted = True
         self.deleted_at = datetime.now(timezone.utc)
-```
