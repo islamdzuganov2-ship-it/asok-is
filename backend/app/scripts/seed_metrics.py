@@ -13,7 +13,7 @@ from sqlalchemy import select
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.models.metric_catalog import MetricCatalog, FormulaType
-from app.db.base import Base
+from app.core.database import Base
 
 METRICS_DATA = [
     {

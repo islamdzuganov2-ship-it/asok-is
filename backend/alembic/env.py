@@ -13,7 +13,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Импортируем Base и модели, чтобы они были в target_metadata
-from app.db.base import Base
+from app.core.database import Base
 from app.models.system import System
 from app.models.metric_catalog import MetricCatalog
 from app.models.assessment import AssessmentPeriod, AssessmentValue, ExpertJudgmentHistory

@@ -1,13 +1,12 @@
 # backend/app/api/deps.py
-"""
-Зависимости FastAPI для внедрения в эндпоинты
-"""
+
 from typing import AsyncGenerator, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
-from app.db.session import async_session_maker  # ← импорт на уровне модуля
+# from app.core.database import AsyncSessionLocal async_session_maker  # ← импорт на уровне модуля
+from app.core.database import AsyncSessionLocal
 import os
 
 # Security scheme для JWT
@@ -18,7 +17,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     Dependency для получения async сессии БД.
     Коммит и откат выполняются в эндпоинтах, не здесь.
     """
-    async with async_session_maker() as session:
+    async with AsyncSessionLocal() as session:
         try:
             yield session
             # Коммит должен вызываться явно в эндпоинте после всех операций

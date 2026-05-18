@@ -3,7 +3,7 @@ from sqlalchemy import Column, String, Boolean, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 import enum
-from app.db.base import Base, TimestampMixin
+from app.core.database import Base, TimestampMixin
 
 class LifecycleStatus(enum.Enum):
     OE = "ОЭ"

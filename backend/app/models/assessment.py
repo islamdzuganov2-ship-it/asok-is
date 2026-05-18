@@ -4,7 +4,8 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import uuid
 import enum
-from app.db.base import Base, TimestampMixin
+from app.core.database import Base
+from app.models.base_mixin import TimestampMixin
 
 class AssessmentPeriod(Base, TimestampMixin):
     __tablename__ = "assessment_periods"  # ✅ ДВА подчеркивания

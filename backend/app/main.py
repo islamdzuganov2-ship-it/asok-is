@@ -10,8 +10,8 @@ import sys
 
 # === ИМПОРТЫ РОУТЕРОВ ===
 # Импортируем после настройки логгера, чтобы избежать циклических зависимостей
-from app.db.base import Base
-from app.db.session import engine
+from app.core.database import Base
+from app.core.database import engine
 
 from app.api.v1.endpoints import assessments, systems, auth
 

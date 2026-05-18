@@ -1,8 +1,8 @@
 # backend/app/models/metric_catalog.py — СОЗДАТЬ, если отсутствует
 from sqlalchemy import Column, Integer, String, Boolean, Text, Enum as SQLEnum
 import enum
-from app.db.base import Base
-
+from app.core.database import Base
+from app.models.base_mixin import TimestampMixin
 class FormulaType(enum.Enum):
     DIRECT = "DIRECT"
     INVERSE = "INVERSE"
