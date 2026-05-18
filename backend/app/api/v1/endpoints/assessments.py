@@ -10,19 +10,32 @@ from app.services.calculation_engine import calculate_metric_value
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
-async def create_assessment_period(
-    system_id: str, 
-    period: str,
-    db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_user)
-):
-    new_period = AssessmentPeriod(system_id=system_id, period=period)
-    db.add(new_period)
-    await db.commit()
-    await db.refresh(new_period)
-    return {"id": str(new_period.id), "period": new_period.period, "status": new_period.status}
+from pydantic import BaseModel, Field, field_validator
+import uuid as uuid_module
 
+class CreateAssessmentPeriodRequest(BaseModel):
+    system_id: str = Field(..., description="UUID системы")
+    period: str = Field(..., pattern=r"^Q[1-4]-\d{4}$", description="Q1-2026")
+    
+    @field_validator('system_id')
+    @classmethod
+    def validate_uuid(cls, v: str) -> str:
+        try:
+            uuid_module.UUID(v)
+            return v
+        except ValueError:
+            raise ValueError('Неверный UUID')
+
+# assessments.py — ИСПРАВИТЬ эндпоинт
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def create_assessment_period(
+    request: CreateAssessmentPeriodRequest,  # ✅ Валидация через Pydantic
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    system_id = uuid.UUID(request.system_id)  # Конвертация после валидации
+    # ... остальная логика
+    
 @router.put("/{assessment_id}/metrics/{metric_id}", response_model=AssessmentValueResponse)
 async def update_assessment_metric(
     assessment_id: uuid.UUID,

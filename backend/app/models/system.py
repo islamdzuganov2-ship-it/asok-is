@@ -1,3 +1,4 @@
+# backend/app/models/system.py — ИСПРАВЛЕННЫЙ ФАЙЛ
 from sqlalchemy import Column, String, Boolean, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
@@ -15,10 +16,16 @@ class CriticalityClass(enum.Enum):
     BUSINESS_OPERATIONAL = "BUSINESS OPERATIONAL"
 
 class System(Base, TimestampMixin):
-    __tablename__ = "systems"
+    __tablename__ = "systems"  # ✅ ДВА подчеркивания
+    
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String(255), nullable=False, index=True)
     code = Column(String(50), unique=True, index=True)
     status_lc = Column(SQLEnum(LifecycleStatus), nullable=False, default=LifecycleStatus.OE)
     criticality_class = Column(SQLEnum(CriticalityClass), nullable=False)
+    owner = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_deleted = Column(Boolean, default=False, nullable=False)
+
+    def __repr__(self):
+        return f"<System(id={self.id}, name='{self.name}')>"
