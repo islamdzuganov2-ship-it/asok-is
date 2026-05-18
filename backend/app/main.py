@@ -1,24 +1,15 @@
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.exceptions import RequestValidationError, HTTPException
-from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-from sqlalchemy.exc import SQLAlchemyError
 import logging
 import sys
 
 # ИМПОРТЫ БД
 from app.core.database import Base, engine
 
-# ИМПОРТЫ МОДЕЛЕЙ (необходимы для метаданных Alembic/SQLAlchemy)
-from app.models import system
-from app.models import metric_catalog
-from app.models import assessment
-from app.models import user
-from app.models import audit
-
-# ИМПОРТЫ РОУТЕРОВ
+# ИМПОРТЫ РОУТЕРОВ (Добавлен reports)
 from app.api.v1.endpoints import assessments, systems, auth
+from app.api.v1 import reports 
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,9 +54,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# РЕГИСТРАЦИЯ РОУТЕРОВ
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(systems.router, prefix="/api/v1/systems", tags=["systems"])
 app.include_router(assessments.router, prefix="/api/v1/assessments", tags=["assessments"])
+app.include_router(reports.router, prefix="/api/v1/reports", tags=["reports"]) # <- ВАЖНО: Добавлено для Дашборда
 
 @app.get("/health", tags=["health"])
 async def health_check():

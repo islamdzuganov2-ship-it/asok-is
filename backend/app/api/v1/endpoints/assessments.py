@@ -13,6 +13,18 @@ router = APIRouter(prefix="/assessments", tags=["assessments"])
 from pydantic import BaseModel, Field, field_validator
 import uuid as uuid_module
 
+from fastapi import APIRouter, Depends, HTTPException
+from typing import List
+from app.schemas.assessment import (
+    EditableMetricOut, 
+    EditableMetricIn, 
+    CalculatedMetricOut, 
+    ExpertJudgmentCreate
+)
+# from app.api.deps import get_db, get_current_user # Ваши зависимости
+
+router = APIRouter()
+
 from pydantic import BaseModel
 from typing import List, Tuple, Optional
 from uuid import UUID
@@ -62,6 +74,33 @@ class ExpertJudgmentCreate(BaseModel):
     adjustedLevel: Optional[str] = None
     justificationText: str
     linkedRiskTask: Optional[str] = None
+
+    
+
+# 1. Получение метрик для ручного ввода
+@router.get("/{id}/metrics", response_model=List[EditableMetricOut])
+async def get_assessment_metrics(id: str):
+    # TODO: Извлечь из БД метрики для конкретной оценки
+    return []
+
+# 2. Сохранение метрик от аналитика и запуск ядра расчета
+@router.put("/{id}/metrics")
+async def save_assessment_metrics(id: str, metrics: List[EditableMetricIn]):
+    # TODO: Сохранить val_a, val_b и expert_comment в БД
+    # TODO: Вызвать Calculation Engine (app/services/calculation_engine.py)
+    return {"status": "ok", "message": "Metrics saved and calculation triggered"}
+
+# 3. Получение рассчитанных метрик для экрана экспертизы
+@router.get("/{id}/calculated", response_model=List[CalculatedMetricOut])
+async def get_calculated_metrics(id: str):
+    # TODO: Извлечь результаты расчетов ядра из БД
+    return []
+
+# 4. Сохранение проф. суждения (Management by Exception)
+@router.post("/expert-judgment")
+async def submit_expert_judgment(judgment: ExpertJudgmentCreate):
+    # TODO: Записать корректировку в таблицу expert_judgment_history
+    return {"status": "ok", "message": "Expert judgment saved"}
 class CreateAssessmentPeriodRequest(BaseModel):
     system_id: str = Field(..., description="UUID системы")
     period: str = Field(..., pattern=r"^Q[1-4]-\d{4}$", description="Q1-2026")
