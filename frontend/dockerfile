@@ -1,0 +1,5 @@
+Multi-stage build:
+- Stage builder: node:20-alpine, npm ci + npm run build
+- Stage runtime: nginx:1.25-alpine + nginx.conf + /app/build → /usr/share/nginx/html
+- ARG REACT_APP_API_BASE_URL для подстановки при сборке
+- HEALTHCHECK: wget /health

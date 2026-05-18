@@ -1,0 +1,3 @@
+- `parse_excel_task` — валидация структуры xlsx, батчевая запись val_a/val_b, пересчёт X
+- `generate_ai_summary_task` — сборка expert_comment → Ollama API → валидация длины >50 символов
+- `cache_invalidate_task` — Redis keys pattern delete

@@ -1,0 +1,4 @@
+- Polling getTaskStatus каждые 3 сек пока PENDING/STARTED
+- max 3 retry с exponential backoff (BASE=2000ms)
+- Ошибка → Alert ⚠️ + кнопка 🔄 Повторить
+- Успех → Card с summary текстом

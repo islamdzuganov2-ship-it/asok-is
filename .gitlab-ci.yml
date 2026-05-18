@@ -1,0 +1,19 @@
+### lint
+- lint:backend — flake8, max-line-length=100
+- lint:frontend — eslint --max-warnings 0
+- Запускаются только при изменениях в backend/**/* / frontend/**/*
+
+### test
+- test:backend — PostgreSQL 14 service, alembic upgrade head, seed_metrics, pytest --cov --cov-fail-under=80
+- test:frontend — npm test --coverage
+- Артефакты: cobertura coverage.xml (expire 7d)
+
+### build
+- build:backend / build:frontend — docker build + push в GitLab Registry
+- Теги: $CI_COMMIT_SHA + latest
+- Только на ветке main
+
+### deploy
+- deploy:staging — SSH + docker compose pull + up -d + alembic upgrade head (auto, при merge в main)
+- deploy:production — то же самое, when: manual (ручное подтверждение в GitLab)
+- Env переменные в GitLab CI: STAGING_SSH_KEY, STAGING_HOST, PRODUCTION_SSH_KEY

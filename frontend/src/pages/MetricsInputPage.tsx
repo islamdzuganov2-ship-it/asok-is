@@ -1,0 +1,5 @@
+- Table 28 строк с InputNumber для val_a/val_b
+- disabled если data_source != MANUAL
+- val_b = 0 → status="error" + Tooltip
+- RAG теги: зелёный ≥0.81, жёлтый 0.41–0.80, красный <0.41, серый — нет данных
+- Кнопка "Сохранить" per-row, disabled пока isDirty=false или valBError=true

@@ -1,0 +1,3 @@
+- Form (Ant Design) + демо-кнопки (demo/manager, demo/analyst)
+- При успехе: dispatch(setCredentials) → navigate('/dashboard')
+- Единое сообщение об ошибке через RTK Query error state

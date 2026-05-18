@@ -1,0 +1,6 @@
+Multi-stage build (python:3.11-slim):
+- Stage builder: gcc + libpq-dev, pip install --prefix=/install
+- Stage runtime: libpq5 только, непривилегированный user appuser
+- HEALTHCHECK: urllib.request к /health каждые 15с
+- CMD: uvicorn --workers 2 (prod)
+- Директория /app/uploads с chmod 755
