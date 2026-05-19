@@ -16,3 +16,12 @@ class MetricCatalog(Base):
     description = Column(Text, nullable=True)
     data_source = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+
+class MetricCharacteristic(Base):
+    __tablename__ = "metric_characteristics"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+class MetricAttribute(Base):
+    __tablename__ = "metric_attributes"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)

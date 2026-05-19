@@ -5,8 +5,19 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
+from app.core.config import settings # У вас должен быть файл настроек
+connectable = create_engine(settings.DATABASE_URL.replace("asyncpg", "psycopg2"))
 
 config = context.config
+
+import os
+
+def run_migrations_online():
+    # Получаем URL из переменной окружения, которая задана в docker-compose.yml
+    connectable = create_engine(
+        os.getenv("DATABASE_URL").replace("asyncpg", "psycopg2"), # Alembic нужен синхронный драйвер
+        poolclass=pool.NullPool,
+    )
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

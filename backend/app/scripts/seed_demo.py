@@ -40,7 +40,7 @@ async def seed_data():
                 user = User(
                     id=uuid.uuid4(),
                     email=u["email"],
-                    hashed_password=get_password_hash(u["password"]),
+                    password_hash=get_password_hash(u["password"]),
                     role=u["role"],
                     is_active=True
                 )
