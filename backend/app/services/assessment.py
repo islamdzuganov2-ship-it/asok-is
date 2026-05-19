@@ -2,6 +2,21 @@ import uuid
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
+from app.services.calculation_engine import calculate_metric, map_to_level
+from app.models.assessment import AssessmentValue
+
+def process_assessment_values(metric_data: dict, formula_type: str):
+    """
+    Сервисная функция для автоматического расчета при сохранении данных.
+    """
+    x = calculate_metric(metric_data['val_a'], metric_data['val_b'], formula_type)
+    level = map_to_level(x)
+    
+    return {
+        "calculated_x": x,
+        "quality_level": level
+    }
+
 class AssessmentPeriodCreate(BaseModel):
     system_id: uuid.UUID
     period: str = Field(..., pattern=r"^Q[1-4]-\d{4}$")

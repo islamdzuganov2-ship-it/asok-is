@@ -1,25 +1,27 @@
-def calculate_metric_value(a: float, b: float, formula_type: str):
+from typing import Literal
+
+def calculate_metric(a: float, b: float, formula_type: Literal["DIRECT", "INVERSE"]) -> float:
+    """
+    Вычисляет итоговый коэффициент X (0.0 - 1.0).
+    Логика согласно ТЗ ч.1, стр. 2.
+    """
     if b == 0:
-        return 0.0, "Невозможно измерить"
+        return 0.0  # Обработка исключения "Невозможно измерить"
     
-    try:
-        if formula_type == "DIRECT":
-            x = a / b
-        else: # INVERSE
-            x = 1 - (a / b)
+    if formula_type == "INVERSE":
+        x = 1 - (a / b)
+    else:
+        x = a / b
         
-        # Ограничиваем от 0 до 1
-        x = max(0.0, min(1.0, x))
-        
-        # Определение уровня
-        p = x * 100
-        if p >= 81: level = "Высокий уровень"
-        elif p >= 61: level = "Уровень выше среднего"
-        elif p >= 41: level = "Средний уровень"
-        elif p >= 21: level = "Уровень ниже среднего"
-        elif p > 0: level = "Низкий уровень"
-        else: level = "Невозможно измерить"
-            
-        return x, level
-    except Exception:
-        return 0.0, "Ошибка расчета"
+    return round(max(0.0, min(1.0, x)), 4)
+
+def map_to_level(x: float) -> str:
+    """
+    Маппинг коэффициента в качественный уровень согласно ТЗ ч.1, стр. 3.
+    """
+    if x >= 0.81: return "Высокий уровень"
+    if x >= 0.61: return "Выше среднего"
+    if x >= 0.41: return "Средний уровень"
+    if x >= 0.21: return "Ниже среднего"
+    if x > 0: return "Низкий уровень"
+    return "Невозможно измерить"
