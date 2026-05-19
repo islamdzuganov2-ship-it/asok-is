@@ -1,39 +1,28 @@
-# backend/app/api/v1/endpoints/metrics.py
+"""
+Эндпоинт справочника метрик.
+GET /api/v1/metrics — список всех активных метрик каталога МК_8.1.
+Доступен всем аутентифицированным пользователям.
+"""
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
 
 from app.api.deps import get_db
-from app.models.metric_catalog import MetricCatalog, FormulaType
+from app.core.rbac import require_any_authenticated
+from app.models.metric_catalog import MetricCatalog
 from app.schemas.metric import MetricCatalogResponse
-from app.api.v1.endpoints import assessments, metrics
+
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
-from fastapi import APIRouter
-router = APIRouter()
 
 @router.get("", response_model=List[MetricCatalogResponse])
 async def list_metrics(
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user)  # опционально
+    _=Depends(require_any_authenticated),
 ):
-    """Получение справочника всех активных метрик"""
+    """Получение справочника всех активных метрик."""
     result = await db.execute(
-        select(MetricCatalog)
-        .where(MetricCatalog.is_active == True)
-        .order_by(MetricCatalog.characteristic, MetricCatalog.subcharacteristic)
+        select(MetricCatalog).where(MetricCatalog.is_active == True)
     )
-    metrics = result.scalars().all()
-    
-    return [
-        MetricCatalogResponse(
-            id=m.id,
-            characteristic=m.characteristic,
-            subcharacteristic=m.subcharacteristic,
-            formula_type=m.formula_type.value,
-            description=m.description,
-            data_source=m.data_source
-        )
-        for m in metrics
-    ]
+    return result.scalars().all()

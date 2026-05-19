@@ -1,55 +1,44 @@
-# backend/app/schemas/auth.py
 """
-Pydantic схемы для аутентификации и авторизации
+Pydantic v2 схемы аутентификации.
 """
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
-import re
+from pydantic import BaseModel, Field
+from typing import Optional
+
 
 class LoginRequest(BaseModel):
-    """Схема запроса на вход"""
-    username: str = Field(..., min_length=3, max_length=50, description="Имя пользователя")
-    password: str = Field(..., min_length=8, max_length=128, description="Пароль")
+    username: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=1, max_length=128)
+
 
 class TokenResponse(BaseModel):
-    """Схема ответа с токенами"""
-    access_token: str = Field(..., description="JWT access токен")
-    refresh_token: Optional[str] = Field(None, description="JWT refresh токен")
-    token_type: str = Field(default="bearer", description="Тип токена")
-    expires_in: int = Field(default=900, description="Время жизни токена в секундах")
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    role: str
+
 
 class TokenRefreshRequest(BaseModel):
-    """Схема запроса на обновление токена"""
-    refresh_token: str = Field(..., description="Refresh токен")
+    refresh_token: str
+
+
+class TokenPayload(BaseModel):
+    """JWT payload — sub=user_id, role=роль, exp=время истечения."""
+    sub: str
+    role: str
+    exp: int
+
 
 class UserResponse(BaseModel):
-    """Схема ответа с данными пользователя"""
-    id: str = Field(..., description="ID пользователя")
-    username: str = Field(..., description="Имя пользователя")
-    roles: List[str] = Field(default_factory=list, description="Роли пользователя")
-    is_active: bool = Field(default=True, description="Статус активности")
+    id: str
+    username: str
+    role: str
+    full_name: Optional[str] = None
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "id": "550e8400-e29b-41d4-a716-446655440000",
-                "username": "demo_manager",
-                "roles": ["QUALITY_MANAGER", "TEST_ANALYST"],
-                "is_active": True
-            }
-        }
-    }
+    class Config:
+        from_attributes = True
+
 
 class DemoUserCredentials(BaseModel):
-    """Схема для демо-пользователей (только development)"""
     username: str
     password: str
     role: str
-    
-    @field_validator('role')
-    @classmethod
-    def validate_role(cls, v: str) -> str:
-        allowed = {"ADMIN", "QUALITY_MANAGER", "TEST_ANALYST", "VIEWER"}
-        if v not in allowed:
-            raise ValueError(f"Роль должна быть одной из: {allowed}")
-        return v

@@ -1,7 +1,7 @@
-# docker-compose.yml
 name: asok-is
 
 services:
+
   postgres:
     image: postgres:14-alpine
     container_name: asok_postgres
@@ -14,7 +14,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U asok_user -d asok_is"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-asok_user} -d asok_is"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,6 +28,11 @@ services:
       - "6379:6379"
     volumes:
       - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - asok_net
 
@@ -45,16 +50,37 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./backend:/app
       - /app/__pycache__
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
+    networks:
+      - asok_net
+
+  celery_worker:
+    build: ./backend
+    container_name: asok_celery
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://asok_user:${POSTGRES_PASSWORD:-asok_pass123}@postgres:5432/asok_is
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+    command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=4
     networks:
       - asok_net
 
