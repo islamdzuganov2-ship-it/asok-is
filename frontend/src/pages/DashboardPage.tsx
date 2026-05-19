@@ -6,12 +6,10 @@ import React, { useMemo } from 'react';
 import { Row, Col, Card, Table, Typography, Tag, Spin, Alert } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import { useGetExecutiveDashboardQuery } from '../store/api/apiSlice';
-// import { AiInsightBanner } from '../components/AiInsightBanner'; // Предполагается наличие компонента
 
 const { Title, Text } = Typography;
 
 export const DashboardPage: React.FC = () => {
-    // В реальном API нужно добавить problematicSystems в DashboardData в apiSlice.ts
     const { data, isLoading, isError } = useGetExecutiveDashboardQuery();
 
     // Расчет высоты для тепловой карты на лету
@@ -58,12 +56,12 @@ export const DashboardPage: React.FC = () => {
         yAxis: { type: 'category', data: data.yAxisLabels, splitArea: { show: true } },
         visualMap: {
             min: 0,
-            max: 5, // ТЗ: 0-5 (Невозможно измерить → Высокий)
+            max: 5,
             calculable: true,
             orient: 'horizontal',
             left: 'center',
             bottom: '0%',
-            inRange: { color: ['#f5222d', '#faad14', '#52c41a', '#237804'] } // От красного к тёмно-зелёному
+            inRange: { color: ['#f5222d', '#faad14', '#52c41a', '#237804'] }
         },
         series: [{
             name: 'Качество (0-5)',
@@ -94,12 +92,8 @@ export const DashboardPage: React.FC = () => {
         }
     ];
 
-    // Mock данных для таблицы (в реальности приходит из `data.problematicSystems`)
-    const data.problematicSystems = [
-        { id: '1', name: 'CRM ОПК', criticality: 'MISSION CRITICAL', lowMetricsCount: 12 },
-        { id: '2', name: 'АБС Core', criticality: 'MISSION CRITICAL', lowMetricsCount: 8 },
-        { id: '3', name: 'Портал HR', criticality: 'BUSINESS OPERATIONAL', lowMetricsCount: 5 },
-    ];
+    // Берем данные напрямую из API (бекенд уже отправляет этот массив)
+    const problematicSystemsList = data.problematicSystems || [];
 
     return (
         <div>
@@ -115,9 +109,9 @@ export const DashboardPage: React.FC = () => {
 
                 {/* Правая колонка: Проблемные ИС */}
                 <Col xs={24} lg={14}>
-                    <Card title="Топ-3 проблемных ИС" style={{ height: '100%' }}>
+                    <Card title="Топ проблемных ИС" style={{ height: '100%' }}>
                         <Table 
-                            dataSource={mockProblematicSystems} // Заменить на data.problematicSystems
+                            dataSource={problematicSystemsList}
                             columns={columns} 
                             rowKey="id"
                             pagination={false}
@@ -136,11 +130,6 @@ export const DashboardPage: React.FC = () => {
                     </Card>
                 </Col>
             </Row>
-
-            {/* Блок AI инсайтов (Закомментирован, так как компонент пока не передан в полном виде) */}
-            {/* <div style={{ marginTop: '16px' }}>
-                <AiInsightBanner text={data.aiInsights} />
-            </div> */}
         </div>
     );
 };
