@@ -1,35 +1,36 @@
+"""
+Главный файл приложения FastAPI.
+"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import logging
-import sys
 
-from app.core.database import Base, engine
-from app.api.v1.api import api_router
+from app.core.config import settings
+from app.api.v1.endpoints import auth, assessments, metrics, systems, experts  # предполагаемые модули
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logging.info("🚀 Starting ASOK IS Backend v2.0.0...")
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-    except Exception as e:
-        logging.error(f"❌ Failed to create tables: {e}")
-        raise
-    yield
-    await engine.dispose()
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    docs_url="/docs" if settings.DEMO_MODE else None,
+    redoc_url=None
+)
 
-app = FastAPI(title="АСОК ИС", lifespan=lifespan)
-
+# CORS – строго из настроек
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(api_router, prefix="/api/v1")
+# Подключение роутеров
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(assessments.router, prefix="/api/v1/assessments", tags=["assessments"])
+app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
+# ... остальные роутеры
+
+@app.get("/")
+async def root():
+    return {"message": f"{settings.PROJECT_NAME} API работает"}
 
 @app.get("/health")
 async def health_check():

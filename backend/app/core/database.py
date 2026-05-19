@@ -1,56 +1,34 @@
 """
-Инициализация асинхронного движка SQLAlchemy 2.0 и фабрики сессий.
-Используется asyncpg как драйвер для максимальной производительности.
-Соответствует ТЗ п.2: SQLAlchemy 2.0 (Async mode).
+Асинхронное подключение к PostgreSQL. Умная замена префикса только при необходимости.
 """
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    AsyncSession,
-    async_sessionmaker,
-)
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from app.core.config import settings
 
-_async_url = settings.DATABASE_URL.replace(
-    "postgresql://", "postgresql+asyncpg://"
-)
+_db_url = settings.DATABASE_URL
+
+# FIX: добавляем asyncpg только если URL ещё без него
+if "postgresql://" in _db_url and "asyncpg" not in _db_url:
+    _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://")
 
 engine = create_async_engine(
-    _async_url,
+    _db_url,
     echo=False,
-    pool_size=20,
-    max_overflow=10,
-    pool_pre_ping=True,
+    future=True,
+    pool_size=10,
+    max_overflow=20
 )
 
 AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
+    engine,
     expire_on_commit=False,
     autoflush=False,
-    autocommit=False,
+    autocommit=False
 )
 
-
-class Base(DeclarativeBase):
-    """Базовый класс для всех ORM моделей проекта."""
-    pass
-
-
-async def get_db() -> AsyncSession:
-    """
-    FastAPI Dependency: предоставляет async сессию БД на время запроса.
-
-    Yields:
-        AsyncSession: активная сессия SQLAlchemy.
-    """
+async def get_db():
+    """FastAPI-зависимость для получения сессии."""
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
         finally:
             await session.close()
-

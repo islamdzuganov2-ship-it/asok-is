@@ -1,55 +1,45 @@
 """
-Безопасность: bcrypt + JWT HS256.
+Утилиты безопасности: хеширование паролей и JWT-токены.
 """
+from datetime import datetime, timedelta
+from typing import Any, Union
+
+from jose import jwt
 from passlib.context import CryptContext
-from jose import jwt, JWTError
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict
-import logging
 
 from app.core.config import settings
-from app.schemas.auth import TokenPayload
 
-logger = logging.getLogger(__name__)
+# Контекст хеширования
+pwd_context = CryptContext(
+    schemes=["sha256_crypt"],
+    deprecated="auto"
+)
 
-pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+ALGORITHM = settings.JWT_ALGORITHM
+SECRET_KEY = settings.JWT_SECRET_KEY
 
-
-def get_password_hash(password: str) -> str:
-    # sha256_crypt не имеет лимита в 72 байта, но для консистентности оставим
-    return pwd_context.hash(password)
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    data: dict,
+    expires_delta: Union[timedelta, None] = None
+) -> str:
+    """Создать JWT access-токен."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.utcnow() + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    to_encode.update({"exp": expire, "type": "access"})
-    return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
-
-def create_refresh_token(data: Dict) -> str:
+def create_refresh_token(
+    data: dict,
+    expires_delta: Union[timedelta, None] = None
+) -> str:
+    """Создать JWT refresh-токен."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
-    return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-
-
-def decode_token(token: str) -> TokenPayload:
-    """
-    Декодирует JWT и возвращает TokenPayload.
-    Raises JWTError при невалидном или истёкшем токене.
-    """
-    payload = jwt.decode(
-        token,
-        settings.JWT_SECRET_KEY,
-        algorithms=[settings.JWT_ALGORITHM],
+    expire = datetime.utcnow() + (
+        expires_delta or timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     )
-    return TokenPayload(
-        sub=payload["sub"],
-        role=payload.get("role", ""),
-        exp=payload["exp"],
-    )
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
