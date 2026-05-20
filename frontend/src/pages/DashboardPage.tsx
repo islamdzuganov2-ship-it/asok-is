@@ -5,12 +5,14 @@
 import React, { useMemo } from 'react';
 import { Row, Col, Card, Table, Typography, Tag, Spin, Alert } from 'antd';
 import ReactECharts from 'echarts-for-react';
-import { useGetExecutiveDashboardQuery } from '../store/api/apiSlice';
+import { useGetExecutiveDashboardQuery, useGetAllTemplatesQuery } from '../store/api/apiSlice';
+import TemplatesDisplay from '../components/TemplatesDisplay';
 
 const { Title, Text } = Typography;
 
 export const DashboardPage: React.FC = () => {
     const { data, isLoading, isError } = useGetExecutiveDashboardQuery();
+    const { data: templates, isLoading: templatesLoading } = useGetAllTemplatesQuery();
 
     // Расчет высоты для тепловой карты на лету
     const heatmapHeight = useMemo(() => {
@@ -128,6 +130,11 @@ export const DashboardPage: React.FC = () => {
                             style={{ height: `${heatmapHeight}px` }} 
                         />
                     </Card>
+                </Col>
+
+                {/* Шаблоны и предзаполненные данные */}
+                <Col xs={24}>
+                    <TemplatesDisplay templates={templates} isLoading={templatesLoading} />
                 </Col>
             </Row>
         </div>

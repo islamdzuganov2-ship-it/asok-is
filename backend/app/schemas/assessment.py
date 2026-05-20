@@ -144,3 +144,18 @@ class ExpertJudgmentCreate(BaseModel):
     adjustedLevel: Optional[str] = None
     justificationText: str = Field(..., min_length=10, max_length=5000)
     linkedRiskTask: Optional[str] = Field(None, max_length=500)
+
+
+class TemplateDataOut(BaseModel):
+    """Generic template data container."""
+    filename: str
+    sheetName: str
+    data: List[dict]
+
+
+class AllTemplatesOut(BaseModel):
+    """Container for all available templates."""
+    metrics: List[dict] = []
+    risks: List[dict] = []
+    qualityReport: List[dict] = []
+    systemQuality: List[dict] = []

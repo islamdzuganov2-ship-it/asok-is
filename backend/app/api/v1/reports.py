@@ -10,8 +10,21 @@ from app.core.database import get_db
 from app.models.assessment import AssessmentPeriod, AssessmentValue
 from app.models.metric_catalog import MetricCatalog
 from app.models.system import System
-from app.schemas.assessment import DashboardDataOut, ProblematicSystemOut
-from app.schemas.assessment import DashboardDataOut, ProblematicSystemOut, FullExcelMatricesOut, RiskMatrixRow, DefectMatrixRow, QualityPlanMatrixRow
+from app.schemas.assessment import (
+    DashboardDataOut,
+    ProblematicSystemOut,
+    FullExcelMatricesOut,
+    RiskMatrixRow,
+    DefectMatrixRow,
+    QualityPlanMatrixRow,
+    AllTemplatesOut,
+)
+from app.services.templates import (
+    load_metrics_template,
+    load_risks_template,
+    load_quality_report_template,
+    load_system_quality_template,
+)
 from fastapi import HTTPException
 
 router = APIRouter()
@@ -163,4 +176,15 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db)) -> Dashboa
         xAxisLabels=characteristic_names,
         yAxisLabels=system_names,
         problematicSystems=problematic,
+    )
+
+
+@router.get("/templates", response_model=AllTemplatesOut)
+async def get_all_templates() -> AllTemplatesOut:
+    """Get all available template data from Excel files."""
+    return AllTemplatesOut(
+        metrics=load_metrics_template(),
+        risks=load_risks_template(),
+        qualityReport=load_quality_report_template(),
+        systemQuality=load_system_quality_template(),
     )
