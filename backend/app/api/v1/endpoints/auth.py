@@ -4,6 +4,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
 from app.core.database import get_db
 from app.core.security import create_access_token, pwd_context
@@ -11,7 +12,6 @@ from app.core.config import settings
 
 router = APIRouter()
 
-# Демо-пользователи (временно)
 DEMO_USERS = {
     "admin": {
         "username": "admin",
@@ -34,21 +34,18 @@ DEMO_USERS = {
 }
 
 def verify_password(plain: str, hashed: str) -> bool:
-    """Безопасная проверка пароля."""
     return pwd_context.verify(plain, hashed)
 
 def get_user(username: str):
-    """Заглушка получения пользователя."""
     return DEMO_USERS.get(username)
 
 @router.post("/login")
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db) if not settings.DEMO_MODE else None
+    db: AsyncSession = Depends(get_db)  # всегда внедряем, но не используем в DEMO
 ):
     """
-    Аутентификация по логину/паролю.
-    В демо-режиме не требует базы данных.
+    Аутентификация. В DEMO_MODE БД не используется.
     """
     try:
         user = get_user(form_data.username)
@@ -75,5 +72,5 @@ async def login(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка сервера при аутентификации: {str(e)}"
+            detail=f"Ошибка сервера: {str(e)}"
         )

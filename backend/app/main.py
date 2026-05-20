@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api.v1.endpoints import auth, assessments, metrics, systems, experts  # предполагаемые модули
+from app.api.v1.endpoints import auth, assessments, metrics  # убрали systems, experts
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -13,7 +13,6 @@ app = FastAPI(
     redoc_url=None
 )
 
-# CORS – строго из настроек
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -22,11 +21,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Подключение роутеров
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(assessments.router, prefix="/api/v1/assessments", tags=["assessments"])
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
-# ... остальные роутеры
 
 @app.get("/")
 async def root():

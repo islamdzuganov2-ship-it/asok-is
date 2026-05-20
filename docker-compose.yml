@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:14
     environment:
       POSTGRES_USER: asok_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?err: POSTGRES_PASSWORD is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: asok_is
     ports:
       - "5432:5432"
