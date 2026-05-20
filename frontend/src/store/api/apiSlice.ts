@@ -26,6 +26,15 @@ export interface SystemItem {
     is_active: boolean;
 }
 
+export interface SystemCreateDto {
+    name: string;
+    code?: string;
+    status_lc: string;
+    criticality_class: string;
+    owner?: string;
+    is_active: boolean;
+}
+
 export interface SystemsListResponse {
     items: SystemItem[];
     total: number;
@@ -73,6 +82,24 @@ export interface CalculatedMetric {
     expertComment?: string;
 }
 
+export interface MetricCreateDto {
+    characteristic: string;
+    subcharacteristic: string;
+    formula_type: 'DIRECT' | 'INVERSE';
+    description?: string;
+    data_source?: string;
+    is_active: boolean;
+}
+
+export interface ExcelImportResult {
+    filename: string;
+    period_id: string;
+    imported: number;
+    skipped: number;
+    errors: string[];
+    sheets: Array<{ name: string; imported: number; skipped: number }>;
+}
+
 export const apiSlice = createApi({
     reducerPath: 'api',
     baseQuery: fetchBaseQuery({
@@ -94,6 +121,22 @@ export const apiSlice = createApi({
         getSystems: builder.query<SystemsListResponse, void>({
             query: () => '/systems?is_active=true&limit=100',
             providesTags: ['Systems'],
+        }),
+        createSystem: builder.mutation<SystemItem, SystemCreateDto>({
+            query: (body) => ({
+                url: '/systems',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['Systems', 'Dashboard'],
+        }),
+        createMetric: builder.mutation<void, MetricCreateDto>({
+            query: (body) => ({
+                url: '/metrics/',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['Metrics', 'Dashboard'],
         }),
         createAssessmentPeriod: builder.mutation<PeriodDto, PeriodCreateDto>({
             query: (body) => ({
@@ -127,15 +170,31 @@ export const apiSlice = createApi({
             query: (id) => `/assessments/${id}/calculated`,
             providesTags: ['Assessment'],
         }),
+        importAssessmentExcel: builder.mutation<ExcelImportResult, { id: string; file: File }>({
+            query: ({ id, file }) => {
+                const formData = new FormData();
+                formData.append('period_id', id);
+                formData.append('file', file);
+                return {
+                    url: '/excel/import-assessment',
+                    method: 'POST',
+                    body: formData,
+                };
+            },
+            invalidatesTags: ['Metrics', 'Assessment', 'Dashboard'],
+        }),
     }),
 });
 
 export const {
     useCreateAssessmentPeriodMutation,
+    useCreateMetricMutation,
+    useCreateSystemMutation,
     useGetAssessmentMetricsQuery,
     useGetCalculatedMetricsQuery,
     useGetExecutiveDashboardQuery,
     useGetSystemsQuery,
+    useImportAssessmentExcelMutation,
     useSaveAssessmentMetricsMutation,
     useSubmitExpertJudgmentMutation,
 } = apiSlice;

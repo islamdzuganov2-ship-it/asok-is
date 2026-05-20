@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Input, InputNumber, Spin, Table, Typography, message } from 'antd';
+import { Alert, Button, Input, InputNumber, Spin, Table, Typography, Upload, message } from 'antd';
+import { UploadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
     EditableMetric,
     useGetAssessmentMetricsQuery,
+    useImportAssessmentExcelMutation,
     useSaveAssessmentMetricsMutation,
 } from '../store/api/apiSlice';
 
@@ -15,6 +17,7 @@ export const MetricsInputPage: React.FC = () => {
     const navigate = useNavigate();
     const { data, isLoading, isError } = useGetAssessmentMetricsQuery(id!, { skip: !id });
     const [saveMetrics, { isLoading: isSaving }] = useSaveAssessmentMetricsMutation();
+    const [importExcel, { isLoading: isImporting }] = useImportAssessmentExcelMutation();
     const [metrics, setMetrics] = useState<EditableMetric[]>([]);
 
     useEffect(() => {
@@ -47,6 +50,17 @@ export const MetricsInputPage: React.FC = () => {
         } catch {
             message.error('Ошибка при сохранении метрик');
         }
+    };
+
+    const handleImport = async (file: File) => {
+        if (!id) return Upload.LIST_IGNORE;
+        try {
+            const result = await importExcel({ id, file }).unwrap();
+            message.success(`Импортировано строк: ${result.imported}, пропущено: ${result.skipped}`);
+        } catch {
+            message.error('Не удалось импортировать Excel-файл');
+        }
+        return Upload.LIST_IGNORE;
     };
 
     if (isLoading) {
@@ -103,11 +117,21 @@ export const MetricsInputPage: React.FC = () => {
         <div>
             <Title level={3}>Ввод первичных данных</Title>
             <Alert
-                message="Заполните параметры A и B для каждой метрики. Если B равно 0, требуется текстовое обоснование."
+                message="Заполните параметры A и B вручную или импортируйте .xlsx с колонками metric_id/name, val_a, val_b. Поддерживаются многолистовые файлы."
                 type="info"
                 showIcon
                 style={{ marginBottom: 24 }}
             />
+            <Upload
+                accept=".xlsx"
+                maxCount={1}
+                showUploadList={false}
+                beforeUpload={(file) => handleImport(file)}
+            >
+                <Button icon={<UploadOutlined />} loading={isImporting} style={{ marginBottom: 16 }}>
+                    Импортировать Excel
+                </Button>
+            </Upload>
             <Table dataSource={metrics} columns={columns} rowKey="id" pagination={false} bordered />
             <div style={{ marginTop: 24, textAlign: 'right' }}>
                 <Button type="primary" size="large" onClick={handleSubmit} loading={isSaving}>
