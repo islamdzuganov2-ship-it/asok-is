@@ -3,7 +3,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import uuid
 import enum
-from app.core.database import Base
+from app.db.base import Base
 from app.models.base_mixin import TimestampMixin
 
 class AssessmentPeriod(Base, TimestampMixin):
@@ -46,6 +46,6 @@ class ExpertJudgmentHistory(Base, TimestampMixin):
     adjusted_level = Column(String(50), nullable=True)
     justification_text = Column(Text, nullable=False)
     linked_risk_task = Column(String(500), nullable=True)
-    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     
     assessment_value = relationship("AssessmentValue", backref="expert_judgments")

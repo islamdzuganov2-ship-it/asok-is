@@ -1,4 +1,16 @@
-- Polling getTaskStatus каждые 3 сек пока PENDING/STARTED
-- max 3 retry с exponential backoff (BASE=2000ms)
-- Ошибка → Alert ⚠️ + кнопка 🔄 Повторить
-- Успех → Card с summary текстом
+import React from 'react';
+import { Alert } from 'antd';
+
+interface AiInsightBannerProps {
+    insight?: string;
+}
+
+export const AiInsightBanner: React.FC<AiInsightBannerProps> = ({ insight }) => {
+    if (!insight) {
+        return null;
+    }
+
+    return <Alert type="info" showIcon message={insight} />;
+};
+
+export default AiInsightBanner;

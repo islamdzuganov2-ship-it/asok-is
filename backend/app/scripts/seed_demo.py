@@ -1,139 +1,100 @@
 import asyncio
-import uuid
 import random
-import logging
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+import uuid
 
-# Импорты ваших моделей (предполагаем стандартную структуру вашего проекта)
-from app.core.database import engine
-from sqlalchemy.orm import sessionmaker
-from app.models.user import User
-from app.models.system import System
+from sqlalchemy import select
+
+from app.core.database import AsyncSessionLocal
+from app.core.security import get_password_hash
 from app.models.assessment import AssessmentPeriod, AssessmentValue
 from app.models.metric_catalog import MetricCatalog
-from app.core.security import get_password_hash
+from app.models.system import CriticalityClass, System
+from app.models.user import User
 from app.services.calculation_engine import calculate_metric, map_to_level
 
-# Настройка сессии
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-async def seed_data():
+async def seed_data() -> None:
     async with AsyncSessionLocal() as db:
-        logger.info("Начинаем генерацию демо-данных...")
-
-        # 1. Создание пользователей
         users_data = [
-            {"email": "demo@example.com", "password": "manager", "role": "MANAGER"},
-            {"email": "analyst@example.com", "password": "analyst", "role": "TEST_ANALYST"},
-            {"email": "cto@example.com", "password": "cto", "role": "CTO"},
-            {"email": "admin@example.com", "password": "admin123", "role": "ADMIN"}
+            {"username": "admin", "email": "admin@example.com", "password": "Admin123!", "role": "ADMIN"},
+            {"username": "analyst", "email": "analyst@example.com", "password": "Analyst123!", "role": "TEST_ANALYST"},
+            {"username": "manager", "email": "manager@example.com", "password": "Manager123!", "role": "QUALITY_MANAGER"},
         ]
-        
-        db_users = []
-        for u in users_data:
-            result = await db.execute(select(User).where(User.email == u["email"]))
-            user = result.scalar_one_or_none()
-            if not user:
-                user = User(
-                    id=uuid.uuid4(),
-                    email=u["email"],
-                    password_hash=get_password_hash(u["password"]),
-                    role=u["role"],
-                    is_active=True
+        for item in users_data:
+            result = await db.execute(select(User).where(User.username == item["username"]))
+            if result.scalar_one_or_none() is None:
+                db.add(
+                    User(
+                        username=item["username"],
+                        email=item["email"],
+                        password_hash=get_password_hash(item["password"]),
+                        full_name=item["username"].title(),
+                        role=item["role"],
+                    )
                 )
-                db.add(user)
-            db_users.append(user)
-        
-        # 2. Создание систем (ИС)
-        systems_data = [
-            {"name": "АБС", "criticality": "MISSION CRITICAL"},
-            {"name": "ДБО", "criticality": "MISSION CRITICAL"},
-            {"name": "CRM", "criticality": "BUSINESS CRITICAL"},
-            {"name": "ХД", "criticality": "BUSINESS CRITICAL"},
-            {"name": "СЭД", "criticality": "BUSINESS OPERATIONAL"}
-        ]
-        
-        db_systems = []
-        for sys_data in systems_data:
-            result = await db.execute(select(System).where(System.name == sys_data["name"]))
-            system = result.scalar_one_or_none()
-            if not system:
-                system = System(id=uuid.uuid4(), name=sys_data["name"], criticality=sys_data["criticality"])
-                db.add(system)
-            db_systems.append(system)
 
-        await db.commit() # Сохраняем, чтобы получить ID
-        
-        # 3. Получение метрик из справочника
-        result = await db.execute(select(MetricCatalog))
-        metrics = result.scalars().all()
-        
+        systems_data = [
+            {"name": "АБС Core", "code": "ABS_CORE", "criticality_class": CriticalityClass.MISSION_CRITICAL},
+            {"name": "CRM ОПК", "code": "CRM_OPK", "criticality_class": CriticalityClass.BUSINESS_CRITICAL},
+            {"name": "HR Portal", "code": "HR_PORTAL", "criticality_class": CriticalityClass.BUSINESS_OPERATIONAL},
+        ]
+        systems: list[System] = []
+        for item in systems_data:
+            result = await db.execute(select(System).where(System.code == item["code"]))
+            system = result.scalar_one_or_none()
+            if system is None:
+                system = System(**item)
+                db.add(system)
+                await db.flush()
+            systems.append(system)
+
+        metrics = list((await db.execute(select(MetricCatalog).where(MetricCatalog.is_active.is_(True)))).scalars().all())
         if not metrics:
-            logger.error("Справочник метрик пуст! Сначала запустите seed_metrics.py")
+            await db.commit()
             return
 
-        # 4. Генерация периодов и значений метрик (AssessmentValues)
-        periods = ["Q1-2025", "Q2-2025", "Q3-2025", "Q4-2025"]
-        values_created = 0
-
-        for system in db_systems:
-            for period_name in periods:
-                # Ищем или создаем период
-                result = await db.execute(
-                    select(AssessmentPeriod).where(AssessmentPeriod.system_id == system.id, AssessmentPeriod.period == period_name)
+        for system in systems:
+            result = await db.execute(
+                select(AssessmentPeriod).where(
+                    AssessmentPeriod.system_id == system.id,
+                    AssessmentPeriod.period == "Q2-2026",
                 )
-                period = result.scalar_one_or_none()
-                
-                if not period:
-                    period = AssessmentPeriod(id=uuid.uuid4(), system_id=system.id, period=period_name, status="COMPLETED")
-                    db.add(period)
-                    await db.commit()
-                
-                # Генерация метрик для периода
-                for metric in metrics:
-                    result = await db.execute(
-                        select(AssessmentValue).where(AssessmentValue.period_id == period.id, AssessmentValue.metric_id == metric.id)
-                    )
-                    if result.scalar_one_or_none():
-                        continue # Уже существует
-                    
-                    # Имитация реалистичных данных (Gaussian noise)
-                    base_b = 100
-                    if metric.formula_type.name == "INVERSE":
-                        # Для инверсных метрик (дефекты): чем меньше, тем лучше. Генерируем случайное число дефектов.
-                        val_a = max(0, int(random.gauss(15, 10))) 
-                    else:
-                        # Для прямых: чем больше, тем лучше
-                        val_a = min(base_b, max(0, int(random.gauss(80, 15))))
-                    
-                    # Расчет ядра (Calculation Engine)
-                    calculated_x = calculate_metric(val_a, base_b, metric.formula_type.name)
-                    quality_level = map_to_level(calculated_x)
-                    
-                    # Демо-комментарии для низких показателей
-                    expert_comment = None
-                    if quality_level in ["Низкий уровень", "Ниже среднего"]:
-                        expert_comment = f"Автоматический AI-анализ: Обнаружена деградация показателя {metric.name}. Требуется ревью кода."
+            )
+            period = result.scalar_one_or_none()
+            if period is None:
+                period = AssessmentPeriod(system_id=system.id, period="Q2-2026", status="CALCULATED")
+                db.add(period)
+                await db.flush()
 
-                    av = AssessmentValue(
+            for metric in metrics:
+                exists = await db.execute(
+                    select(AssessmentValue).where(
+                        AssessmentValue.period_id == period.id,
+                        AssessmentValue.metric_id == metric.id,
+                    )
+                )
+                if exists.scalar_one_or_none() is not None:
+                    continue
+
+                base_b = 100
+                formula_type = metric.formula_type.value if hasattr(metric.formula_type, "value") else str(metric.formula_type)
+                val_a = random.randint(0, 35) if formula_type == "INVERSE" else random.randint(45, 100)
+                calculated_x = calculate_metric(val_a, base_b, formula_type)
+                db.add(
+                    AssessmentValue(
                         id=uuid.uuid4(),
                         period_id=period.id,
                         metric_id=metric.id,
                         val_a=val_a,
                         val_b=base_b,
                         calculated_x=calculated_x,
-                        quality_level=quality_level,
-                        expert_comment=expert_comment,
-                        data_source="AUTO_SEED"
+                        quality_level=map_to_level(calculated_x),
+                        data_source="AUTO_SEED",
                     )
-                    db.add(av)
-                    values_created += 1
+                )
 
         await db.commit()
-        logger.info(f"✅ Демо-данные успешно сгенерированы! Создано оценок: {values_created}")
+
 
 if __name__ == "__main__":
     asyncio.run(seed_data())

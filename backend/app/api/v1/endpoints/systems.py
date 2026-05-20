@@ -1,53 +1,69 @@
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List
-from pydantic import BaseModel, Field
+from typing import Optional
 from uuid import UUID
-from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.models.system import System
 
 router = APIRouter()
 
+
 class SystemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, use_enum_values=True)
+
     id: UUID
     name: str
     code: Optional[str] = None
     status_lc: str
     criticality_class: str
     is_active: bool
-    created_at: datetime
-    
-    class Config:
-        from_attributes = True
+
 
 class SystemsListResponse(BaseModel):
-    items: List[SystemResponse]
+    items: list[SystemResponse]
     total: int
     page: int
     limit: int
 
-@router.get("", response_model=SystemsListResponse, tags=["systems"])
+
+@router.get("", response_model=SystemsListResponse)
 async def list_systems(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     status_lc: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Получение списка информационных систем с фильтрацией.
-    """
-    # 🔴 TODO: Реальный запрос к БД
-    # Пока возвращаем заглушку
+    is_active: Optional[bool] = True,
+    db: AsyncSession = Depends(get_db),
+) -> SystemsListResponse:
+    filters = [System.is_deleted.is_(False)]
+    if status_lc:
+        filters.append(System.status_lc == status_lc)
+    if is_active is not None:
+        filters.append(System.is_active.is_(is_active))
+
+    total_result = await db.execute(select(func.count()).select_from(System).where(*filters))
+    total = int(total_result.scalar_one())
+    result = await db.execute(
+        select(System)
+        .where(*filters)
+        .order_by(System.name)
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
     return SystemsListResponse(
-        items=[],
-        total=0,
+        items=list(result.scalars().all()),
+        total=total,
         page=page,
-        limit=limit
+        limit=limit,
     )
 
-@router.get("/{system_id}", response_model=SystemResponse, tags=["systems"])
-async def get_system(system_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Получение детальной информации об ИС"""
-    # 🔴 TODO: Реальный запрос к БД
-    raise HTTPException(status_code=404, detail="Система не найдена (заглушка)")
+
+@router.get("/{system_id}", response_model=SystemResponse)
+async def get_system(system_id: UUID, db: AsyncSession = Depends(get_db)) -> System:
+    system = await db.get(System, system_id)
+    if system is None or system.is_deleted:
+        raise HTTPException(status_code=404, detail="System not found")
+    return system

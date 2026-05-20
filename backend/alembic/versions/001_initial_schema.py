@@ -16,6 +16,23 @@ branch_labels = None
 depends_on = None
 
 def upgrade() -> None:
+    # === users ===
+    op.create_table(
+        'users',
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
+        sa.Column('username', sa.String(100), nullable=False, unique=True),
+        sa.Column('email', sa.String(255), nullable=True, unique=True),
+        sa.Column('password_hash', sa.String(255), nullable=False),
+        sa.Column('full_name', sa.String(255), nullable=True),
+        sa.Column('role', sa.String(50), nullable=False),
+        sa.Column('is_active', sa.Boolean, default=True, nullable=False),
+        sa.Column('last_login', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('is_deleted', sa.Boolean, default=False, nullable=False),
+        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now(), nullable=False),
+    )
+
     # === systems ===
     op.create_table(
         'systems',
@@ -81,7 +98,7 @@ def upgrade() -> None:
         sa.Column('adjusted_level', sa.String(50), nullable=True),
         sa.Column('justification_text', sa.Text, nullable=False),
         sa.Column('linked_risk_task', sa.String(500), nullable=True),
-        sa.Column('created_by', postgresql.UUID(as_uuid=True), sa.ForeignKey('users.id'), nullable=False),
+        sa.Column('created_by', postgresql.UUID(as_uuid=True), sa.ForeignKey('users.id'), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
 
@@ -91,6 +108,7 @@ def downgrade() -> None:
     op.drop_table('assessment_periods')
     op.drop_table('metric_catalog')
     op.drop_table('systems')
+    op.drop_table('users')
     # Drop enums
     sa.Enum(name='lifecyclestatus').drop(op.get_bind(), checkfirst=True)
     sa.Enum(name='criticalityclass').drop(op.get_bind(), checkfirst=True)

@@ -36,7 +36,7 @@ export const App: React.FC = () => {
                 <Suspense fallback={<PageLoader />}>
                     <Routes>
                         <Route path="/login" element={<LoginPage />} />
-                        <Route path="/" element={<RequireAuth><AppLayout><Suspense fallback={<PageLoader />}><Routes>
+                        <Route path="/*" element={<RequireAuth><AppLayout><Suspense fallback={<PageLoader />}><Routes>
                             <Route path="dashboard" element={<DashboardPage />} />
                             <Route path="assessments/new" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><NewAssessmentPage /></RequireRole>} />
                             <Route path="assessments/:id/input" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><MetricsInputPage /></RequireRole>} />

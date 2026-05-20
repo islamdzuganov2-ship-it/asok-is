@@ -1,35 +1,25 @@
-/**
- * Компонент модального окна для эвристической корректировки метрик (Экран Менеджера).
- * Реализует паттерн Management by Exception (ТЗ п.3.2).
- */
 import React from 'react';
-import { Modal, Form, Select, Input, message } from 'antd';
-import { useSubmitExpertJudgmentMutation, ExpertJudgmentDto } from '../store/api/apiSlice';
+import { Form, Input, Modal, Select, message } from 'antd';
+import { ExpertJudgmentDto, useSubmitExpertJudgmentMutation } from '../store/api/apiSlice';
 
 interface ExpertJudgmentModalProps {
     isOpen: boolean;
     onClose: () => void;
     metricId: string;
-    calculatedLevel: 'Низкий' | 'Средний' | 'Высокий';
+    calculatedLevel: string;
 }
 
 const { TextArea } = Input;
-const { Option } = Select;
 
 export const ExpertJudgmentModal: React.FC<ExpertJudgmentModalProps> = ({
     isOpen,
     onClose,
     metricId,
-    calculatedLevel
+    calculatedLevel,
 }) => {
     const [form] = Form.useForm();
     const [submitJudgment, { isLoading }] = useSubmitExpertJudgmentMutation();
 
-    /**
-     * Обработчик отправки формы.
-     * Валидирует данные и отправляет мутацию на Backend.
-     * @param values - Данные формы, соответствующие DTO.
-     */
     const handleFinish = async (values: Partial<ExpertJudgmentDto>) => {
         try {
             await submitJudgment({
@@ -37,19 +27,19 @@ export const ExpertJudgmentModal: React.FC<ExpertJudgmentModalProps> = ({
                 calculatedLevel,
                 justificationText: values.justificationText!,
                 adjustedLevel: values.adjustedLevel,
-                linkedRiskTask: values.linkedRiskTask
+                linkedRiskTask: values.linkedRiskTask,
             }).unwrap();
-            message.success('Профессиональное суждение успешно сохранено');
+            message.success('Экспертное суждение сохранено');
             form.resetFields();
             onClose();
-        } catch (error) {
+        } catch {
             message.error('Ошибка при сохранении суждения');
         }
     };
 
     return (
         <Modal
-            title="Эвристическая корректировка (Проф. суждение)"
+            title="Экспертная корректировка"
             open={isOpen}
             onCancel={onClose}
             onOk={() => form.submit()}
@@ -58,33 +48,31 @@ export const ExpertJudgmentModal: React.FC<ExpertJudgmentModalProps> = ({
             cancelText="Отмена"
         >
             <Form form={form} layout="vertical" onFinish={handleFinish}>
-                <Form.Item label="Расчетный уровень (Система)">
+                <Form.Item label="Расчетный уровень">
                     <Input disabled value={calculatedLevel} />
                 </Form.Item>
-
-                <Form.Item 
-                    name="adjustedLevel" 
-                    label="Ручная корректировка (Уровень)"
-                >
-                    <Select placeholder="Выберите новый уровень (если требуется)">
-                        <Option value="Низкий">Низкий</Option>
-                        <Option value="Средний">Средний</Option>
-                        <Option value="Высокий">Высокий</Option>
-                    </Select>
+                <Form.Item name="adjustedLevel" label="Ручная корректировка">
+                    <Select
+                        allowClear
+                        placeholder="Выберите новый уровень"
+                        options={[
+                            { value: 'Высокий уровень', label: 'Высокий уровень' },
+                            { value: 'Уровень выше среднего', label: 'Уровень выше среднего' },
+                            { value: 'Средний уровень', label: 'Средний уровень' },
+                            { value: 'Уровень ниже среднего', label: 'Уровень ниже среднего' },
+                            { value: 'Низкий уровень', label: 'Низкий уровень' },
+                            { value: 'Невозможно измерить', label: 'Невозможно измерить' },
+                        ]}
+                    />
                 </Form.Item>
-
-                <Form.Item 
-                    name="justificationText" 
-                    label="Обоснование (Обязательно)"
-                    rules={[{ required: true, message: 'Необходимо указать причину корректировки или невозможности измерения' }]}
+                <Form.Item
+                    name="justificationText"
+                    label="Обоснование"
+                    rules={[{ required: true, min: 10, message: 'Укажите обоснование не короче 10 символов' }]}
                 >
-                    <TextArea rows={4} placeholder="Введите проф. суждение..." />
+                    <TextArea rows={4} />
                 </Form.Item>
-
-                <Form.Item 
-                    name="linkedRiskTask" 
-                    label="Ссылка на задачу (СУЗ/Jira)"
-                >
+                <Form.Item name="linkedRiskTask" label="Ссылка на задачу">
                     <Input placeholder="https://jira.domain.local/browse/TASK-123" />
                 </Form.Item>
             </Form>

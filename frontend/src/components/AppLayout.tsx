@@ -1,19 +1,16 @@
-/**
- * Корпоративный Layout приложения (Оболочка).
- * Включает боковую панель навигации (Sider), зависящую от роли пользователя, 
- * и верхнюю панель (Header) с профилем и кнопкой выхода.
- */
 import React, { useState } from 'react';
-import { Layout, Menu, Button, Typography, Dropdown, Space } from 'antd';
-import { 
-    DashboardOutlined, 
-    FormOutlined, 
-    SafetyCertificateOutlined, 
+import { Button, Dropdown, Layout, Menu, Typography } from 'antd';
+import {
+    DashboardOutlined,
+    FormOutlined,
+    LogoutOutlined,
     SettingOutlined,
     UserOutlined,
-    LogoutOutlined
 } from '@ant-design/icons';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { RootState } from '../store';
+import { logout } from '../store/slices/authSlice';
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -26,51 +23,41 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const [collapsed, setCollapsed] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
-    
-    // В реальном приложении получаем из Redux (authSlice)
-    const role = localStorage.getItem('role') || 'ANALYST'; 
-    const userName = localStorage.getItem('full_name') || 'Пользователь';
+    const dispatch = useDispatch();
+    const { role, fullName } = useSelector((state: RootState) => state.auth);
+    const userRole = role || 'GUEST';
 
-    /**
-     * Динамическое формирование меню на основе Role-Based Access Control (RBAC).
-     */
     const menuItems = [
         { key: '/dashboard', icon: <DashboardOutlined />, label: 'Дашборд' },
-        // Пункты для Аналитика и Менеджера
-        ...(role !== 'GUEST' ? [
-            { key: '/assessments/new', icon: <FormOutlined />, label: 'Новая оценка' },
-        ] : []),
-        // Пункты строго для Менеджера по качеству и Админа
-        ...(['QUALITY_MANAGER', 'ADMIN'].includes(role) ? [
-            { key: '/assessments/review', icon: <SafetyCertificateOutlined />, label: 'Экспертиза' },
-        ] : []),
-        // Админ-панель
-        ...(role === 'ADMIN' ? [
-            { key: '/admin/flags', icon: <SettingOutlined />, label: 'Настройки' },
-        ] : []),
+        ...(['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN'].includes(userRole)
+            ? [{ key: '/assessments/new', icon: <FormOutlined />, label: 'Новая оценка' }]
+            : []),
+        ...(userRole === 'ADMIN'
+            ? [{ key: '/admin/flags', icon: <SettingOutlined />, label: 'Настройки' }]
+            : []),
     ];
 
     const handleLogout = () => {
-        localStorage.clear();
+        dispatch(logout());
         navigate('/login');
     };
 
     const userMenu = {
         items: [
-            { key: 'logout', danger: true, icon: <LogoutOutlined />, label: 'Выйти', onClick: handleLogout }
-        ]
+            { key: 'logout', danger: true, icon: <LogoutOutlined />, label: 'Выйти', onClick: handleLogout },
+        ],
     };
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
-            <Sider collapsible collapsed={collapsed} onCollapse={(value) => setCollapsed(value)} theme="dark" width={240}>
-                <div style={{ height: 32, margin: 16, background: 'rgba(255, 255, 255, 0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text strong style={{ color: 'white' }}>{!collapsed ? 'АСОК ИС' : 'АСОК'}</Text>
+            <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} theme="dark" width={240}>
+                <div style={{ height: 32, margin: 16, background: 'rgba(255,255,255,0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text strong style={{ color: 'white' }}>{collapsed ? 'АСОК' : 'АСОК ИС'}</Text>
                 </div>
-                <Menu 
-                    theme="dark" 
-                    mode="inline" 
-                    selectedKeys={[location.pathname]} 
+                <Menu
+                    theme="dark"
+                    mode="inline"
+                    selectedKeys={[location.pathname]}
                     items={menuItems}
                     onClick={({ key }) => navigate(key)}
                 />
@@ -80,11 +67,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     <Title level={4} style={{ margin: 0, color: '#1F3864' }}>Система оценки качества</Title>
                     <Dropdown menu={userMenu} placement="bottomRight">
                         <Button type="text" icon={<UserOutlined />}>
-                            {userName} ({role})
+                            {fullName || 'Пользователь'} ({userRole})
                         </Button>
                     </Dropdown>
                 </Header>
-                <Content style={{ margin: '24px', background: '#fff', borderRadius: 8, padding: 24, minHeight: 280 }}>
+                <Content style={{ margin: 24, background: '#fff', borderRadius: 8, padding: 24, minHeight: 280 }}>
                     {children}
                 </Content>
             </Layout>

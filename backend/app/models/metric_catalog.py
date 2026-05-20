@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, Text, Enum as SQLEnum
 import enum
-from app.core.database import Base
+from app.db.base import Base
 
 class FormulaType(enum.Enum):
     DIRECT = "DIRECT"

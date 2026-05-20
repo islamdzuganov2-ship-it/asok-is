@@ -1,165 +1,104 @@
-/**
- * Экран "Экспертиза и ревью" (Роль: Менеджер по качеству, Администратор).
- * Реализует паттерн Management by Exception (ТЗ п.3.2).
- * Отображает рассчитанные ядром метрики, подсвечивает проблемные зоны (<40%) 
- * и позволяет применять эвристические корректировки.
- */
 import React, { useState } from 'react';
-import { Table, Typography, Tag, Button, Space, Card, Progress } from 'antd';
+import { Alert, Button, Card, Progress, Space, Spin, Table, Tag, Typography } from 'antd';
 import { useParams } from 'react-router-dom';
+import { CalculatedMetric, useGetCalculatedMetricsQuery } from '../store/api/apiSlice';
 import { ExpertJudgmentModal } from '../components/ExpertJudgmentModal';
 
 const { Title, Text } = Typography;
 
-// DTO для отображения рассчитанных метрик (в реальности приходит из API)
-interface CalculatedMetric {
-    id: string;
-    name: string;
-    calculatedX: number; // От 0 до 100%
-    systemLevel: 'Низкий' | 'Средний' | 'Высокий';
-    adjustedLevel?: 'Низкий' | 'Средний' | 'Высокий';
-    expertComment?: string;
-}
-
 export const ExpertReviewPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
-    
-    // Стейт для управления модальным окном проф. суждения
+    const { data: metrics, isLoading, isError } = useGetCalculatedMetricsQuery(id!, { skip: !id });
     const [modalConfig, setModalConfig] = useState<{
         isOpen: boolean;
         metricId: string;
-        currentLevel: 'Низкий' | 'Средний' | 'Высокий';
-    }>({ isOpen: false, metricId: '', currentLevel: 'Средний' });
+        currentLevel: string;
+    }>({ isOpen: false, metricId: '', currentLevel: '' });
 
-    // Mock-данные (ожидается использование useGetCalculatedMetricsQuery(id))
-    const [metrics] = useState<CalculatedMetric[]>([
-        { id: '1', name: 'Плотность дефектов', calculatedX: 85, systemLevel: 'Высокий' },
-        { id: '2', name: 'Покрытие автотестами', calculatedX: 35, systemLevel: 'Низкий' },
-        { id: '3', name: 'Частота релизов', calculatedX: 55, systemLevel: 'Средний', adjustedLevel: 'Высокий', expertComment: 'Согласовано с архитектором: специфика legacy системы.' },
-    ]);
-
-    /**
-     * Обработчик открытия модального окна для оспаривания оценки.
-     */
     const handleChallenge = (record: CalculatedMetric) => {
         setModalConfig({
             isOpen: true,
             metricId: record.id,
-            currentLevel: record.systemLevel
+            currentLevel: record.systemLevel,
         });
     };
 
-    /**
-     * Закрытие модального окна и рефетч данных (в реальном приложении через invalidateTags).
-     */
-    const handleModalClose = () => {
-        setModalConfig({ ...modalConfig, isOpen: false });
-        // Здесь должен быть refetch() если бы мы использовали RTK Query
+    const getLevelColor = (level: string) => {
+        if (level.includes('Высок')) return 'success';
+        if (level.includes('Сред')) return 'warning';
+        if (level.includes('Низ') || level.includes('невозможно')) return 'error';
+        return 'default';
     };
 
-    /**
-     * Функция для определения цвета тега уровня.
-     */
-    const getLevelColor = (level: string) => {
-        switch (level) {
-            case 'Высокий': return 'success';
-            case 'Средний': return 'warning';
-            case 'Низкий': return 'error';
-            default: return 'default';
-        }
-    };
+    if (isLoading) {
+        return <Spin size="large" style={{ display: 'flex', margin: '20vh auto' }} />;
+    }
+    if (isError) {
+        return <Alert type="error" showIcon message="Не удалось загрузить рассчитанные метрики" />;
+    }
 
     const columns = [
-        { 
-            title: 'Метрика', 
-            dataIndex: 'name', 
-            key: 'name',
-            width: '25%',
-        },
+        { title: 'Метрика', dataIndex: 'name', key: 'name', width: '30%' },
         {
-            title: 'Расчет (Ядро)',
+            title: 'Расчет',
             dataIndex: 'calculatedX',
             key: 'calculatedX',
-            width: '15%',
-            render: (val: number) => (
-                <Progress 
-                    percent={val} 
-                    size="small" 
-                    status={val < 40 ? 'exception' : val < 80 ? 'normal' : 'success'} 
-                />
-            )
+            width: '18%',
+            render: (value: number) => (
+                <Progress percent={value} size="small" status={value < 41 ? 'exception' : value < 81 ? 'normal' : 'success'} />
+            ),
         },
         {
             title: 'Системный уровень',
             dataIndex: 'systemLevel',
             key: 'systemLevel',
-            width: '15%',
-            render: (val: string) => <Tag color={getLevelColor(val)}>{val}</Tag>
+            width: '18%',
+            render: (value: string) => <Tag color={getLevelColor(value)}>{value}</Tag>,
         },
         {
-            title: 'Корректировка (Суждение)',
-            key: 'adjustedLevel',
-            width: '25%',
-            render: (_: any, record: CalculatedMetric) => {
-                if (record.adjustedLevel) {
-                    return (
-                        <Space direction="vertical" size="small">
-                            <Tag color={getLevelColor(record.adjustedLevel)}>{record.adjustedLevel} (Ручн.)</Tag>
-                            <Text type="secondary" style={{ fontSize: '12px' }}>{record.expertComment}</Text>
-                        </Space>
-                    );
-                }
-                return <Text type="secondary">Нет корректировок</Text>;
-            }
+            title: 'Комментарий',
+            key: 'expertComment',
+            width: '22%',
+            render: (_: unknown, record: CalculatedMetric) => (
+                <Space direction="vertical" size="small">
+                    {record.adjustedLevel && <Tag color={getLevelColor(record.adjustedLevel)}>{record.adjustedLevel}</Tag>}
+                    <Text type="secondary" style={{ fontSize: 12 }}>{record.expertComment || 'Нет комментария'}</Text>
+                </Space>
+            ),
         },
         {
             title: 'Действия',
             key: 'actions',
-            width: '20%',
-            render: (_: any, record: CalculatedMetric) => (
-                <Button 
-                    type={record.calculatedX < 40 ? "primary" : "default"} 
-                    danger={record.calculatedX < 40}
-                    onClick={() => handleChallenge(record)}
-                >
-                    Оспорить (Суждение)
+            width: '12%',
+            render: (_: unknown, record: CalculatedMetric) => (
+                <Button type={record.calculatedX < 41 ? 'primary' : 'default'} danger={record.calculatedX < 41} onClick={() => handleChallenge(record)}>
+                    Оспорить
                 </Button>
-            )
-        }
+            ),
+        },
     ];
 
     return (
         <div>
-            <Title level={3}>Экспертиза и утверждение оценки (ID: {id})</Title>
-            
+            <Title level={3}>Экспертиза и утверждение оценки</Title>
             <Card style={{ marginBottom: 24 }}>
-                <Text strong type="danger">Внимание: </Text>
-                <Text>Метрики с результатом ниже 40% (Красная зона) требуют обязательного анализа. Вы можете принять системный расчет или применить эвристическую корректировку.</Text>
+                <Text>Метрики ниже 41% требуют управленческого внимания и могут быть скорректированы экспертным суждением.</Text>
             </Card>
-
-            <Table 
-                dataSource={metrics} 
-                columns={columns} 
-                rowKey="id" 
+            <Table
+                dataSource={metrics || []}
+                columns={columns}
+                rowKey="id"
                 pagination={false}
                 bordered
-                // Подсветка строк в красной зоне (ТЗ п.3.2)
-                rowClassName={(record) => record.calculatedX < 40 && !record.adjustedLevel ? 'red-zone-row' : ''}
+                rowClassName={(record) => record.calculatedX < 41 ? 'red-zone-row' : ''}
             />
-
-            <ExpertJudgmentModal 
+            <ExpertJudgmentModal
                 isOpen={modalConfig.isOpen}
-                onClose={handleModalClose}
+                onClose={() => setModalConfig({ ...modalConfig, isOpen: false })}
                 metricId={modalConfig.metricId}
                 calculatedLevel={modalConfig.currentLevel}
             />
-
-            {/* Добавляем стили прямо в компонент для подсветки */}
-            <style>{`
-                .red-zone-row {
-                    background-color: #fff1f0;
-                }
-            `}</style>
+            <style>{`.red-zone-row { background-color: #fff1f0; }`}</style>
         </div>
     );
 };

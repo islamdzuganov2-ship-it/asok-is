@@ -4,7 +4,7 @@ from sqlalchemy import String, DateTime
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Column, String, Integer, ForeignKey
-from app.core.database import Base
+from app.db.base import Base
 from app.models.base_mixin import TimestampMixin
 
 class ExpertJudgment(Base):

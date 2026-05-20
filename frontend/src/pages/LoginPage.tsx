@@ -1,45 +1,51 @@
-/**
- * Экран аутентификации.
- * Обеспечивает вход в систему, получение JWT токена и инициализацию ролевой модели.
- */
 import React, { useState } from 'react';
-import { Form, Input, Button, Card, Typography, message, Layout } from 'antd';
-import { UserOutlined, LockOutlined } from '@ant-design/icons';
+import { Button, Card, Form, Input, Layout, Typography, message } from 'antd';
+import { LockOutlined, UserOutlined } from '@ant-design/icons';
+import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-// В реальном проекте используем мутацию RTK Query:
-// import { useLoginMutation } from '../store/api/authApi';
+import { setCredentials } from '../store/slices/authSlice';
 
 const { Title, Text } = Typography;
 
+interface LoginResponse {
+    access_token: string;
+    role: string;
+    full_name?: string;
+}
+
 export const LoginPage: React.FC = () => {
     const navigate = useNavigate();
+    const dispatch = useDispatch();
     const [loading, setLoading] = useState(false);
-    // const [loginMutation] = useLoginMutation();
 
-    /**
-     * Обработчик отправки формы логина.
-     */
-    const onFinish = async (values: any) => {
+    const onFinish = async (values: { username: string; password: string }) => {
         setLoading(true);
         try {
-            // Имитация API вызова. Заменить на:
-            // const response = await loginMutation(values).unwrap();
-            // localStorage.setItem('token', response.access_token);
-            // localStorage.setItem('role', response.role);
-            
-            // Заглушка для демо-режима:
-            setTimeout(() => {
-                localStorage.setItem('token', 'demo-jwt-token-12345');
-                // Присваиваем роль Администратора для тестирования всех экранов
-                localStorage.setItem('role', 'ADMIN'); 
-                localStorage.setItem('full_name', 'Иванов И.И.');
-                
-                message.success('Успешный вход в систему');
-                navigate('/dashboard', { replace: true });
-            }, 800);
-            
-        } catch (error) {
+            const response = await fetch(
+                `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'}/auth/login`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(values),
+                },
+            );
+            if (!response.ok) {
+                throw new Error('Login failed');
+            }
+
+            const data = (await response.json()) as LoginResponse;
+            dispatch(
+                setCredentials({
+                    token: data.access_token,
+                    role: data.role,
+                    fullName: data.full_name || values.username,
+                }),
+            );
+            message.success('Успешный вход в систему');
+            navigate('/dashboard', { replace: true });
+        } catch {
             message.error('Ошибка авторизации. Проверьте логин и пароль.');
+        } finally {
             setLoading(false);
         }
     };
@@ -52,23 +58,12 @@ export const LoginPage: React.FC = () => {
                     <Text type="secondary">Автоматизированная система оценки качества</Text>
                 </div>
 
-                <Form
-                    name="login_form"
-                    initialValues={{ remember: true }}
-                    onFinish={onFinish}
-                    size="large"
-                >
-                    <Form.Item
-                        name="username"
-                        rules={[{ required: true, message: 'Пожалуйста, введите имя пользователя!' }]}
-                    >
-                        <Input prefix={<UserOutlined />} placeholder="Имя пользователя (AD / LDAP)" />
+                <Form name="login_form" onFinish={onFinish} size="large">
+                    <Form.Item name="username" rules={[{ required: true, message: 'Введите имя пользователя' }]}>
+                        <Input prefix={<UserOutlined />} placeholder="admin / analyst / manager" />
                     </Form.Item>
 
-                    <Form.Item
-                        name="password"
-                        rules={[{ required: true, message: 'Пожалуйста, введите пароль!' }]}
-                    >
+                    <Form.Item name="password" rules={[{ required: true, message: 'Введите пароль' }]}>
                         <Input.Password prefix={<LockOutlined />} placeholder="Пароль" />
                     </Form.Item>
 

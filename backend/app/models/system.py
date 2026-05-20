@@ -2,7 +2,7 @@ from sqlalchemy import Column, String, Boolean, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 import enum
-from app.core.database import Base
+from app.db.base import Base
 from app.models.base_mixin import TimestampMixin
 
 class LifecycleStatus(enum.Enum):

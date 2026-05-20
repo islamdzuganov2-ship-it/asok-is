@@ -1,100 +1,77 @@
-/**
- * Экран инициализации новой оценки (Роли: Аналитик, Менеджер, Админ).
- * Позволяет выбрать информационную систему из справочника и запустить процесс сбора метрик.
- */
-import React, { useState } from 'react';
-import { Card, Form, Select, Input, Button, Typography, message, Space } from 'antd';
+import React, { useMemo } from 'react';
+import { Alert, Button, Card, Form, Select, Space, Typography, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
-// В реальном проекте раскомментировать хуки:
-// import { useGetSystemsQuery, useCreateAssessmentMutation } from '../store/api/apiSlice';
+import { useCreateAssessmentPeriodMutation, useGetSystemsQuery } from '../store/api/apiSlice';
 
 const { Title, Text } = Typography;
-const { Option } = Select;
 
 export const NewAssessmentPage: React.FC = () => {
     const [form] = Form.useForm();
     const navigate = useNavigate();
-    const [loading, setLoading] = useState(false);
+    const { data: systems, isLoading, isError } = useGetSystemsQuery();
+    const [createAssessment, { isLoading: isCreating }] = useCreateAssessmentPeriodMutation();
 
-    // Mock-данные систем (должны приходить из useGetSystemsQuery)
-    const mockSystems = [
-        { id: 'sys-1', name: 'CRM ОПК', code: 'CRM_OPK' },
-        { id: 'sys-2', name: 'АБС Core', code: 'ABS_CORE' },
-        { id: 'sys-3', name: 'Портал HR', code: 'HR_PORTAL' },
-    ];
+    const periodOptions = useMemo(() => {
+        const year = new Date().getFullYear();
+        return [year, year - 1].flatMap((item) => [4, 3, 2, 1].map((quarter) => `Q${quarter}-${item}`));
+    }, []);
 
-    /**
-     * Обработчик создания новой сессии оценки.
-     */
-    const handleFinish = async (values: { systemId: string; period: string; comments?: string }) => {
-        setLoading(true);
+    const handleFinish = async (values: { system_id: string; period: string }) => {
         try {
-            // Имитация задержки сети. Заменить на: await createAssessment(values).unwrap();
-            await new Promise(resolve => setTimeout(resolve, 800));
-            
-            message.success('Сессия оценки успешно инициализирована');
-            // Перенаправляем аналитика сразу на экран ввода метрик (Mock ID = 123)
-            navigate('/assessments/123/input'); 
-        } catch (error) {
-            message.error('Не удалось создать сессию оценки. Проверьте соединение с сервером.');
-        } finally {
-            setLoading(false);
+            const result = await createAssessment(values).unwrap();
+            message.success('Сессия оценки создана');
+            navigate(`/assessments/${result.id}/input`);
+        } catch (error: any) {
+            if (error?.status === 409) {
+                message.error('Оценка для выбранной системы и периода уже существует');
+                return;
+            }
+            message.error('Не удалось создать сессию оценки');
         }
     };
 
     return (
-        <div style={{ maxWidth: 600, margin: '0 auto', paddingTop: 24 }}>
+        <div style={{ maxWidth: 640, margin: '0 auto', paddingTop: 24 }}>
             <Space direction="vertical" size="large" style={{ display: 'flex' }}>
                 <div>
                     <Title level={3} style={{ color: '#1F3864', marginBottom: 8 }}>Новая оценка ИС</Title>
-                    <Text type="secondary">Выберите информационную систему и отчетный период для инициализации расчета метрик качества (ISO 25010).</Text>
+                    <Text type="secondary">Выберите информационную систему и отчетный период.</Text>
                 </div>
 
+                {isError && <Alert type="error" showIcon message="Не удалось загрузить справочник систем" />}
+
                 <Card>
-                    <Form 
-                        form={form} 
-                        layout="vertical" 
-                        onFinish={handleFinish}
-                        initialValues={{ period: 'Q2 2026' }}
-                    >
-                        <Form.Item 
-                            name="systemId" 
-                            label="Информационная система" 
+                    <Form form={form} layout="vertical" onFinish={handleFinish} initialValues={{ period: periodOptions[0] }}>
+                        <Form.Item
+                            name="system_id"
+                            label="Информационная система"
                             rules={[{ required: true, message: 'Выберите систему из реестра' }]}
                         >
                             <Select
+                                loading={isLoading}
                                 showSearch
                                 placeholder="Начните вводить название ИС"
-                                filterOption={(input, option) =>
-                                    (option?.children as unknown as string).toLowerCase().includes(input.toLowerCase())
-                                }
-                            >
-                                {mockSystems.map(sys => (
-                                    <Option key={sys.id} value={sys.id}>{sys.name} ({sys.code})</Option>
-                                ))}
-                            </Select>
+                                optionFilterProp="label"
+                                options={(systems?.items || []).map((system) => ({
+                                    value: system.id,
+                                    label: `${system.name}${system.code ? ` (${system.code})` : ''}`,
+                                }))}
+                            />
                         </Form.Item>
 
-                        <Form.Item 
-                            name="period" 
-                            label="Отчетный период" 
+                        <Form.Item
+                            name="period"
+                            label="Отчетный период"
                             rules={[{ required: true, message: 'Укажите период оценки' }]}
                         >
-                            <Input placeholder="Например: Q3 2026 или 2026-08" />
-                        </Form.Item>
-
-                        <Form.Item 
-                            name="comments" 
-                            label="Комментарий к сессии (опционально)"
-                        >
-                            <Input.TextArea rows={3} placeholder="Дополнительная информация для менеджера по качеству..." />
+                            <Select options={periodOptions.map((period) => ({ value: period, label: period }))} />
                         </Form.Item>
 
                         <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
                             <Button onClick={() => navigate('/dashboard')} style={{ marginRight: 8 }}>
                                 Отмена
                             </Button>
-                            <Button type="primary" htmlType="submit" loading={loading}>
+                            <Button type="primary" htmlType="submit" loading={isCreating}>
                                 Инициализировать
                             </Button>
                         </Form.Item>

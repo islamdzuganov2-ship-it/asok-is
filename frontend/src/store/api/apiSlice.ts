@@ -14,18 +14,47 @@ export interface DashboardData {
     heatmapData: Array<[number, number, number]>;
     xAxisLabels: string[];
     yAxisLabels: string[];
-    problematicSystems: ProblematicSystem[]; // Добавлено для DashboardPage
+    problematicSystems: ProblematicSystem[];
+}
+
+export interface SystemItem {
+    id: string;
+    name: string;
+    code?: string;
+    status_lc: string;
+    criticality_class: string;
+    is_active: boolean;
+}
+
+export interface SystemsListResponse {
+    items: SystemItem[];
+    total: number;
+    page: number;
+    limit: number;
+}
+
+export interface PeriodCreateDto {
+    system_id: string;
+    period: string;
+}
+
+export interface PeriodDto {
+    id: string;
+    system_id: string;
+    period: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface ExpertJudgmentDto {
     metricId: string;
-    calculatedLevel: 'Низкий' | 'Средний' | 'Высокий';
-    adjustedLevel?: 'Низкий' | 'Средний' | 'Высокий';
+    calculatedLevel: string;
+    adjustedLevel?: string;
     justificationText: string;
     linkedRiskTask?: string;
 }
 
-// Добавленные интерфейсы для экранов ввода и ревью
 export interface EditableMetric {
     id: string;
     name: string;
@@ -39,14 +68,14 @@ export interface CalculatedMetric {
     id: string;
     name: string;
     calculatedX: number;
-    systemLevel: 'Низкий' | 'Средний' | 'Высокий';
-    adjustedLevel?: 'Низкий' | 'Средний' | 'Высокий';
+    systemLevel: string;
+    adjustedLevel?: string;
     expertComment?: string;
 }
 
 export const apiSlice = createApi({
     reducerPath: 'api',
-    baseQuery: fetchBaseQuery({ 
+    baseQuery: fetchBaseQuery({
         baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
         prepareHeaders: (headers, { getState }) => {
             const token = (getState() as RootState).auth.token || localStorage.getItem('token');
@@ -56,11 +85,23 @@ export const apiSlice = createApi({
             return headers;
         },
     }),
-    tagTypes: ['Assessment', 'Dashboard', 'Metrics'],
+    tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems'],
     endpoints: (builder) => ({
         getExecutiveDashboard: builder.query<DashboardData, void>({
             query: () => '/reports/executive-dashboard',
             providesTags: ['Dashboard'],
+        }),
+        getSystems: builder.query<SystemsListResponse, void>({
+            query: () => '/systems?is_active=true&limit=100',
+            providesTags: ['Systems'],
+        }),
+        createAssessmentPeriod: builder.mutation<PeriodDto, PeriodCreateDto>({
+            query: (body) => ({
+                url: '/assessments/periods',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['Assessment', 'Dashboard'],
         }),
         submitExpertJudgment: builder.mutation<void, ExpertJudgmentDto>({
             query: (body) => ({
@@ -70,18 +111,17 @@ export const apiSlice = createApi({
             }),
             invalidatesTags: ['Assessment', 'Dashboard'],
         }),
-        // Новые эндпоинты
         getAssessmentMetrics: builder.query<EditableMetric[], string>({
             query: (id) => `/assessments/${id}/metrics`,
             providesTags: ['Metrics'],
         }),
-        saveAssessmentMetrics: builder.mutation<void, { id: string; metrics: EditableMetric[] }>({
+        saveAssessmentMetrics: builder.mutation<EditableMetric[], { id: string; metrics: EditableMetric[] }>({
             query: ({ id, metrics }) => ({
                 url: `/assessments/${id}/metrics`,
                 method: 'PUT',
                 body: metrics,
             }),
-            invalidatesTags: ['Metrics', 'Assessment'],
+            invalidatesTags: ['Metrics', 'Assessment', 'Dashboard'],
         }),
         getCalculatedMetrics: builder.query<CalculatedMetric[], string>({
             query: (id) => `/assessments/${id}/calculated`,
@@ -90,10 +130,12 @@ export const apiSlice = createApi({
     }),
 });
 
-export const { 
-    useGetExecutiveDashboardQuery, 
-    useSubmitExpertJudgmentMutation,
+export const {
+    useCreateAssessmentPeriodMutation,
     useGetAssessmentMetricsQuery,
+    useGetCalculatedMetricsQuery,
+    useGetExecutiveDashboardQuery,
+    useGetSystemsQuery,
     useSaveAssessmentMetricsMutation,
-    useGetCalculatedMetricsQuery
+    useSubmitExpertJudgmentMutation,
 } = apiSlice;
