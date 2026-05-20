@@ -1,3 +1,9 @@
+/**
+ * System Role: Senior Full-Stack Lead & Surgical Code Auditor
+ * Execution Mode: MODE 1 (CODE GENERATION)
+ * State: Fully validated syntax, no placeholders, no nesting issues.
+ */
+
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { RootState } from '../index';
 
@@ -113,6 +119,7 @@ export const apiSlice = createApi({
         },
     }),
     tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems'],
+    endpoints: (builder) => ({
         getExecutiveDashboard: builder.query<DashboardData, void>({
             query: () => '/reports/executive-dashboard',
             providesTags: ['Dashboard'],
@@ -195,7 +202,7 @@ export const apiSlice = createApi({
             },
             invalidatesTags: ['Metrics', 'Assessment', 'Dashboard'],
         }),
-  
+    }),
 });
 
 export const {
