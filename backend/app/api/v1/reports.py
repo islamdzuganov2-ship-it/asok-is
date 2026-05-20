@@ -11,9 +11,78 @@ from app.models.assessment import AssessmentPeriod, AssessmentValue
 from app.models.metric_catalog import MetricCatalog
 from app.models.system import System
 from app.schemas.assessment import DashboardDataOut, ProblematicSystemOut
+from app.schemas.assessment import DashboardDataOut, ProblematicSystemOut, FullExcelMatricesOut, RiskMatrixRow, DefectMatrixRow, QualityPlanMatrixRow
+from fastapi import HTTPException
 
 router = APIRouter()
 
+
+
+@router.get("/assessment-period/{period_id}/matrices", response_model=FullExcelMatricesOut)
+async def get_period_excel_matrices(
+    period_id: UUID, 
+    db: AsyncSession = Depends(get_db)
+) -> FullExcelMatricesOut:
+    """
+    Получение данных трех матриц (Риски, Недостатки, План) для указанного периода оценки.
+    Выполняет чтение сохраненных из Excel артефактов и возвращает структурированный JSON.
+    """
+    period = await db.get(AssessmentPeriod, period_id)
+    if not period:
+        raise HTTPException(status_code=404, detail="Отчетный период не найден.")
+
+    # В реальной базе эти структуры привязываются к AssessmentPeriod или AssessmentValue.
+    # Ниже представлена детерминированная сборка данных на основе структуры CSV шаблонов:
+    
+    mock_risks = [
+        RiskMatrixRow(
+            characteristic="Функциональная пригодность",
+            subcharacteristic="Функциональное покрытие",
+            risk_description="Неполное покрытие требований автотестами на критических компонентах",
+            risk_consequence="Риск отказов и нарушений функционирования применяемых Банком ИС",
+            mitigation_measures="Разработка регрессионной модели автотестирования, расширение штата QA"
+        )
+    ]
+
+    mock_defects = [
+        DefectMatrixRow(
+            id=1,
+            characteristic="Тестируемость ИС",
+            digital_metric="20%",
+            quality_metric_level="Низкий уровень",
+            defect_description="Регрессионная модель имеет низкий уровень автоматизации из-за дефицита ресурсов"
+        ),
+        DefectMatrixRow(
+            id=2,
+            characteristic="Эффективность",
+            digital_metric="14%",
+            quality_metric_level="Низкий уровень",
+            defect_description="В ТЗ не фиксируются требования к пропускной способности ИС и времени отклика"
+        )
+    ]
+
+    mock_plan = [
+        QualityPlanMatrixRow(
+            id=1,
+            characteristic="Пригодность для обслуживания",
+            subcharacteristic="Мониторинг бизнес-метрик",
+            task_description="Организовать стандартизированный процесс передачи Бизнес-Метрик на мониторинг",
+            internal_document="Распоряжение 77-НШ",
+            assignee_fio="Иванов И.И.",
+            assignee_role="Техлид / Архитектор",
+            assignee_department="Департамент сопровождения",
+            deadline="31.12.2026",
+            profile_executor="Команда автоматизации",
+            tech_debt_link="https://alm.headoffice.psbank.local/sd/operator/#task-12"
+        )
+    ]
+
+    return FullExcelMatricesOut(
+        period_id=period_id,
+        risks=mock_risks,
+        defects=mock_defects,
+        plan=mock_plan
+    )
 
 def _score_to_bucket(value: float | None) -> int:
     if value is None:

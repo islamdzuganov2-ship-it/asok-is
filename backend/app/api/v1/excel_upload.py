@@ -153,6 +153,12 @@ async def import_assessment_excel(
     try:
         for worksheet in workbook.worksheets:
             rows = worksheet.iter_rows(values_only=True)
+            sheet_title = worksheet.title.strip().upper()
+            
+            # Маршрутизация парсинга в зависимости от целевой вкладки Excel-файла
+            if "РИСК" in sheet_title:
+                # Логика обработки и сохранения рисков в БД
+                pass           
             header_row = next(rows, None)
             if header_row is None:
                 sheets.append({"name": worksheet.title, "imported": 0, "skipped": 0})

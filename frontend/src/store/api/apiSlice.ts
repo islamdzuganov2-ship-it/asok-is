@@ -117,6 +117,18 @@ export const apiSlice = createApi({
         getExecutiveDashboard: builder.query<DashboardData, void>({
             query: () => '/reports/executive-dashboard',
             providesTags: ['Dashboard'],
+        getExcelReports: builder.query<any, void>({
+            query: () => '/reports/excel-data',
+        getExcelMatrices: builder.query<any, string>({
+            query: (periodId) => `/assessment-period/${periodId}/matrices`,    
+        }),
+        uploadExcelReport: builder.mutation<any, FormData>({
+            query: (formData) => ({
+                url: '/reports/upload',
+                method: 'POST',
+                body: formData,
+            }),
+        }),
         }),
         getSystems: builder.query<SystemsListResponse, void>({
             query: () => '/systems?is_active=true&limit=100',

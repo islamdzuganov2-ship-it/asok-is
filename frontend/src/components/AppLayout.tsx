@@ -5,6 +5,7 @@ import {
     FormOutlined,
     LogoutOutlined,
     SettingOutlined,
+    FileExcelOutlined,
     UserOutlined,
 } from '@ant-design/icons';
 import { useDispatch, useSelector } from 'react-redux';
@@ -32,6 +33,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ...(['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN'].includes(userRole)
             ? [{ key: '/assessments/new', icon: <FormOutlined />, label: 'Новая оценка' }]
             : []),
+        { key: '/reports', icon: <FileExcelOutlined />, label: 'Отчеты и реестры' },
         ...(userRole === 'ADMIN'
             ? [{ key: '/admin/flags', icon: <SettingOutlined />, label: 'Настройки' }]
             : []),
