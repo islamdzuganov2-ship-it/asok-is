@@ -1,69 +1,102 @@
-/**
- * ТЗ: Отображение трех Excel-файлов (Риски, Недостатки, План качества) в виде вкладок.
- * Реализация включает базовые таблицы (Ant Design) с колонками, спроектированными 
- * под структуру предоставленных CSV/Excel шаблонов.
- */
 import React from 'react';
 import { Typography, Tabs, Table, Card, Button, Upload, message, Space, Spin, Alert } from 'antd';
-import type { TabsProps } from 'antd';
-import React, { useState } from 'react';
-import { Typography, Tabs, Table, Card, Button, Upload, message, Space } from 'antd';
 import { UploadOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { TabsProps, UploadProps } from 'antd';
-import { useParams } from 'react-router-dom';
 import { useGetExcelMatricesQuery } from '../store/api/apiSlice';
+
 const { Title } = Typography;
 
-// --- КОЛОНКИ ДЛЯ ТАБЛИЦ (На основе заголовков из Excel) ---
-
+// Безопасные маппинги колонок, поддерживающие оба формата (camelCase и snake_case)
 const risksColumns = [
     { title: 'Характеристика', dataIndex: 'characteristic', key: 'characteristic' },
-    { title: 'Подхарактеристика', dataIndex: 'subCharacteristic', key: 'subCharacteristic' },
-    { title: 'Описание риска', dataIndex: 'riskDescription', key: 'riskDescription' },
-    { title: 'Последствие риска', dataIndex: 'riskConsequence', key: 'riskConsequence' },
-    { title: 'Меры по минимизации', dataIndex: 'mitigation', key: 'mitigation' },
+    { 
+        title: 'Подхарактеристика', 
+        dataIndex: 'subCharacteristic', 
+        key: 'subCharacteristic',
+        render: (text: string, record: any) => text || record.subcharacteristic || '-' 
+    },
+    { 
+        title: 'Описание риска', 
+        dataIndex: 'riskDescription', 
+        key: 'riskDescription',
+        render: (text: string, record: any) => text || record.risk_description || '-' 
+    },
+    { 
+        title: 'Последствие риска', 
+        dataIndex: 'riskConsequence', 
+        key: 'riskConsequence',
+        render: (text: string, record: any) => text || record.risk_consequence || '-' 
+    },
+    { 
+        title: 'Меры по минимизации', 
+        dataIndex: 'mitigation', 
+        key: 'mitigation',
+        render: (text: string, record: any) => text || record.mitigation_measures || '-' 
+    },
 ];
 
 const defectsColumns = [
     { title: '№', dataIndex: 'id', key: 'id', width: 60 },
     { title: 'Характеристика качества', dataIndex: 'characteristic', key: 'characteristic' },
-    { title: 'Показатель качества', dataIndex: 'qualityMetric', key: 'qualityMetric' },
-    { title: 'Цифровой показатель', dataIndex: 'digitalMetric', key: 'digitalMetric' },
-    { title: 'Описание недостатка ИС', dataIndex: 'defectDescription', key: 'defectDescription' },
+    { 
+        title: 'Показатель качества', 
+        dataIndex: 'qualityMetric', 
+        key: 'qualityMetric',
+        render: (text: string, record: any) => text || record.quality_metric_level || '-' 
+    },
+    { 
+        title: 'Цифровой показатель', 
+        dataIndex: 'digitalMetric', 
+        key: 'digitalMetric',
+        render: (text: string, record: any) => text || record.digital_metric || '-' 
+    },
+    { 
+        title: 'Описание недостатка ИС', 
+        dataIndex: 'defectDescription', 
+        key: 'defectDescription',
+        render: (text: string, record: any) => text || record.defect_description || '-' 
+    },
 ];
 
 const planColumns = [
     { title: '№', dataIndex: 'id', key: 'id', width: 60 },
     { title: 'Характеристика качества', dataIndex: 'characteristic', key: 'characteristic' },
-    { title: 'Описание задачи', dataIndex: 'taskDescription', key: 'taskDescription' },
-    { title: 'ВНД Банка', dataIndex: 'internalDocument', key: 'internalDocument' },
-    { title: 'Ответственный (ФИО)', dataIndex: 'assignee', key: 'assignee' },
+    { 
+        title: 'Описание задачи', 
+        dataIndex: 'taskDescription', 
+        key: 'taskDescription',
+        render: (text: string, record: any) => text || record.task_description || '-' 
+    },
+    { 
+        title: 'ВНД Банка', 
+        dataIndex: 'internalDocument', 
+        key: 'internalDocument',
+        render: (text: string, record: any) => text || record.internal_document || '-' 
+    },
+    { 
+        title: 'Ответственный (ФИО)', 
+        dataIndex: 'assignee', 
+        key: 'assignee',
+        render: (text: string, record: any) => text || record.assignee_fio || '-' 
+    },
     { title: 'Срок выполнения', dataIndex: 'deadline', key: 'deadline' },
 ];
 
-// --- КОМПОНЕНТ ---
-
 export const ExcelReportsPage: React.FC = () => {
-    // TODO: Интеграция с RTK Query для получения реальных данных, 
-    // парсинг CSV/XLSX через бэкенд или локально (papaparse/xlsx).
-    const dataSourceRisks: any[] = []; 
-    const dataSourceDefects: any[] = [];
-    const dataSourcePlan: any[] = [];
-    // В реальном сценарии periodId берется из контекста или URL. 
-    // Здесь используем хардкод для демонстрации или useParams(), если маршрут /reports/:periodId
-     const periodId = "00000000-0000-0000-0000-000000000000"; // TODO: заменить на динамический ID
+    // Временный дефолтный UUID, чтобы не вызывать падение при отсутствии параметров в URL
+    const periodId = "00000000-0000-0000-0000-000000000000"; 
     
-     const { data, isLoading, isError, refetch } = useGetExcelMatricesQuery(periodId);
+    const { data, isLoading, isError, refetch } = useGetExcelMatricesQuery(periodId, {
+        skip: !periodId
+    });
 
-    // Настройки компонента Upload для импорта Excel файлов
     const uploadProps: UploadProps = {
         name: 'file',
         action: `/api/v1/excel_upload/import-assessment?period_id=${periodId}`,
         headers: { authorization: 'authorization-text' },
         onChange(info) {
             if (info.file.status === 'done') {
-                message.success(`Файл ${info.file.name} успешно загружен и обработан.`);
-                // В реальной системе здесь будет триггер RTK Query на refetch()
+                message.success(`Файл ${info.file.name} успешно загружен.`);
                 refetch();
             } else if (info.file.status === 'error') {
                 message.error(`Ошибка загрузки файла ${info.file.name}.`);
@@ -71,8 +104,8 @@ export const ExcelReportsPage: React.FC = () => {
         },
     };
 
-     if (isLoading) return <Spin size="large" style={{ display: 'flex', margin: '20vh auto' }} />;
-     if (isError) return <Alert message="Ошибка загрузки данных реестров" type="error" />;
+    if (isLoading) return <Spin size="large" style={{ display: 'flex', margin: '20vh auto' }} />;
+    if (isError) return <Alert message="Сервер вернул 404. Ожидание деплоя бэкенд-эндпоинтов матриц." type="warning" showIcon style={{ margin: 16 }} />;
 
     const items: TabsProps['items'] = [
         {
@@ -81,11 +114,10 @@ export const ExcelReportsPage: React.FC = () => {
             children: (
                 <Table 
                     columns={risksColumns} 
-                    dataSource={data?.risks || []}
-                    rowKey="id" 
+                    dataSource={data?.risks || []} 
+                    rowKey={(record, index) => record.id || record.characteristic || String(index)} 
                     bordered 
                     size="middle"
-                    locale={{ emptyText: 'Данные из Excel не загружены' }}
                 />
             ),
         },
@@ -95,11 +127,10 @@ export const ExcelReportsPage: React.FC = () => {
             children: (
                 <Table 
                     columns={defectsColumns} 
-                    dataSource={dataSourceDefects} 
-                    rowKey="id" 
+                    dataSource={data?.defects || []} 
+                    rowKey={(record, index) => record.id || String(index)} 
                     bordered 
                     size="middle"
-                    locale={{ emptyText: 'Данные из Excel не загружены' }}
                 />
             ),
         },
@@ -109,11 +140,10 @@ export const ExcelReportsPage: React.FC = () => {
             children: (
                 <Table 
                     columns={planColumns} 
-                    dataSource={dataSourcePlan} 
-                    rowKey="id" 
+                    dataSource={data?.plan || []} 
+                    rowKey={(record, index) => record.id || String(index)} 
                     bordered 
                     size="middle"
-                    locale={{ emptyText: 'Данные из Excel не загружены' }}
                 />
             ),
         },
@@ -121,10 +151,7 @@ export const ExcelReportsPage: React.FC = () => {
 
     return (
         <div style={{ padding: '16px 0' }}>
-            <Title level={2} style={{ color: '#1F3864', marginBottom: 24 }}>
-                Реестры и Отчеты (Данные матриц)
-            </Title>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                 <Title level={2} style={{ color: '#1F3864', margin: 0 }}>
                     Реестры и Отчеты (Данные матриц)
                 </Title>
@@ -142,4 +169,5 @@ export const ExcelReportsPage: React.FC = () => {
     );
 };
 
+// Экспорт по умолчанию обязателен для работы React.lazy()
 export default ExcelReportsPage;

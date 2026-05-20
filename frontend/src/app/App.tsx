@@ -14,4 +14,4 @@ frontend/src/App.tsx
                              <Route path="admin/flags" element={<RequireRole allowedRoles={['ADMIN']}><AdminFlagsPage /></RequireRole>} />
                              <Route path="reports" element={<ExcelReportsPage />} />
                              <Route index element={<Navigate to="/dashboard" replace />} />
-                         </Routes></Suspense></AppLayout></RequireAuth>} />
+                             </Routes></Suspense></AppLayout></RequireAuth>} />

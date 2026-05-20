@@ -113,12 +113,13 @@ export const apiSlice = createApi({
         },
     }),
     tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems'],
-    endpoints: (builder) => ({
         getExecutiveDashboard: builder.query<DashboardData, void>({
             query: () => '/reports/executive-dashboard',
             providesTags: ['Dashboard'],
+        }),
         getExcelReports: builder.query<any, void>({
             query: () => '/reports/excel-data',
+        }),
         getExcelMatrices: builder.query<any, string>({
             query: (periodId) => `/assessment-period/${periodId}/matrices`,    
         }),
@@ -128,7 +129,6 @@ export const apiSlice = createApi({
                 method: 'POST',
                 body: formData,
             }),
-        }),
         }),
         getSystems: builder.query<SystemsListResponse, void>({
             query: () => '/systems?is_active=true&limit=100',
@@ -195,7 +195,7 @@ export const apiSlice = createApi({
             },
             invalidatesTags: ['Metrics', 'Assessment', 'Dashboard'],
         }),
-    }),
+  
 });
 
 export const {
@@ -209,4 +209,7 @@ export const {
     useImportAssessmentExcelMutation,
     useSaveAssessmentMetricsMutation,
     useSubmitExpertJudgmentMutation,
+    useGetExcelReportsQuery,
+    useGetExcelMatricesQuery,
+    useUploadExcelReportMutation,
 } = apiSlice;
