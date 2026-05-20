@@ -3,9 +3,18 @@
 """
 from pydantic_settings import BaseSettings
 from typing import List
+from pydantic import ConfigDict
+from typing import List
 import os
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",          # ← ключевое: игнорировать лишние переменные окружения
+        case_sensitive=False,
+    )
+
     # Основное
     PROJECT_NAME: str = "АСОК ИС"
 
@@ -28,7 +37,7 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
-        "http://127.0.0.1:3000"
+        "http://127.0.0.1:3000",
     ]
 
     # Режимы
@@ -37,8 +46,5 @@ class Settings(BaseSettings):
     # Загрузки
     UPLOAD_DIR: str = "uploads"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 settings = Settings()

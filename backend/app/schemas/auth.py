@@ -1,6 +1,3 @@
-"""
-Pydantic v2 схемы аутентификации.
-"""
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -22,10 +19,9 @@ class TokenRefreshRequest(BaseModel):
 
 
 class TokenPayload(BaseModel):
-    """JWT payload — sub=user_id, role=роль, exp=время истечения."""
-    sub: str
-    role: str
-    exp: int
+    sub: str        # UUID пользователя
+    role: str       # роль из User.ALL_ROLES
+    exp: int        # unix timestamp истечения
 
 
 class UserResponse(BaseModel):
