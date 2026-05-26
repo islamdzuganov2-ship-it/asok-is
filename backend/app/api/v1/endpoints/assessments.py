@@ -1,272 +1,252 @@
-from decimal import Decimal
-from typing import List
-from uuid import UUID
-
+"""
+Эндпоинты периодов оценки, метрик и дашборда.
+"""
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select, func
+from typing import List
+from collections import defaultdict
 
-from app.api.deps import get_current_user
-from app.core.database import get_db
-from app.models.assessment import (
-    AssessmentPeriod,
-    AssessmentValue,
-    ExpertJudgmentHistory,
-)
+from app.api.deps import get_db
+from app.models.assessment import AssessmentPeriod, AssessmentValue
 from app.models.metric_catalog import MetricCatalog
+from app.models.system import System
 from app.schemas.assessment import (
-    CalculatedMetricOut,
-    EditableMetricIn,
-    EditableMetricOut,
-    ExpertJudgmentCreate,
-    PeriodCreate,
-    PeriodOut,
-    PeriodUpdate,
-    ValueCreate,
-    ValueOut,
+    EditableMetricOut, EditableMetricIn,
+    CalculatedMetricOut, ExpertJudgmentCreate,
 )
-from app.services.calculation_engine import calculate_metric, map_to_level
 
 router = APIRouter()
 
+# ─── Dashboard ────────────────────────────────────────────────────────────────
 
-def _to_float(value: object) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, Decimal):
-        return float(value)
-    return float(value)
-
-
-def _metric_name(metric: MetricCatalog) -> str:
-    return f"{metric.characteristic}: {metric.subcharacteristic}"
-
-
-def _calculate_value(value: AssessmentValue, metric: MetricCatalog) -> None:
-    if value.val_a is None or value.val_b is None:
-        value.calculated_x = None
-        value.quality_level = None
-        return
-
-    formula_type = metric.formula_type.value if hasattr(metric.formula_type, "value") else str(metric.formula_type)
-    calculated_x = calculate_metric(float(value.val_a), float(value.val_b), formula_type)
-    value.calculated_x = calculated_x
-    value.quality_level = map_to_level(calculated_x)
-
-
-@router.get("/periods", response_model=List[PeriodOut])
-async def get_all_periods(db: AsyncSession = Depends(get_db)) -> list[AssessmentPeriod]:
-    result = await db.execute(
-        select(AssessmentPeriod).order_by(AssessmentPeriod.created_at.desc())
+@router.get("/dashboard")
+async def get_dashboard(db: AsyncSession = Depends(get_db)):
+    """
+    Агрегированные данные для главного дашборда.
+    Возвращает: globalHealthScore, распределение по уровням,
+    данные для heatmap, список проблемных систем.
+    """
+    # Все активные системы
+    systems_result = await db.execute(
+        select(System).where(System.is_active == True, System.is_deleted == False)
     )
-    return list(result.scalars().all())
+    systems = systems_result.scalars().all()
 
+    if not systems:
+        return _empty_dashboard()
 
-@router.post("/periods", response_model=PeriodOut, status_code=status.HTTP_201_CREATED)
-async def create_period(
-    period_data: PeriodCreate,
-    db: AsyncSession = Depends(get_db),
-) -> AssessmentPeriod:
-    existing = await db.execute(
-        select(AssessmentPeriod).where(
-            AssessmentPeriod.system_id == period_data.system_id,
-            AssessmentPeriod.period == period_data.period,
-        )
-    )
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="Assessment period already exists")
-
-    period = AssessmentPeriod(**period_data.model_dump(), status="DRAFT")
-    db.add(period)
-    await db.flush()
-
-    metrics = await db.execute(
-        select(MetricCatalog).where(MetricCatalog.is_active.is_(True)).order_by(MetricCatalog.id)
-    )
-    for metric in metrics.scalars().all():
-        db.add(AssessmentValue(period_id=period.id, metric_id=metric.id, data_source="MANUAL"))
-
-    await db.commit()
-    await db.refresh(period)
-    return period
-
-
-@router.put("/periods/{period_id}", response_model=PeriodOut)
-async def update_period(
-    period_id: UUID,
-    period_data: PeriodUpdate,
-    db: AsyncSession = Depends(get_db),
-) -> AssessmentPeriod:
-    result = await db.execute(
-        update(AssessmentPeriod)
-        .where(AssessmentPeriod.id == period_id)
-        .values(**period_data.model_dump(exclude_unset=True))
-        .returning(AssessmentPeriod)
-    )
-    updated_period = result.scalar_one_or_none()
-    if updated_period is None:
-        raise HTTPException(status_code=404, detail="Assessment period not found")
-    await db.commit()
-    return updated_period
-
-
-@router.delete("/periods/{period_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_period(period_id: UUID, db: AsyncSession = Depends(get_db)) -> None:
-    result = await db.execute(delete(AssessmentPeriod).where(AssessmentPeriod.id == period_id))
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Assessment period not found")
-    await db.commit()
-
-
-@router.get("/values", response_model=List[ValueOut])
-async def get_all_values(db: AsyncSession = Depends(get_db)) -> list[AssessmentValue]:
-    result = await db.execute(select(AssessmentValue).order_by(AssessmentValue.created_at.desc()))
-    return list(result.scalars().all())
-
-
-@router.post("/values", response_model=ValueOut, status_code=status.HTTP_201_CREATED)
-async def create_value(
-    value_data: ValueCreate,
-    db: AsyncSession = Depends(get_db),
-) -> AssessmentValue:
-    metric = await db.get(MetricCatalog, value_data.metric_id)
-    if metric is None:
-        raise HTTPException(status_code=404, detail="Metric not found")
-
-    value = AssessmentValue(**value_data.model_dump())
-    _calculate_value(value, metric)
-    db.add(value)
-    await db.commit()
-    await db.refresh(value)
-    return value
-
-
-@router.get("/{period_id}/metrics", response_model=list[EditableMetricOut])
-async def get_assessment_metrics(
-    period_id: UUID,
-    db: AsyncSession = Depends(get_db),
-) -> list[EditableMetricOut]:
-    result = await db.execute(
-        select(AssessmentValue)
-        .options(selectinload(AssessmentValue.metric))
-        .where(AssessmentValue.period_id == period_id)
+    # Все значения метрик по последним периодам
+    values_result = await db.execute(
+        select(AssessmentValue, AssessmentPeriod, System, MetricCatalog)
+        .join(AssessmentPeriod, AssessmentValue.period_id == AssessmentPeriod.id)
+        .join(System, AssessmentPeriod.system_id == System.id)
         .join(MetricCatalog, AssessmentValue.metric_id == MetricCatalog.id)
-        .order_by(MetricCatalog.id)
+        .where(
+            System.is_active == True,
+            System.is_deleted == False,
+            AssessmentValue.calculated_x.isnot(None),
+        )
+        .order_by(AssessmentPeriod.created_at.desc())
     )
-    values = result.scalars().all()
-    if not values:
-        period = await db.get(AssessmentPeriod, period_id)
-        if period is None:
-            raise HTTPException(status_code=404, detail="Assessment period not found")
+    rows = values_result.all()
+
+    if not rows:
+        return _empty_dashboard()
+
+    # Подсчёт уровней для Donut
+    level_counts: dict[str, int] = defaultdict(int)
+    # Данные для heatmap: [xIdx (char), yIdx (system), level_value]
+    char_list = [
+        "Функциональная пригодность", "Производительность", "Совместимость",
+        "Удобство использования", "Надёжность", "Безопасность",
+        "Сопровождаемость", "Переносимость", "Качество данных",
+    ]
+    char_idx = {c: i for i, c in enumerate(char_list)}
+    sys_names = [s.name for s in systems]
+    sys_idx = {s.id: i for i, s in enumerate(systems)}
+
+    # Агрегация: для heatmap берём средний X по системе+характеристике
+    heatmap_agg: dict[tuple, list[float]] = defaultdict(list)
+    all_x: list[float] = []
+
+    # Для "проблемных систем" — считаем метрики < 0.41
+    low_counts: dict[str, int] = defaultdict(int)
+    sys_id_to_name: dict[str, str] = {str(s.id): s.name for s in systems}
+    sys_id_to_crit: dict[str, str] = {str(s.id): s.criticality_class for s in systems}
+
+    # Берём только последний период для каждой системы
+    latest_period_per_sys: dict[str, str] = {}
+    for av, period, system, metric in rows:
+        sid = str(system.id)
+        if sid not in latest_period_per_sys:
+            latest_period_per_sys[sid] = str(period.id)
+
+    for av, period, system, metric in rows:
+        sid = str(system.id)
+        # Только последний период системы
+        if latest_period_per_sys.get(sid) != str(period.id):
+            continue
+
+        x = float(av.calculated_x)
+        all_x.append(x)
+        level_counts[av.quality_level or "Невозможно измерить"] += 1
+
+        ci = char_idx.get(metric.characteristic, -1)
+        si = sys_idx.get(system.id, -1)
+        if ci >= 0 and si >= 0:
+            heatmap_agg[(ci, si)].append(x)
+
+        if x < 0.41:
+            low_counts[sid] += 1
+
+    # Глобальный health score
+    global_score = round(sum(all_x) / len(all_x), 4) if all_x else 0.0
+
+    # Heatmap data: [xIdx, yIdx, уровень 0-5]
+    def x_to_level(x: float) -> int:
+        if x >= 0.81: return 5
+        if x >= 0.61: return 4
+        if x >= 0.41: return 3
+        if x >= 0.21: return 2
+        if x > 0:    return 1
+        return 0
+
+    heatmap_data: list[list[int]] = []
+    for (ci, si), xs in heatmap_agg.items():
+        avg_x = sum(xs) / len(xs)
+        heatmap_data.append([ci, si, x_to_level(avg_x)])
+
+    # Топ-5 проблемных систем
+    problematic = sorted(low_counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    problematic_list = [
+        {
+            "id": sid,
+            "name": sys_id_to_name.get(sid, sid),
+            "criticality": sys_id_to_crit.get(sid, ""),
+            "lowMetricsCount": cnt,
+        }
+        for sid, cnt in problematic
+    ]
+
+    return {
+        "globalHealthScore": global_score,
+        "levelCounts": dict(level_counts),
+        "heatmapData": heatmap_data,
+        "xAxisLabels": char_list,
+        "yAxisLabels": sys_names,
+        "problematicSystems": problematic_list,
+        "totalMetrics": len(all_x),
+    }
+
+
+def _empty_dashboard() -> dict:
+    return {
+        "globalHealthScore": 0.0,
+        "levelCounts": {},
+        "heatmapData": [],
+        "xAxisLabels": [],
+        "yAxisLabels": [],
+        "problematicSystems": [],
+        "totalMetrics": 0,
+    }
+
+
+# ─── Метрики периода ──────────────────────────────────────────────────────────
+
+@router.get("/{period_id}/metrics", response_model=List[EditableMetricOut])
+async def get_assessment_metrics(
+    period_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Получить все метрики периода оценки."""
+    result = await db.execute(
+        select(AssessmentValue, MetricCatalog)
+        .join(MetricCatalog, AssessmentValue.metric_id == MetricCatalog.id)
+        .where(AssessmentValue.period_id == period_id)
+        .order_by(MetricCatalog.characteristic, MetricCatalog.id)
+    )
+    rows = result.all()
 
     return [
         EditableMetricOut(
-            id=str(value.id),
-            name=_metric_name(value.metric),
-            description=value.metric.description or "",
-            val_a=_to_float(value.val_a),
-            val_b=_to_float(value.val_b),
-            expert_comment=value.expert_comment or "",
+            id=str(av.id),
+            name=f"{mc.characteristic} / {mc.subcharacteristic}",
+            description=mc.description or "",
+            val_a=float(av.val_a) if av.val_a is not None else None,
+            val_b=float(av.val_b) if av.val_b is not None else None,
+            expert_comment=av.expert_comment or "",
         )
-        for value in values
+        for av, mc in rows
     ]
 
 
-@router.put("/{period_id}/metrics", response_model=list[EditableMetricOut])
+@router.put("/{period_id}/metrics")
 async def save_assessment_metrics(
-    period_id: UUID,
-    metrics: list[EditableMetricIn],
+    period_id: str,
+    metrics: List[EditableMetricIn],
     db: AsyncSession = Depends(get_db),
-) -> list[EditableMetricOut]:
-    period = await db.get(AssessmentPeriod, period_id)
-    if period is None:
-        raise HTTPException(status_code=404, detail="Assessment period not found")
+):
+    """
+    Сохранить val_a/val_b для метрик периода.
+    Backend пересчитывает X через calculation_engine.
+    """
+    from app.services.calculation_engine import calculate_metric
 
-    value_ids = [UUID(metric.id) for metric in metrics]
-    result = await db.execute(
-        select(AssessmentValue)
-        .options(selectinload(AssessmentValue.metric))
-        .where(AssessmentValue.period_id == period_id, AssessmentValue.id.in_(value_ids))
-    )
-    values_by_id = {str(value.id): value for value in result.scalars().all()}
+    updated = 0
+    errors = []
 
-    if len(values_by_id) != len(metrics):
-        raise HTTPException(status_code=400, detail="Payload contains metrics outside this period")
+    for m in metrics:
+        result = await db.execute(
+            select(AssessmentValue, MetricCatalog)
+            .join(MetricCatalog, AssessmentValue.metric_id == MetricCatalog.id)
+            .where(AssessmentValue.id == m.id)
+        )
+        row = result.first()
+        if not row:
+            errors.append(f"Метрика id={m.id} не найдена")
+            continue
 
-    for item in metrics:
-        value = values_by_id[item.id]
-        value.val_a = item.val_a
-        value.val_b = item.val_b
-        value.expert_comment = item.expert_comment
-        _calculate_value(value, value.metric)
+        av, mc = row
+        av.val_a = m.val_a
+        av.val_b = m.val_b
+        av.expert_comment = m.expert_comment
 
-    period.status = "CALCULATED"
+        # Пересчёт X
+        if m.val_a is not None and m.val_b is not None:
+            x, level = calculate_metric(m.val_a, m.val_b, mc.formula_type)
+            av.calculated_x = x
+            av.quality_level = level
+
+        updated += 1
+
     await db.commit()
+    return {"status": "ok", "updated": updated, "errors": errors}
 
-    return await get_assessment_metrics(period_id, db)
 
-
-@router.get("/{period_id}/calculated", response_model=list[CalculatedMetricOut])
+@router.get("/{period_id}/calculated", response_model=List[CalculatedMetricOut])
 async def get_calculated_metrics(
-    period_id: UUID,
+    period_id: str,
     db: AsyncSession = Depends(get_db),
-) -> list[CalculatedMetricOut]:
+):
+    """Получить рассчитанные значения метрик периода."""
     result = await db.execute(
-        select(AssessmentValue)
-        .options(selectinload(AssessmentValue.metric))
-        .where(AssessmentValue.period_id == period_id)
+        select(AssessmentValue, MetricCatalog)
         .join(MetricCatalog, AssessmentValue.metric_id == MetricCatalog.id)
-        .order_by(MetricCatalog.id)
+        .where(
+            AssessmentValue.period_id == period_id,
+            AssessmentValue.calculated_x.isnot(None),
+        )
     )
-    values = result.scalars().all()
-    if not values and await db.get(AssessmentPeriod, period_id) is None:
-        raise HTTPException(status_code=404, detail="Assessment period not found")
+    rows = result.all()
 
     return [
         CalculatedMetricOut(
-            id=str(value.id),
-            name=_metric_name(value.metric),
-            calculatedX=round((_to_float(value.calculated_x) or 0.0) * 100, 2),
-            systemLevel=value.quality_level or "Not measured",
-            adjustedLevel=None,
-            expertComment=value.expert_comment,
+            id=str(av.id),
+            name=f"{mc.characteristic} / {mc.subcharacteristic}",
+            calculatedX=float(av.calculated_x),
+            systemLevel=av.quality_level or "Невозможно измерить",
+            expertComment=av.expert_comment,
         )
-        for value in values
+        for av, mc in rows
     ]
-
-
-@router.post("/expert-judgment", status_code=status.HTTP_204_NO_CONTENT)
-async def submit_expert_judgment(
-    payload: ExpertJudgmentCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-) -> None:
-    value_id = UUID(payload.metricId)
-    value = await db.get(AssessmentValue, value_id)
-    if value is None:
-        raise HTTPException(status_code=404, detail="Assessment value not found")
-
-    user_id = current_user.get("id")
-    if current_user.get("username") == "demo":
-        created_by = None
-    else:
-        try:
-            created_by = UUID(str(user_id))
-        except (TypeError, ValueError):
-            created_by = None
-
-    db.add(
-        ExpertJudgmentHistory(
-            assessment_value_id=value.id,
-            original_level=payload.calculatedLevel,
-            adjusted_level=payload.adjustedLevel,
-            justification_text=payload.justificationText,
-            linked_risk_task=payload.linkedRiskTask,
-            created_by=created_by,
-        )
-    )
-    if payload.adjustedLevel:
-        value.quality_level = payload.adjustedLevel
-    value.expert_comment = payload.justificationText
-    await db.commit()
