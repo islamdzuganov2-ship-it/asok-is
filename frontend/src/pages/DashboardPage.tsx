@@ -15,10 +15,10 @@ const { Title, Text } = Typography;
 const LEVEL_COLORS: Record<string, string> = {
   'Высокий уровень':        '#52c41a',
   'Уровень выше среднего':  '#73d13d',
-  'Средний уровень':        '#faad14',
-  'Уровень ниже среднего':  '#fa8c16',
+  'Средний уровень':        '#c78706',
+  'Уровень ниже среднего':  '#e76f0d',
   'Низкий уровень':         '#f5222d',
-  'Невозможно измерить':    '#d9d9d9',
+  'Невозможно измерить':    '#3f3e3e',
 };
 
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';

@@ -1,6 +1,7 @@
 import os
 import uuid
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from app.core.database import get_db
 from app.models.assessment import AssessmentPeriod, AssessmentValue
 from app.models.metric_catalog import MetricCatalog
 from app.services.calculation_engine import calculate_metric, map_to_level
+from app.services.excel_importer import import_matrices_from_workbook, import_metric_catalog_from_workbook, seed_project_excel_files
 from app.workers.tasks import celery_app, parse_excel_task
 
 router = APIRouter()
@@ -231,3 +233,48 @@ async def import_assessment_excel(
         "errors": errors[:100],
         "sheets": sheets,
     }
+
+
+@router.post("/import-workbook")
+async def import_workbook(
+    period_id: str = Form(...),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Only .xlsx files are supported")
+
+    try:
+        period_uuid = UUID(period_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid period_id") from exc
+
+    period = await db.get(AssessmentPeriod, period_uuid)
+    if period is None:
+        raise HTTPException(status_code=404, detail="Assessment period not found")
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="File is larger than 10 MB")
+
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    safe_name = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
+    file_path = os.path.join(settings.UPLOAD_DIR, safe_name)
+    with open(file_path, "wb") as target:
+        target.write(content)
+
+    metrics_summary = await import_metric_catalog_from_workbook(db, Path(file_path))
+    matrices_summary = await import_matrices_from_workbook(db, Path(file_path), period_uuid)
+    await db.commit()
+    return {
+        "filename": file.filename,
+        "period_id": period_id,
+        "metrics": metrics_summary.as_dict(),
+        "matrices": matrices_summary.as_dict(),
+    }
+
+
+@router.post("/seed-project-files")
+async def seed_project_files(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    project_root = Path(__file__).resolve().parents[4]
+    return await seed_project_excel_files(db, project_root)

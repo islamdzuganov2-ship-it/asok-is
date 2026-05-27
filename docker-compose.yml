@@ -56,6 +56,9 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - ./models/llm:/app/models/llm:ro
+      - ./Качество системы в разрезе времени по всем характеристикам.xlsx:/app/seed_data/Качество системы в разрезе времени по всем характеристикам.xlsx:ro
+      - ./таблица для заполнения v8.1.xlsx:/app/seed_data/таблица для заполнения v8.1.xlsx:ro
       - /app/__pycache__
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
@@ -77,6 +80,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - ./models/llm:/app/models/llm:ro
       - /app/__pycache__
     command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=2
     networks:

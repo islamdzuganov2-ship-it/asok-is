@@ -62,6 +62,10 @@ export interface PeriodDto {
     updated_at: string;
 }
 
+export interface PeriodListParams {
+    system_id?: string;
+}
+
 export interface ExpertJudgmentDto {
     metricId: string;
     calculatedLevel: string;
@@ -77,6 +81,8 @@ export interface EditableMetric {
     val_a: number | null;
     val_b: number | null;
     expert_comment: string;
+    calculatedX?: number | null;
+    qualityLevel?: string | null;
 }
 
 export interface CalculatedMetric {
@@ -128,7 +134,8 @@ export const apiSlice = createApi({
             query: () => '/reports/excel-data',
         }),
         getExcelMatrices: builder.query<any, string>({
-            query: (periodId) => `/assessment-period/${periodId}/matrices`,    
+            query: (periodId) => `/reports/assessment-period/${periodId}/matrices`,
+            providesTags: ['Assessment'],
         }),
         uploadExcelReport: builder.mutation<any, FormData>({
             query: (formData) => ({
@@ -164,6 +171,13 @@ export const apiSlice = createApi({
                 body,
             }),
             invalidatesTags: ['Assessment', 'Dashboard'],
+        }),
+        getAssessmentPeriods: builder.query<PeriodDto[], PeriodListParams | void>({
+            query: (params) => {
+                const query = params?.system_id ? `?system_id=${params.system_id}` : '';
+                return `/assessments/periods${query}`;
+            },
+            providesTags: ['Assessment'],
         }),
         submitExpertJudgment: builder.mutation<void, ExpertJudgmentDto>({
             query: (body) => ({
@@ -202,6 +216,19 @@ export const apiSlice = createApi({
             },
             invalidatesTags: ['Metrics', 'Assessment', 'Dashboard'],
         }),
+        importWorkbook: builder.mutation<any, { id: string; file: File }>({
+            query: ({ id, file }) => {
+                const formData = new FormData();
+                formData.append('period_id', id);
+                formData.append('file', file);
+                return {
+                    url: '/excel/import-workbook',
+                    method: 'POST',
+                    body: formData,
+                };
+            },
+            invalidatesTags: ['Metrics', 'Assessment', 'Dashboard'],
+        }),
     }),
 });
 
@@ -214,8 +241,10 @@ export const {
     useGetExecutiveDashboardQuery,
     useGetSystemsQuery,
     useImportAssessmentExcelMutation,
+    useImportWorkbookMutation,
     useSaveAssessmentMetricsMutation,
     useSubmitExpertJudgmentMutation,
+    useGetAssessmentPeriodsQuery,
     useGetExcelReportsQuery,
     useGetExcelMatricesQuery,
     useUploadExcelReportMutation,

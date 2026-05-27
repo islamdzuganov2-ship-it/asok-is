@@ -1,93 +1,119 @@
 from collections import defaultdict
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.models.assessment import AssessmentPeriod, AssessmentValue
-from app.models.metric_catalog import MetricCatalog
+from app.models.matrices import DefectMatrix, QualityPlanMatrix, RiskMatrix
 from app.models.system import System
-from app.schemas.assessment import DashboardDataOut, ProblematicSystemOut
-from app.schemas.assessment import DashboardDataOut, ProblematicSystemOut, FullExcelMatricesOut, RiskMatrixRow, DefectMatrixRow, QualityPlanMatrixRow
-from fastapi import HTTPException
+from app.schemas.assessment import (
+    DashboardDataOut,
+    DefectMatrixRow,
+    FullExcelMatricesOut,
+    ProblematicSystemOut,
+    QualityPlanMatrixRow,
+    RiskMatrixRow,
+)
 
 router = APIRouter()
 
 
-
 @router.get("/assessment-period/{period_id}/matrices", response_model=FullExcelMatricesOut)
 async def get_period_excel_matrices(
-    period_id: UUID, 
-    db: AsyncSession = Depends(get_db)
+    period_id: UUID,
+    db: AsyncSession = Depends(get_db),
 ) -> FullExcelMatricesOut:
-    """
-    Получение данных трех матриц (Риски, Недостатки, План) для указанного периода оценки.
-    Выполняет чтение сохраненных из Excel артефактов и возвращает структурированный JSON.
-    """
     period = await db.get(AssessmentPeriod, period_id)
-    if not period:
-        raise HTTPException(status_code=404, detail="Отчетный период не найден.")
+    if period is None:
+        raise HTTPException(status_code=404, detail="Assessment period not found")
 
-    # В реальной базе эти структуры привязываются к AssessmentPeriod или AssessmentValue.
-    # Ниже представлена детерминированная сборка данных на основе структуры CSV шаблонов:
-    
-    mock_risks = [
-        RiskMatrixRow(
-            characteristic="Функциональная пригодность",
-            subcharacteristic="Функциональное покрытие",
-            risk_description="Неполное покрытие требований автотестами на критических компонентах",
-            risk_consequence="Риск отказов и нарушений функционирования применяемых Банком ИС",
-            mitigation_measures="Разработка регрессионной модели автотестирования, расширение штата QA"
+    risks = list(
+        (
+            await db.execute(
+                select(RiskMatrix).where(RiskMatrix.period_id == period_id).order_by(RiskMatrix.id)
+            )
         )
-    ]
-
-    mock_defects = [
-        DefectMatrixRow(
-            id=1,
-            characteristic="Тестируемость ИС",
-            digital_metric="20%",
-            quality_metric_level="Низкий уровень",
-            defect_description="Регрессионная модель имеет низкий уровень автоматизации из-за дефицита ресурсов"
-        ),
-        DefectMatrixRow(
-            id=2,
-            characteristic="Эффективность",
-            digital_metric="14%",
-            quality_metric_level="Низкий уровень",
-            defect_description="В ТЗ не фиксируются требования к пропускной способности ИС и времени отклика"
+        .scalars()
+        .all()
+    )
+    defects = list(
+        (
+            await db.execute(
+                select(DefectMatrix).where(DefectMatrix.period_id == period_id).order_by(DefectMatrix.id)
+            )
         )
-    ]
-
-    mock_plan = [
-        QualityPlanMatrixRow(
-            id=1,
-            characteristic="Пригодность для обслуживания",
-            subcharacteristic="Мониторинг бизнес-метрик",
-            task_description="Организовать стандартизированный процесс передачи Бизнес-Метрик на мониторинг",
-            internal_document="Распоряжение 77-НШ",
-            assignee_fio="Иванов И.И.",
-            assignee_role="Техлид / Архитектор",
-            assignee_department="Департамент сопровождения",
-            deadline="31.12.2026",
-            profile_executor="Команда автоматизации",
-            tech_debt_link="https://alm.headoffice.psbank.local/sd/operator/#task-12"
+        .scalars()
+        .all()
+    )
+    plans = list(
+        (
+            await db.execute(
+                select(QualityPlanMatrix).where(QualityPlanMatrix.period_id == period_id).order_by(QualityPlanMatrix.id)
+            )
         )
-    ]
+        .scalars()
+        .all()
+    )
 
     return FullExcelMatricesOut(
         period_id=period_id,
-        risks=mock_risks,
-        defects=mock_defects,
-        plan=mock_plan
+        risks=[
+            RiskMatrixRow(
+                characteristic=row.characteristic,
+                subcharacteristic=row.subcharacteristic,
+                risk_description=row.risk_description,
+                risk_consequence=row.risk_consequence,
+                mitigation_measures=row.mitigation_measures,
+            )
+            for row in risks
+        ],
+        defects=[
+            DefectMatrixRow(
+                id=row.id,
+                characteristic=row.characteristic,
+                digital_metric=row.digital_metric,
+                quality_metric_level=row.quality_metric_level,
+                defect_description=row.defect_description,
+            )
+            for row in defects
+        ],
+        plan=[
+            QualityPlanMatrixRow(
+                id=row.id,
+                characteristic=row.characteristic,
+                subcharacteristic=row.subcharacteristic,
+                task_description=row.task_description,
+                internal_document=row.internal_document,
+                assignee_fio=row.assignee_fio,
+                assignee_role=row.assignee_role,
+                assignee_department=row.assignee_department,
+                deadline=row.deadline,
+                profile_executor=row.profile_executor,
+                tech_debt_link=row.tech_debt_link,
+            )
+            for row in plans
+        ],
     )
+
 
 def _score_to_bucket(value: float | None) -> int:
     if value is None:
         return 0
-    return max(0, min(5, round(value * 5)))
+    if value >= 0.81:
+        return 5
+    if value >= 0.61:
+        return 4
+    if value >= 0.41:
+        return 3
+    if value >= 0.21:
+        return 2
+    if value > 0:
+        return 1
+    return 0
 
 
 @router.get("/executive-dashboard", response_model=DashboardDataOut)
@@ -104,7 +130,8 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db)) -> Dashboa
     )
     values = list(result.scalars().all())
 
-    if not values:
+    measured = [float(value.calculated_x) for value in values if value.calculated_x is not None]
+    if not measured:
         return DashboardDataOut(
             globalHealthScore=0.0,
             aiInsights="Нет данных для расчета управленческой панели.",
@@ -114,34 +141,32 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db)) -> Dashboa
             problematicSystems=[],
         )
 
-    measured = [float(v.calculated_x) for v in values if v.calculated_x is not None]
-    global_score = round((sum(measured) / len(measured)) * 100, 2) if measured else 0.0
-
-    system_names = sorted({v.period.system.name for v in values})
-    characteristic_names = sorted({v.metric.characteristic for v in values})
-    system_index = {name: idx for idx, name in enumerate(system_names)}
-    characteristic_index = {name: idx for idx, name in enumerate(characteristic_names)}
+    global_score = round((sum(measured) / len(measured)) * 100, 2)
+    system_names = sorted({value.period.system.name for value in values})
+    characteristic_names = sorted({value.metric.characteristic for value in values})
+    system_index = {name: index for index, name in enumerate(system_names)}
+    characteristic_index = {name: index for index, name in enumerate(characteristic_names)}
 
     cells: dict[tuple[str, str], list[float]] = defaultdict(list)
     low_counts: dict[UUID, int] = defaultdict(int)
     systems_by_id: dict[UUID, System] = {}
     for value in values:
         systems_by_id[value.period.system.id] = value.period.system
-        if value.calculated_x is not None:
-            cells[(value.period.system.name, value.metric.characteristic)].append(float(value.calculated_x))
-            if float(value.calculated_x) < 0.41:
-                low_counts[value.period.system.id] += 1
+        if value.calculated_x is None:
+            continue
+        score = float(value.calculated_x)
+        cells[(value.period.system.name, value.metric.characteristic)].append(score)
+        if score < 0.41:
+            low_counts[value.period.system.id] += 1
 
-    heatmap = []
-    for (system_name, characteristic), scores in cells.items():
-        average = sum(scores) / len(scores)
-        heatmap.append(
-            [
-                characteristic_index[characteristic],
-                system_index[system_name],
-                _score_to_bucket(average),
-            ]
-        )
+    heatmap = [
+        [
+            characteristic_index[characteristic],
+            system_index[system_name],
+            _score_to_bucket(sum(scores) / len(scores)),
+        ]
+        for (system_name, characteristic), scores in cells.items()
+    ]
 
     problematic = [
         ProblematicSystemOut(

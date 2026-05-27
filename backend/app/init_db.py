@@ -6,6 +6,7 @@ from app.db.base import Base
 # Import models so Base.metadata contains the complete schema.
 from app.models.assessment import AssessmentPeriod, AssessmentValue, ExpertJudgmentHistory  # noqa: F401
 from app.models.audit import AuditLog  # noqa: F401
+from app.models.matrices import DefectMatrix, QualityPlanMatrix, RiskMatrix  # noqa: F401
 from app.models.metric_catalog import MetricAttribute, MetricCatalog, MetricCharacteristic  # noqa: F401
 from app.models.system import System  # noqa: F401
 from app.models.user import User  # noqa: F401

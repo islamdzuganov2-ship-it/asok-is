@@ -1,173 +1,154 @@
-import React from 'react';
-import { Typography, Tabs, Table, Card, Button, Upload, message, Space, Spin, Alert } from 'antd';
-import { UploadOutlined, DownloadOutlined } from '@ant-design/icons';
-import type { TabsProps, UploadProps } from 'antd';
-import { useGetExcelMatricesQuery } from '../store/api/apiSlice';
+import React, { useMemo, useState } from 'react';
+import { Alert, Button, Card, Col, Empty, Row, Select, Space, Spin, Table, Tabs, Typography, Upload, message } from 'antd';
+import { FileExcelOutlined, UploadOutlined } from '@ant-design/icons';
+import type { ColumnsType } from 'antd/es/table';
+import type { UploadProps } from 'antd';
+import {
+    useGetAssessmentPeriodsQuery,
+    useGetExcelMatricesQuery,
+    useGetSystemsQuery,
+    useImportWorkbookMutation,
+} from '../store/api/apiSlice';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
-// Безопасные маппинги колонок, поддерживающие оба формата (camelCase и snake_case)
-const risksColumns = [
-    { title: 'Характеристика', dataIndex: 'characteristic', key: 'characteristic' },
-    { 
-        title: 'Подхарактеристика', 
-        dataIndex: 'subCharacteristic', 
-        key: 'subCharacteristic',
-        render: (text: string, record: any) => text || record.subcharacteristic || '-' 
-    },
-    { 
-        title: 'Описание риска', 
-        dataIndex: 'riskDescription', 
-        key: 'riskDescription',
-        render: (text: string, record: any) => text || record.risk_description || '-' 
-    },
-    { 
-        title: 'Последствие риска', 
-        dataIndex: 'riskConsequence', 
-        key: 'riskConsequence',
-        render: (text: string, record: any) => text || record.risk_consequence || '-' 
-    },
-    { 
-        title: 'Меры по минимизации', 
-        dataIndex: 'mitigation', 
-        key: 'mitigation',
-        render: (text: string, record: any) => text || record.mitigation_measures || '-' 
-    },
-];
-
-const defectsColumns = [
-    { title: '№', dataIndex: 'id', key: 'id', width: 60 },
-    { title: 'Характеристика качества', dataIndex: 'characteristic', key: 'characteristic' },
-    { 
-        title: 'Показатель качества', 
-        dataIndex: 'qualityMetric', 
-        key: 'qualityMetric',
-        render: (text: string, record: any) => text || record.quality_metric_level || '-' 
-    },
-    { 
-        title: 'Цифровой показатель', 
-        dataIndex: 'digitalMetric', 
-        key: 'digitalMetric',
-        render: (text: string, record: any) => text || record.digital_metric || '-' 
-    },
-    { 
-        title: 'Описание недостатка ИС', 
-        dataIndex: 'defectDescription', 
-        key: 'defectDescription',
-        render: (text: string, record: any) => text || record.defect_description || '-' 
-    },
-];
-
-const planColumns = [
-    { title: '№', dataIndex: 'id', key: 'id', width: 60 },
-    { title: 'Характеристика качества', dataIndex: 'characteristic', key: 'characteristic' },
-    { 
-        title: 'Описание задачи', 
-        dataIndex: 'taskDescription', 
-        key: 'taskDescription',
-        render: (text: string, record: any) => text || record.task_description || '-' 
-    },
-    { 
-        title: 'ВНД Банка', 
-        dataIndex: 'internalDocument', 
-        key: 'internalDocument',
-        render: (text: string, record: any) => text || record.internal_document || '-' 
-    },
-    { 
-        title: 'Ответственный (ФИО)', 
-        dataIndex: 'assignee', 
-        key: 'assignee',
-        render: (text: string, record: any) => text || record.assignee_fio || '-' 
-    },
-    { title: 'Срок выполнения', dataIndex: 'deadline', key: 'deadline' },
-];
+const reportCardStyle: React.CSSProperties = {
+    border: '1px solid #d9e2f3',
+    borderRadius: 4,
+};
 
 export const ExcelReportsPage: React.FC = () => {
-    // Временный дефолтный UUID, чтобы не вызывать падение при отсутствии параметров в URL
-    const periodId = "00000000-0000-0000-0000-000000000000"; 
-    
-    const { data, isLoading, isError, refetch } = useGetExcelMatricesQuery(periodId, {
-        skip: !periodId
+    const { data: systems } = useGetSystemsQuery();
+    const { data: periods, isLoading: periodsLoading } = useGetAssessmentPeriodsQuery();
+    const [periodId, setPeriodId] = useState<string | undefined>();
+    const activePeriodId = periodId || periods?.[0]?.id;
+    const { data, isFetching, isError, refetch } = useGetExcelMatricesQuery(activePeriodId || '', {
+        skip: !activePeriodId,
     });
+    const [importWorkbook, { isLoading: uploading }] = useImportWorkbookMutation();
+
+    const systemById = useMemo(() => {
+        const map = new Map<string, string>();
+        (systems?.items || []).forEach((system) => map.set(system.id, system.name));
+        return map;
+    }, [systems]);
+
+    const periodOptions = (periods || []).map((period) => ({
+        value: period.id,
+        label: `${period.period} — ${systemById.get(period.system_id) || period.system_id}`,
+    }));
 
     const uploadProps: UploadProps = {
-        name: 'file',
-        action: `/api/v1/excel_upload/import-assessment?period_id=${periodId}`,
-        headers: { authorization: 'authorization-text' },
-        onChange(info) {
-            if (info.file.status === 'done') {
-                message.success(`Файл ${info.file.name} успешно загружен.`);
-                refetch();
-            } else if (info.file.status === 'error') {
-                message.error(`Ошибка загрузки файла ${info.file.name}.`);
+        accept: '.xlsx',
+        maxCount: 1,
+        showUploadList: false,
+        beforeUpload: async (file) => {
+            if (!activePeriodId) {
+                message.warning('Сначала выберите период оценки');
+                return false;
             }
+            try {
+                await importWorkbook({ id: activePeriodId, file }).unwrap();
+                message.success('Матрицы отчета обновлены из Excel');
+                refetch();
+            } catch (error: any) {
+                message.error(error?.data?.detail || 'Не удалось импортировать файл');
+            }
+            return false;
         },
     };
 
-    if (isLoading) return <Spin size="large" style={{ display: 'flex', margin: '20vh auto' }} />;
-    if (isError) return <Alert message="Сервер вернул 404. Ожидание деплоя бэкенд-эндпоинтов матриц." type="warning" showIcon style={{ margin: 16 }} />;
-
-    const items: TabsProps['items'] = [
-        {
-            key: '1',
-            label: 'Таблица возможных рисков',
-            children: (
-                <Table 
-                    columns={risksColumns} 
-                    dataSource={data?.risks || []} 
-                    rowKey={(record, index) => record.id || record.characteristic || String(index)} 
-                    bordered 
-                    size="middle"
-                />
-            ),
-        },
-        {
-            key: '2',
-            label: 'Перечень недостатков ИС',
-            children: (
-                <Table 
-                    columns={defectsColumns} 
-                    dataSource={data?.defects || []} 
-                    rowKey={(record, index) => record.id || String(index)} 
-                    bordered 
-                    size="middle"
-                />
-            ),
-        },
-        {
-            key: '3',
-            label: 'План обеспечения качества',
-            children: (
-                <Table 
-                    columns={planColumns} 
-                    dataSource={data?.plan || []} 
-                    rowKey={(record, index) => record.id || String(index)} 
-                    bordered 
-                    size="middle"
-                />
-            ),
-        },
+    const risksColumns: ColumnsType<any> = [
+        { title: 'Характеристика', dataIndex: 'characteristic', width: 220 },
+        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 220 },
+        { title: 'Описание риска', dataIndex: 'risk_description' },
+        { title: 'Последствие риска', dataIndex: 'risk_consequence' },
+        { title: 'Меры минимизации', dataIndex: 'mitigation_measures' },
     ];
 
+    const defectsColumns: ColumnsType<any> = [
+        { title: 'N', dataIndex: 'id', width: 70 },
+        { title: 'Характеристика качества', dataIndex: 'characteristic', width: 240 },
+        { title: 'Цифровой показатель', dataIndex: 'digital_metric', width: 160 },
+        { title: 'Уровень качества', dataIndex: 'quality_metric_level', width: 180 },
+        { title: 'Описание недостатка ИС', dataIndex: 'defect_description' },
+    ];
+
+    const planColumns: ColumnsType<any> = [
+        { title: 'N', dataIndex: 'id', width: 70 },
+        { title: 'Характеристика', dataIndex: 'characteristic', width: 220 },
+        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 220 },
+        { title: 'Описание задачи', dataIndex: 'task_description' },
+        { title: 'ВНД банка', dataIndex: 'internal_document', width: 160 },
+        { title: 'Ответственный', dataIndex: 'assignee_fio', width: 180 },
+        { title: 'Срок', dataIndex: 'deadline', width: 130 },
+    ];
+
+    const tableProps = {
+        bordered: true,
+        size: 'small' as const,
+        pagination: { pageSize: 12, hideOnSinglePage: true },
+        scroll: { x: 1100 },
+        locale: { emptyText: <Empty description="Нет данных. Загрузите заполненный Excel-файл." /> },
+    };
+
     return (
-        <div style={{ padding: '16px 0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <Title level={2} style={{ color: '#1F3864', margin: 0 }}>
-                    Реестры и Отчеты (Данные матриц)
-                </Title>
-                <Space>
-                    <Button icon={<DownloadOutlined />}>Экспорт в Excel</Button>
-                    <Upload {...uploadProps} showUploadList={false}>
-                        <Button type="primary" icon={<UploadOutlined />}>Импорт данных (.xlsx)</Button>
-                    </Upload>
+        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Row gutter={[16, 16]} align="middle" justify="space-between">
+                <Col>
+                    <Title level={3} style={{ margin: 0, color: '#1F3864' }}>Реестры и отчеты по качеству ИС</Title>
+                    <Text type="secondary">Представление повторяет структуру Excel-шаблонов: риски, недостатки и план обеспечения качества.</Text>
+                </Col>
+                <Col>
+                    <Space>
+                        <Select
+                            style={{ width: 360 }}
+                            loading={periodsLoading}
+                            placeholder="Период оценки"
+                            value={activePeriodId}
+                            options={periodOptions}
+                            onChange={setPeriodId}
+                        />
+                        <Upload {...uploadProps}>
+                            <Button type="primary" icon={<UploadOutlined />} loading={uploading}>
+                                Импорт .xlsx
+                            </Button>
+                        </Upload>
+                    </Space>
+                </Col>
+            </Row>
+
+            {!activePeriodId && <Alert type="info" showIcon message="Создайте оценку ИС, чтобы увидеть отчетные матрицы." />}
+            {isError && <Alert type="warning" showIcon message="Не удалось загрузить матрицы для выбранного периода." />}
+
+            <Card style={reportCardStyle}>
+                <Space style={{ marginBottom: 16 }}>
+                    <FileExcelOutlined style={{ color: '#1F3864' }} />
+                    <Text strong>Данные из БД</Text>
+                    {isFetching && <Spin size="small" />}
                 </Space>
-            </div>
-            <Card>
-                <Tabs defaultActiveKey="1" items={items} />
+                <Tabs
+                    items={[
+                        {
+                            key: 'risks',
+                            label: `Таблица возможных рисков (${data?.risks?.length || 0})`,
+                            children: <Table columns={risksColumns} dataSource={data?.risks || []} rowKey={(_, index = 0) => `risk-${index}`} {...tableProps} />,
+                        },
+                        {
+                            key: 'defects',
+                            label: `Перечень недостатков ИС (${data?.defects?.length || 0})`,
+                            children: <Table columns={defectsColumns} dataSource={data?.defects || []} rowKey="id" {...tableProps} />,
+                        },
+                        {
+                            key: 'plan',
+                            label: `План обеспечения качества (${data?.plan?.length || 0})`,
+                            children: <Table columns={planColumns} dataSource={data?.plan || []} rowKey="id" {...tableProps} />,
+                        },
+                    ]}
+                />
             </Card>
-        </div>
+        </Space>
     );
 };
 
-// Экспорт по умолчанию обязателен для работы React.lazy()
 export default ExcelReportsPage;
