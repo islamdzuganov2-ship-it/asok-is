@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # Ollama AI
     OLLAMA_API_URL: str = "http://ollama:11434"
     OLLAMA_MODEL: str = "asok-model:latest"
+    LOCAL_LLM_MODEL_DIR: str = "models/llm"
+    LOCAL_LLM_MODEL_FILE: str = "asok-model.gguf"
 
     # CORS
     CORS_ORIGINS: List[str] = [

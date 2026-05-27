@@ -1,137 +1,286 @@
 /**
- * Дашборд (C-Level & Manager View).
- * Реализует Global Health Score (Donut), Матрицу качества (Heatmap) и ТОП проблемных ИС (Table).
+ * DashboardPage.tsx — дашборд АСОК ИС.
+ * Подключён к GET /api/v1/assessments/dashboard.
+ * ECharts: Donut (распределение уровней) + Heatmap (ИС × характеристики).
  */
-import React, { useMemo } from 'react';
-import { Row, Col, Card, Table, Typography, Tag, Spin, Alert } from 'antd';
-import ReactECharts from 'echarts-for-react';
-import { useGetExecutiveDashboardQuery } from '../store/api/apiSlice';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Card, Col, Row, Skeleton, Statistic, Table, Tag, Typography, Alert,
+} from 'antd';
+import * as echarts from 'echarts';
+import { useNavigate } from 'react-router-dom';
 
 const { Title, Text } = Typography;
 
-export const DashboardPage: React.FC = () => {
-    const { data, isLoading, isError } = useGetExecutiveDashboardQuery();
+const LEVEL_COLORS: Record<string, string> = {
+  'Высокий уровень':        '#52c41a',
+  'Уровень выше среднего':  '#73d13d',
+  'Средний уровень':        '#c78706',
+  'Уровень ниже среднего':  '#e76f0d',
+  'Низкий уровень':         '#f5222d',
+  'Невозможно измерить':    '#3f3e3e',
+};
 
-    // Расчет высоты для тепловой карты на лету
-    const heatmapHeight = useMemo(() => {
-        if (!data?.yAxisLabels) return 300;
-        return Math.max(300, data.yAxisLabels.length * 40 + 100);
-    }, [data?.yAxisLabels]);
+const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
-    if (isLoading) return <Spin size="large" style={{ display: 'flex', margin: '20vh auto' }} />;
-    if (isError || !data) return <Alert message="Ошибка загрузки данных дашборда" type="error" />;
+interface DashboardData {
+  globalHealthScore: number;
+  levelCounts: Record<string, number>;
+  heatmapData: [number, number, number][];
+  xAxisLabels: string[];
+  yAxisLabels: string[];
+  problematicSystems: { id: string; name: string; criticality: string; lowMetricsCount: number }[];
+  totalMetrics: number;
+}
 
-    // 1. Конфиг для Global Health Score (Donut)
-    const donutOptions = {
-        title: {
-            text: `${data.globalHealthScore}%`,
-            left: 'center',
-            top: 'center',
-            textStyle: { fontSize: 36, fontWeight: 'bold', color: '#1F3864' }
-        },
-        tooltip: { trigger: 'item', formatter: '{b}: {c}%' },
-        legend: { orient: 'vertical', left: 'left' },
-        color: ['#52c41a', '#faad14', '#f5222d'], // RAG цвета
-        series: [
-            {
-                name: 'Индекс здоровья',
-                type: 'pie',
-                radius: ['40%', '70%'],
-                avoidLabelOverlap: false,
-                itemStyle: { borderRadius: 5, borderColor: '#fff', borderWidth: 2 },
-                label: { show: false },
-                data: [
-                    { value: data.globalHealthScore, name: 'Соответствие эталону' },
-                    { value: 100 - data.globalHealthScore, name: 'Технический долг' }
-                ]
-            }
-        ]
-    };
+const DashboardPage: React.FC = () => {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const donutRef = useRef<HTMLDivElement>(null);
+  const heatmapRef = useRef<HTMLDivElement>(null);
+  const donutChart = useRef<echarts.ECharts | null>(null);
+  const heatmapChart = useRef<echarts.ECharts | null>(null);
+  const navigate = useNavigate();
 
-    // 2. Конфиг для Матрицы качества (Heatmap)
-    const heatmapOptions = {
-        tooltip: { position: 'top' },
-        grid: { height: '70%', top: '10%', left: '15%', right: '5%' },
-        xAxis: { type: 'category', data: data.xAxisLabels, splitArea: { show: true }, axisLabel: { interval: 0, rotate: 30 } },
-        yAxis: { type: 'category', data: data.yAxisLabels, splitArea: { show: true } },
-        visualMap: {
-            min: 0,
-            max: 5,
-            calculable: true,
-            orient: 'horizontal',
-            left: 'center',
-            bottom: '0%',
-            inRange: { color: ['#f5222d', '#faad14', '#52c41a', '#237804'] }
-        },
-        series: [{
-            name: 'Качество (0-5)',
-            type: 'heatmap',
-            data: data.heatmapData,
-            label: { show: true },
-            emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' } }
-        }]
-    };
-
-    // 3. Колонки для таблицы проблемных ИС (AntD Table)
-    const columns = [
-        { title: 'Система', dataIndex: 'name', key: 'name', width: '40%' },
-        { 
-            title: 'Критичность', 
-            dataIndex: 'criticality', 
-            key: 'criticality',
-            render: (val: string) => {
-                const color = val === 'MISSION CRITICAL' ? 'red' : val === 'BUSINESS CRITICAL' ? 'orange' : 'blue';
-                return <Tag color={color}>{val}</Tag>;
-            }
-        },
-        { 
-            title: 'Низких метрик', 
-            dataIndex: 'lowMetricsCount', 
-            key: 'lowMetricsCount',
-            render: (val: number) => <Text type="danger" strong>{val} ед.</Text>
+  // Загрузка данных дашборда
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const token = localStorage.getItem('asok_access_token');
+        const resp = await fetch(`${VITE_API}/assessments/dashboard`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (resp.status === 401) {
+          navigate('/login');
+          return;
         }
-    ];
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json: DashboardData = await resp.json();
+        setData(json);
+      } catch (e: any) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDashboard();
+  }, [navigate]);
 
-    // Берем данные напрямую из API (бекенд уже отправляет этот массив)
-    const problematicSystemsList = data.problematicSystems || [];
+  // Donut Chart
+  useEffect(() => {
+    if (!data || !donutRef.current) return;
+    if (!donutChart.current) {
+      donutChart.current = echarts.init(donutRef.current);
+    }
+    const seriesData = Object.entries(data.levelCounts)
+      .filter(([, v]) => v > 0)
+      .map(([name, value]) => ({
+        name,
+        value,
+        itemStyle: { color: LEVEL_COLORS[name] ?? '#d9d9d9' },
+      }));
 
+    donutChart.current.setOption({
+      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      legend: { orient: 'vertical', left: 'left', textStyle: { fontSize: 11 } },
+      series: [{
+        type: 'pie',
+        radius: ['42%', '70%'],
+        data: seriesData,
+        label: { show: false },
+        emphasis: { label: { show: true, fontSize: 13, fontWeight: 'bold' } },
+      }],
+    });
+
+    const onResize = () => donutChart.current?.resize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [data]);
+
+  // Heatmap Chart
+  useEffect(() => {
+    if (!data || !heatmapRef.current || !data.heatmapData.length) return;
+    if (!heatmapChart.current) {
+      heatmapChart.current = echarts.init(heatmapRef.current);
+    }
+    const levelNames = ['Невозможно измерить', 'Низкий', 'Ниже среднего', 'Средний', 'Выше среднего', 'Высокий'];
+
+    heatmapChart.current.setOption({
+      tooltip: {
+        position: 'top',
+        formatter: (p: any) =>
+          `${data.yAxisLabels[p.value[1]] ?? ''}<br/>${data.xAxisLabels[p.value[0]] ?? ''}<br/><b>${levelNames[p.value[2]] ?? '—'}</b>`,
+      },
+      grid: { top: 10, bottom: 60, left: 160, right: 20 },
+      xAxis: {
+        type: 'category',
+        data: data.xAxisLabels,
+        axisLabel: { rotate: 35, fontSize: 10, interval: 0 },
+        splitArea: { show: true },
+      },
+      yAxis: {
+        type: 'category',
+        data: data.yAxisLabels,
+        axisLabel: { fontSize: 11 },
+        splitArea: { show: true },
+      },
+      visualMap: {
+        min: 0, max: 5,
+        calculable: false,
+        orient: 'horizontal',
+        left: 'center',
+        bottom: 0,
+        inRange: { color: ['#f5222d', '#fa8c16', '#faad14', '#73d13d', '#52c41a', '#135200'] },
+        text: ['Высокий', 'Низкий'],
+        textStyle: { fontSize: 11 },
+      },
+      series: [{
+        type: 'heatmap',
+        data: data.heatmapData,
+        label: { show: false },
+        emphasis: { itemStyle: { shadowBlur: 8 } },
+      }],
+    });
+
+    const onResize = () => heatmapChart.current?.resize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [data]);
+
+  // Очистка charts при unmount
+  useEffect(() => {
+    return () => {
+      donutChart.current?.dispose();
+      heatmapChart.current?.dispose();
+    };
+  }, []);
+
+  if (error) {
     return (
-        <div>
-            <Title level={2} style={{ color: '#1F3864' }}>Панель управления (Executive View)</Title>
-            
-            <Row gutter={[16, 16]}>
-                {/* Левая колонка: Donut Chart */}
-                <Col xs={24} lg={10}>
-                    <Card title="Global Health Score" style={{ height: '100%' }}>
-                        <ReactECharts option={donutOptions} style={{ height: '300px' }} />
-                    </Card>
-                </Col>
-
-                {/* Правая колонка: Проблемные ИС */}
-                <Col xs={24} lg={14}>
-                    <Card title="Топ проблемных ИС" style={{ height: '100%' }}>
-                        <Table 
-                            dataSource={problematicSystemsList}
-                            columns={columns} 
-                            rowKey="id"
-                            pagination={false}
-                            size="small"
-                        />
-                    </Card>
-                </Col>
-
-                {/* Нижний блок: Heatmap */}
-                <Col xs={24}>
-                    <Card title="Матрица качества (Характеристики ISO 25010)">
-                        <ReactECharts 
-                            option={heatmapOptions} 
-                            style={{ height: `${heatmapHeight}px` }} 
-                        />
-                    </Card>
-                </Col>
-            </Row>
-        </div>
+      <Alert
+        type="error"
+        showIcon
+        message="Ошибка загрузки дашборда"
+        description={`${error}. Проверьте подключение к backend.`}
+        style={{ margin: 24 }}
+      />
     );
+  }
+
+  const healthPct = data ? Math.round(data.globalHealthScore * 100) : 0;
+  const healthColor = healthPct >= 81 ? '#52c41a' : healthPct >= 41 ? '#faad14' : '#f5222d';
+
+  return (
+    <div style={{ padding: 24 }}>
+      <Title level={4} style={{ marginBottom: 20 }}>Дашборд качества ИС</Title>
+
+      {/* KPI строка */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            {loading ? <Skeleton.Input active /> : (
+              <Statistic
+                title="Глобальный балл"
+                value={healthPct}
+                suffix="%"
+                valueStyle={{ color: healthColor, fontWeight: 700 }}
+              />
+            )}
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            {loading ? <Skeleton.Input active /> : (
+              <Statistic title="Всего метрик" value={data?.totalMetrics ?? 0} />
+            )}
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            {loading ? <Skeleton.Input active /> : (
+              <Statistic title="ИС в мониторинге" value={data?.yAxisLabels.length ?? 0} />
+            )}
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            {loading ? <Skeleton.Input active /> : (
+              <Statistic
+                title="Низких метрик"
+                value={data?.problematicSystems.reduce((s, p) => s + p.lowMetricsCount, 0) ?? 0}
+                valueStyle={{ color: '#f5222d' }}
+              />
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]}>
+        {/* Donut */}
+        <Col xs={24} lg={10}>
+          <Card title="Распределение по уровням качества" style={{ height: 380 }}>
+            {loading
+              ? <Skeleton active paragraph={{ rows: 6 }} />
+              : data?.totalMetrics === 0
+                ? <Text type="secondary">Нет данных. Создайте период оценки и введите метрики.</Text>
+                : <div ref={donutRef} style={{ height: 310, width: '100%' }} />
+            }
+          </Card>
+        </Col>
+
+        {/* Проблемные ИС */}
+        <Col xs={24} lg={14}>
+          <Card title="⚠️ Проблемные ИС (наибольшее число низких метрик)" style={{ height: 380 }}>
+            {loading ? <Skeleton active /> : (
+              <Table
+                dataSource={data?.problematicSystems ?? []}
+                rowKey="id"
+                size="small"
+                pagination={false}
+                locale={{ emptyText: 'Нет проблемных систем' }}
+                columns={[
+                  { title: 'ИС', dataIndex: 'name', ellipsis: true },
+                  {
+                    title: 'Критичность',
+                    dataIndex: 'criticality',
+                    render: (v: string) => (
+                      <Tag color={v === 'MISSION CRITICAL' ? 'red' : v === 'BUSINESS CRITICAL' ? 'orange' : 'default'}>
+                        {v}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: 'Низких метрик',
+                    dataIndex: 'lowMetricsCount',
+                    render: (v: number) => <Text type="danger" strong>{v}</Text>,
+                    sorter: (a: any, b: any) => a.lowMetricsCount - b.lowMetricsCount,
+                  },
+                ]}
+              />
+            )}
+          </Card>
+        </Col>
+
+        {/* Heatmap */}
+        <Col xs={24}>
+          <Card title="Тепловая карта: ИС × Характеристики качества">
+            {loading
+              ? <Skeleton active paragraph={{ rows: 8 }} />
+              : !data?.heatmapData.length
+                ? <Text type="secondary">Нет данных для тепловой карты.</Text>
+                : <div
+                    ref={heatmapRef}
+                    style={{ height: Math.max(300, (data?.yAxisLabels.length ?? 1) * 44 + 100), width: '100%' }}
+                  />
+            }
+          </Card>
+        </Col>
+      </Row>
+    </div>
+  );
 };
 
 export default DashboardPage;

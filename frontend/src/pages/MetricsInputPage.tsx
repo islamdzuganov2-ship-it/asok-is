@@ -1,145 +1,255 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, Button, Input, InputNumber, Spin, Table, Typography, Upload, message } from 'antd';
-import { UploadOutlined } from '@ant-design/icons';
-import { useNavigate, useParams } from 'react-router-dom';
+/**
+ * MetricsInputPage.tsx — ввод val_a/val_b для тест-аналитика.
+ * Подключён к GET/PUT /api/v1/assessments/{id}/metrics.
+ * RAG цветовая индикация. Валидация val_b > 0.
+ * Excel upload через ExcelUploadBlock.
+ */
+import React, { useState, useCallback, useEffect } from 'react';
 import {
-    EditableMetric,
-    useGetAssessmentMetricsQuery,
-    useImportAssessmentExcelMutation,
-    useSaveAssessmentMetricsMutation,
-} from '../store/api/apiSlice';
+  Alert, Button, InputNumber, Space, Spin, Table,
+  Tag, Tooltip, Typography, message,
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { SaveOutlined, SendOutlined } from '@ant-design/icons';
+import { useParams } from 'react-router-dom';
+import ExcelUploadBlock from '../components/ExcelUploadBlock';
 
-const { Title } = Typography;
-const { TextArea } = Input;
+const { Text, Title } = Typography;
+const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
-export const MetricsInputPage: React.FC = () => {
-    const { id } = useParams<{ id: string }>();
-    const navigate = useNavigate();
-    const { data, isLoading, isError } = useGetAssessmentMetricsQuery(id!, { skip: !id });
-    const [saveMetrics, { isLoading: isSaving }] = useSaveAssessmentMetricsMutation();
-    const [importExcel, { isLoading: isImporting }] = useImportAssessmentExcelMutation();
-    const [metrics, setMetrics] = useState<EditableMetric[]>([]);
+interface MetricRow {
+  id: string;
+  name: string;
+  description: string;
+  val_a: number | null;
+  val_b: number | null;
+  expert_comment: string;
+  // После сохранения — расчётные поля
+  calculatedX?: number | null;
+  qualityLevel?: string | null;
+}
 
-    useEffect(() => {
-        if (data) {
-            setMetrics(data);
-        }
-    }, [data]);
+const LEVEL_TAG_COLOR: Record<string, string> = {
+  'Высокий уровень':        'green',
+  'Уровень выше среднего':  'cyan',
+  'Средний уровень':        'gold',
+  'Уровень ниже среднего':  'orange',
+  'Низкий уровень':         'red',
+  'Невозможно измерить':    'default',
+};
 
-    const handleFieldChange = (metricId: string, field: keyof EditableMetric, value: string | number | null) => {
-        setMetrics((prev) => prev.map((metric) => (metric.id === metricId ? { ...metric, [field]: value } : metric)));
-    };
+const MetricsInputPage: React.FC = () => {
+  const { id: periodId } = useParams<{ id: string }>();
+  const [metrics, setMetrics] = useState<MetricRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Отслеживаем изменённые строки (для подсветки)
+  const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
 
-    const handleSubmit = async () => {
-        if (!id) return;
-        for (const metric of metrics) {
-            if (metric.val_b === 0 && !metric.expert_comment?.trim()) {
-                message.error(`Метрика "${metric.name}": укажите причину невозможности измерения`);
-                return;
-            }
-            if (metric.val_a === null || metric.val_b === null) {
-                message.warning(`Метрика "${metric.name}": заполните A и B`);
-                return;
-            }
-        }
+  const token = localStorage.getItem('asok_access_token');
+  const headers = token
+    ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+    : { 'Content-Type': 'application/json' };
 
-        try {
-            await saveMetrics({ id, metrics }).unwrap();
-            message.success('Метрики сохранены и рассчитаны');
-            navigate(`/assessments/${id}/review`);
-        } catch {
-            message.error('Ошибка при сохранении метрик');
-        }
-    };
-
-    const handleImport = async (file: File) => {
-        if (!id) return Upload.LIST_IGNORE;
-        try {
-            const result = await importExcel({ id, file }).unwrap();
-            message.success(`Импортировано строк: ${result.imported}, пропущено: ${result.skipped}`);
-        } catch {
-            message.error('Не удалось импортировать Excel-файл');
-        }
-        return Upload.LIST_IGNORE;
-    };
-
-    if (isLoading) {
-        return <Spin size="large" style={{ display: 'flex', margin: '20vh auto' }} />;
+  // Загрузка метрик
+  const fetchMetrics = useCallback(async () => {
+    if (!periodId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await fetch(`${VITE_API}/assessments/${periodId}/metrics`, { headers });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+      const data: MetricRow[] = await resp.json();
+      setMetrics(data);
+      setDirtyIds(new Set());
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
     }
-    if (isError) {
-        return <Alert type="error" showIcon message="Не удалось загрузить метрики оценки" />;
+  }, [periodId]);
+
+  useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
+
+  // Обновление ячейки в локальном state
+  const handleCellChange = useCallback(
+    (id: string, field: 'val_a' | 'val_b' | 'expert_comment', value: number | string | null) => {
+      setMetrics((prev) =>
+        prev.map((m) => m.id === id ? { ...m, [field]: value } : m)
+      );
+      setDirtyIds((prev) => new Set(prev).add(id));
+    },
+    [],
+  );
+
+  // Сохранение всех изменений
+  const handleSaveAll = async () => {
+    if (!periodId || dirtyIds.size === 0) return;
+    setSaving(true);
+    try {
+      const dirtyMetrics = metrics.filter((m) => dirtyIds.has(m.id));
+      const resp = await fetch(`${VITE_API}/assessments/${periodId}/metrics`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(dirtyMetrics),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const result = await resp.json();
+      message.success(`Сохранено: ${result.updated} метрик. Backend пересчитал X.`);
+      // Перечитываем — получаем calculated_x и quality_level
+      await fetchMetrics();
+    } catch (e: any) {
+      message.error(`Ошибка сохранения: ${e.message}`);
+    } finally {
+      setSaving(false);
     }
+  };
 
-    const columns = [
-        {
-            title: 'Характеристика / Метрика',
-            dataIndex: 'name',
-            width: '30%',
-            render: (text: string, record: EditableMetric) => (
-                <div>
-                    <strong>{text}</strong>
-                    <div style={{ fontSize: 12, color: 'gray' }}>{record.description}</div>
-                </div>
-            ),
-        },
-        {
-            title: 'Числитель (A)',
-            dataIndex: 'val_a',
-            width: '15%',
-            render: (_: unknown, record: EditableMetric) => (
-                <InputNumber min={0} style={{ width: '100%' }} value={record.val_a} onChange={(value) => handleFieldChange(record.id, 'val_a', value)} />
-            ),
-        },
-        {
-            title: 'Знаменатель (B)',
-            dataIndex: 'val_b',
-            width: '15%',
-            render: (_: unknown, record: EditableMetric) => (
-                <InputNumber min={0} style={{ width: '100%' }} value={record.val_b} onChange={(value) => handleFieldChange(record.id, 'val_b', value)} />
-            ),
-        },
-        {
-            title: 'Обоснование при B=0',
-            dataIndex: 'expert_comment',
-            width: '40%',
-            render: (_: unknown, record: EditableMetric) => (
-                <TextArea
-                    rows={2}
-                    value={record.expert_comment}
-                    onChange={(event) => handleFieldChange(record.id, 'expert_comment', event.target.value)}
-                    status={record.val_b === 0 && !record.expert_comment ? 'error' : ''}
-                />
-            ),
-        },
-    ];
-
-    return (
-        <div>
-            <Title level={3}>Ввод первичных данных</Title>
-            <Alert
-                message="Заполните параметры A и B вручную или импортируйте .xlsx с колонками metric_id/name, val_a, val_b. Поддерживаются многолистовые файлы."
-                type="info"
-                showIcon
-                style={{ marginBottom: 24 }}
+  const columns: ColumnsType<MetricRow> = [
+    {
+      title: '№',
+      key: 'num',
+      width: 48,
+      render: (_: unknown, __: MetricRow, idx: number) => (
+        <Text type="secondary" style={{ fontSize: 11 }}>{idx + 1}</Text>
+      ),
+    },
+    {
+      title: 'Метрика',
+      dataIndex: 'name',
+      ellipsis: true,
+      render: (name: string, rec: MetricRow) => (
+        <Tooltip title={rec.description}>
+          <Text style={{ fontSize: 12 }}>{name}</Text>
+        </Tooltip>
+      ),
+    },
+    {
+      title: 'val_a (факт)',
+      dataIndex: 'val_a',
+      width: 120,
+      render: (_: unknown, rec: MetricRow) => (
+        <InputNumber
+          size="small"
+          min={0}
+          value={rec.val_a ?? undefined}
+          onChange={(v) => handleCellChange(rec.id, 'val_a', v)}
+          style={{ width: '100%' }}
+          precision={2}
+        />
+      ),
+    },
+    {
+      title: 'val_b (план)',
+      dataIndex: 'val_b',
+      width: 120,
+      render: (_: unknown, rec: MetricRow) => {
+        const isZero = rec.val_b === 0;
+        return (
+          <Tooltip
+            title={isZero ? 'val_b = 0: введите причину в комментарии' : ''}
+            color="red"
+            open={isZero || undefined}
+          >
+            <InputNumber
+              size="small"
+              min={0}
+              value={rec.val_b ?? undefined}
+              onChange={(v) => handleCellChange(rec.id, 'val_b', v)}
+              style={{ width: '100%' }}
+              status={isZero ? 'error' : ''}
+              precision={2}
             />
-            <Upload
-                accept=".xlsx"
-                maxCount={1}
-                showUploadList={false}
-                beforeUpload={(file) => handleImport(file)}
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: 'X',
+      dataIndex: 'calculatedX',
+      width: 72,
+      render: (x: number | null | undefined) =>
+        x != null ? <Text strong>{x.toFixed(4)}</Text> : <Text type="secondary">—</Text>,
+    },
+    {
+      title: 'Уровень',
+      dataIndex: 'qualityLevel',
+      width: 180,
+      render: (level: string | null | undefined) =>
+        level
+          ? <Tag color={LEVEL_TAG_COLOR[level] ?? 'default'} style={{ fontSize: 11 }}>{level}</Tag>
+          : <Text type="secondary">—</Text>,
+    },
+    {
+      title: 'Изм.',
+      key: 'dirty',
+      width: 44,
+      render: (_: unknown, rec: MetricRow) =>
+        dirtyIds.has(rec.id)
+          ? <Tag color="orange" style={{ fontSize: 10 }}>●</Tag>
+          : null,
+    },
+  ];
+
+  if (!periodId) {
+    return <Alert type="error" message="period_id не указан в URL" />;
+  }
+
+  return (
+    <div style={{ padding: 24 }}>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+          <Title level={4} style={{ marginBottom: 0 }}>
+            Ввод метрик — период {periodId}
+          </Title>
+          <Space>
+            <Button
+              icon={<SaveOutlined />}
+              type="primary"
+              loading={saving}
+              disabled={dirtyIds.size === 0}
+              onClick={handleSaveAll}
             >
-                <Button icon={<UploadOutlined />} loading={isImporting} style={{ marginBottom: 16 }}>
-                    Импортировать Excel
-                </Button>
-            </Upload>
-            <Table dataSource={metrics} columns={columns} rowKey="id" pagination={false} bordered />
-            <div style={{ marginTop: 24, textAlign: 'right' }}>
-                <Button type="primary" size="large" onClick={handleSubmit} loading={isSaving}>
-                    Сохранить и рассчитать
-                </Button>
-            </div>
-        </div>
-    );
+              Сохранить {dirtyIds.size > 0 ? `(${dirtyIds.size})` : ''}
+            </Button>
+          </Space>
+        </Space>
+
+        {error && (
+          <Alert
+            type="error"
+            showIcon
+            message="Ошибка загрузки метрик"
+            description={error}
+            closable
+          />
+        )}
+
+        {/* Excel Upload блок */}
+        <ExcelUploadBlock periodId={periodId} onImported={fetchMetrics} />
+
+        {loading
+          ? <Spin size="large" style={{ display: 'block', marginTop: 40 }} />
+          : (
+            <Table<MetricRow>
+              columns={columns}
+              dataSource={metrics}
+              rowKey="id"
+              size="small"
+              bordered
+              scroll={{ x: 700 }}
+              pagination={{ pageSize: 30, hideOnSinglePage: true }}
+              rowClassName={(rec) =>
+                dirtyIds.has(rec.id) ? 'ant-table-row-selected' : ''
+              }
+              locale={{ emptyText: 'Нет метрик. Создайте период и seed данные.' }}
+            />
+          )
+        }
+      </Space>
+    </div>
+  );
 };
 
 export default MetricsInputPage;

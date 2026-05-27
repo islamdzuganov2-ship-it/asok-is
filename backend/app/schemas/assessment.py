@@ -120,6 +120,8 @@ class EditableMetricOut(BaseModel):
     val_a: float | None = None
     val_b: float | None = None
     expert_comment: str | None = ""
+    calculatedX: float | None = None
+    qualityLevel: str | None = None
 
 
 class EditableMetricIn(BaseModel):

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Typography, message } from 'antd';
+import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Typography, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import {
     MetricCreateDto,
@@ -12,10 +12,61 @@ import {
 
 const { Title, Text } = Typography;
 
+const OTHER_VALUE = '__other__';
+
+const CHARACTERISTIC_OPTIONS = [
+    'Функциональная пригодность',
+    'Совместимость',
+    'Надежность',
+    'Пригодность для обслуживания',
+    'Тестируемость',
+    'Переносимость',
+    'Эффективность. Показатели временных Характеристик',
+    'ЭФФЕКТИВНОСТЬ',
+    'Безопасность. Показатели аутентификации',
+    'Удобство использования. Показатели полноты описания',
+];
+
+const SUBCHARACTERISTIC_OPTIONS = [
+    'Функциональное покрытие',
+    'Совместимость',
+    'Коррекция ошибок',
+    'Доступность технологических процессов',
+    'Среднее время восстановления после ТС',
+    'Полнота резервной копии данных',
+    'Модифицируемость',
+    'Разделение компонентов (для микросервисных систем)',
+    'Корректность релизов',
+    'Корректность плановых релизов',
+    'Корректность срочных релизов',
+    'Мониторинг бизнес-процессов',
+    'Мониторинг серверов',
+    'Автоматизация Регрессионной Модели',
+    'Автономность тестирования',
+    'ПОЛНОТА ВИДОВ ТЕСТИРОВАНИЯ',
+    'Идентичность непродуктовых сред',
+    'Состав тест и препрод окружений',
+    'Время установки Релиза',
+    'Средняя пропускная способность',
+    'КОРРЕКТНОСТЬ ВРЕМЕНИ ОТКЛИКА',
+    'Корректность механизма аутентификации',
+    'Соответствие правил аутентификаци',
+    'Реализация ролевой модели на ИС',
+    'Полнота описания Руководства Пользователя',
+];
+
+type MetricFormValues = MetricCreateDto & {
+    characteristic_other?: string;
+    subcharacteristic_other?: string;
+    val_a?: number;
+    val_b?: number;
+    extra_values?: Array<{ name?: string; value?: string }>;
+};
+
 export const NewAssessmentPage: React.FC = () => {
     const [assessmentForm] = Form.useForm();
     const [systemForm] = Form.useForm<SystemCreateDto>();
-    const [metricForm] = Form.useForm<MetricCreateDto>();
+    const [metricForm] = Form.useForm<MetricFormValues>();
     const navigate = useNavigate();
     const { data: systems, isLoading, isError } = useGetSystemsQuery();
     const [createAssessment, { isLoading: isCreating }] = useCreateAssessmentPeriodMutation();
@@ -23,6 +74,8 @@ export const NewAssessmentPage: React.FC = () => {
     const [createMetric, { isLoading: isCreatingMetric }] = useCreateMetricMutation();
     const [systemModalOpen, setSystemModalOpen] = useState(false);
     const [metricModalOpen, setMetricModalOpen] = useState(false);
+    const selectedCharacteristic = Form.useWatch('characteristic', metricForm);
+    const selectedSubcharacteristic = Form.useWatch('subcharacteristic', metricForm);
 
     const periodOptions = useMemo(() => {
         const year = new Date().getFullYear();
@@ -54,6 +107,8 @@ export const NewAssessmentPage: React.FC = () => {
         } catch (error: any) {
             if (error?.status === 409) {
                 message.error('Код системы уже существует');
+            } else {
+                message.error('Не удалось добавить систему');
             }
         }
     };
@@ -61,7 +116,35 @@ export const NewAssessmentPage: React.FC = () => {
     const handleCreateMetric = async () => {
         try {
             const values = await metricForm.validateFields();
-            await createMetric(values).unwrap();
+            const characteristic = values.characteristic === OTHER_VALUE
+                ? values.characteristic_other?.trim()
+                : values.characteristic;
+            const subcharacteristic = values.subcharacteristic === OTHER_VALUE
+                ? values.subcharacteristic_other?.trim()
+                : values.subcharacteristic;
+
+            if (!characteristic || !subcharacteristic) {
+                message.error('Заполните характеристику и подхарактеристику');
+                return;
+            }
+
+            const details = [
+                values.description?.trim(),
+                values.val_a != null ? `A: ${values.val_a}` : '',
+                values.val_b != null ? `B: ${values.val_b}` : '',
+                ...(values.extra_values || [])
+                    .filter((item) => item?.name || item?.value)
+                    .map((item) => `${item.name || 'Дополнительное значение'}: ${item.value || ''}`),
+            ].filter(Boolean).join('\n');
+
+            await createMetric({
+                characteristic,
+                subcharacteristic,
+                formula_type: values.formula_type,
+                description: details || undefined,
+                data_source: values.data_source,
+                is_active: true,
+            }).unwrap();
             setMetricModalOpen(false);
             metricForm.resetFields();
             message.success('Метрика добавлена в каталог');
@@ -75,7 +158,7 @@ export const NewAssessmentPage: React.FC = () => {
             <Space direction="vertical" size="large" style={{ display: 'flex' }}>
                 <div>
                     <Title level={3} style={{ color: '#1F3864', marginBottom: 8 }}>Новая оценка ИС</Title>
-                    <Text type="secondary">Сначала добавьте систему и необходимые метрики, затем создайте оценочный период.</Text>
+                    <Text type="secondary">Добавьте систему, метрики и создайте оценочный период для заполнения данных.</Text>
                 </div>
 
                 {isError && <Alert type="error" showIcon message="Не удалось загрузить справочник систем" />}
@@ -180,14 +263,51 @@ export const NewAssessmentPage: React.FC = () => {
                 confirmLoading={isCreatingMetric}
                 okText="Добавить"
                 cancelText="Отмена"
+                width={720}
             >
                 <Form form={metricForm} layout="vertical" initialValues={{ formula_type: 'DIRECT', is_active: true }}>
-                    <Form.Item name="characteristic" label="Характеристика" rules={[{ required: true }]}>
-                        <Input />
+                    <Form.Item name="characteristic" label="Характеристика" rules={[{ required: true, message: 'Выберите характеристику' }]}>
+                        <Select
+                            showSearch
+                            placeholder="Выберите характеристику"
+                            optionFilterProp="label"
+                            options={[
+                                ...CHARACTERISTIC_OPTIONS.map((item) => ({ value: item, label: item })),
+                                { value: OTHER_VALUE, label: 'Другое' },
+                            ]}
+                        />
                     </Form.Item>
-                    <Form.Item name="subcharacteristic" label="Метрика / подхарактеристика" rules={[{ required: true }]}>
-                        <Input />
+                    {selectedCharacteristic === OTHER_VALUE && (
+                        <Form.Item
+                            name="characteristic_other"
+                            label="Новая характеристика"
+                            rules={[{ required: true, message: 'Введите новую характеристику' }]}
+                        >
+                            <Input placeholder="Введите характеристику" />
+                        </Form.Item>
+                    )}
+
+                    <Form.Item name="subcharacteristic" label="Подхарактеристика" rules={[{ required: true, message: 'Выберите подхарактеристику' }]}>
+                        <Select
+                            showSearch
+                            placeholder="Выберите подхарактеристику"
+                            optionFilterProp="label"
+                            options={[
+                                ...SUBCHARACTERISTIC_OPTIONS.map((item) => ({ value: item, label: item })),
+                                { value: OTHER_VALUE, label: 'Другое' },
+                            ]}
+                        />
                     </Form.Item>
+                    {selectedSubcharacteristic === OTHER_VALUE && (
+                        <Form.Item
+                            name="subcharacteristic_other"
+                            label="Новая подхарактеристика"
+                            rules={[{ required: true, message: 'Введите новую подхарактеристику' }]}
+                        >
+                            <Input placeholder="Введите подхарактеристику" />
+                        </Form.Item>
+                    )}
+
                     <Form.Item name="formula_type" label="Тип формулы" rules={[{ required: true }]}>
                         <Select
                             options={[
@@ -196,7 +316,36 @@ export const NewAssessmentPage: React.FC = () => {
                             ]}
                         />
                     </Form.Item>
-                    <Form.Item name="description" label="Описание">
+
+                    <Space size="middle" style={{ display: 'flex' }} align="start">
+                        <Form.Item name="val_a" label="Значение A" style={{ flex: 1 }}>
+                            <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="A" />
+                        </Form.Item>
+                        <Form.Item name="val_b" label="Значение B" style={{ flex: 1 }}>
+                            <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="B" />
+                        </Form.Item>
+                    </Space>
+
+                    <Form.List name="extra_values">
+                        {(fields, { add, remove }) => (
+                            <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
+                                {fields.map((field) => (
+                                    <Space key={field.key} align="baseline" style={{ display: 'flex' }}>
+                                        <Form.Item {...field} name={[field.name, 'name']} label="Доп. параметр">
+                                            <Input placeholder="Название" />
+                                        </Form.Item>
+                                        <Form.Item {...field} name={[field.name, 'value']} label="Значение">
+                                            <Input placeholder="Значение" />
+                                        </Form.Item>
+                                        <Button danger onClick={() => remove(field.name)}>Удалить</Button>
+                                    </Space>
+                                ))}
+                                <Button onClick={() => add()}>Добавить дополнительное значение</Button>
+                            </Space>
+                        )}
+                    </Form.List>
+
+                    <Form.Item name="description" label="Экспертное мнение">
                         <Input.TextArea rows={3} />
                     </Form.Item>
                     <Form.Item name="data_source" label="Источник данных">
