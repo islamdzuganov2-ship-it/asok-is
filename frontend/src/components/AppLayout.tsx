@@ -7,6 +7,8 @@ import {
     SettingOutlined,
     FileExcelOutlined,
     UserOutlined,
+    FundOutlined,
+    AuditOutlined,
 } from '@ant-design/icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -30,6 +32,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
     const menuItems = [
         { key: '/dashboard', icon: <DashboardOutlined />, label: 'Дашборд' },
+        ...(['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN'].includes(userRole)
+            ? [{ key: '/dashboard/executive', icon: <FundOutlined />, label: 'Управленческий дашборд' }]
+            : []),
+        ...(['QUALITY_MANAGER', 'ADMIN'].includes(userRole)
+            ? [{ key: '/dashboard/manager', icon: <AuditOutlined />, label: 'Менеджер по качеству' }]
+            : []),
         ...(['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN'].includes(userRole)
             ? [{ key: '/assessments/new', icon: <FormOutlined />, label: 'Новая оценка' }]
             : []),

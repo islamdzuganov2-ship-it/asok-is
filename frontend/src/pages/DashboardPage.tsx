@@ -49,7 +49,7 @@ const DashboardPage: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const token = localStorage.getItem('asok_access_token');
+        const token = localStorage.getItem('token');
         const resp = await fetch(`${VITE_API}/assessments/dashboard`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });

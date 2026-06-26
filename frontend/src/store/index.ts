@@ -6,11 +6,14 @@ import { configureStore } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
 import { apiSlice } from './api/apiSlice';
 import authReducer from './slices/authSlice';
+import governanceReducer from './slices/governanceSlice';
 
 export const store = configureStore({
     reducer: {
         // Локальное состояние авторизации
         auth: authReducer,
+        // Governance-петля: меры/суждения, ожидающие одобрения топ-менеджмента
+        governance: governanceReducer,
         // RTK Query Cache & API Reducer
         [apiSlice.reducerPath]: apiSlice.reducer,
     },

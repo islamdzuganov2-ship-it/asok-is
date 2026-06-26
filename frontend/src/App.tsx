@@ -8,6 +8,8 @@ import { AppLayout } from './components/AppLayout';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const ExecutiveDashboard = lazy(() => import('./pages/dashboard/ExecutiveDashboard'));
+const ManagerDashboard = lazy(() => import('./pages/dashboard/ManagerDashboard'));
 const NewAssessmentPage = lazy(() => import('./pages/NewAssessmentPage'));
 const MetricsInputPage = lazy(() => import('./pages/MetricsInputPage'));
 const ExpertReviewPage = lazy(() => import('./pages/ExpertReviewPage'));
@@ -39,6 +41,8 @@ export const App: React.FC = () => {
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/*" element={<RequireAuth><AppLayout><Suspense fallback={<PageLoader />}><Routes>
                             <Route path="dashboard" element={<DashboardPage />} />
+                            <Route path="dashboard/executive" element={<RequireRole allowedRoles={['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><ExecutiveDashboard /></RequireRole>} />
+                            <Route path="dashboard/manager" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><ManagerDashboard /></RequireRole>} />
                             <Route path="assessments/new" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><NewAssessmentPage /></RequireRole>} />
                             <Route path="assessments/:id/input" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><MetricsInputPage /></RequireRole>} />
                             <Route path="assessments/:id/review" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><ExpertReviewPage /></RequireRole>} />
