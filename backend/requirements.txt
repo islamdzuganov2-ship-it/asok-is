@@ -26,6 +26,10 @@ httpx==0.26.0
 openpyxl==3.1.2
 pandas==2.2.0
 
+# === LLM (in-process, on-prem; читает models/llm/asok-model.gguf) ===
+# CPU-сборка llama.cpp. Модель кладётся в models/llm/asok-model.gguf (Qwen2.5-1.5B-Instruct Q4_K_M).
+llama-cpp-python==0.2.90
+
 # === Dev (опционально для контейнера) ===
 pytest==7.4.4
 pytest-asyncio==0.23.3

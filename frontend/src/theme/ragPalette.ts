@@ -4,6 +4,8 @@
  * Используется обоими дашбордами и модальными окнами.
  */
 
+import type { CSSProperties } from 'react';
+
 export type RagKey = 'good' | 'medium' | 'bad' | 'muted';
 
 export interface RagToken {
@@ -57,3 +59,15 @@ export function levelLabel(score: number): string {
 
 /** Готовый токен RAG по баллу. */
 export const ragToken = (score: number): RagToken => RAG[ragByScore(score)];
+
+/** Пастельные стили тега критичности ИС (без ярких красных/оранжевых). */
+const CRIT: Record<string, { bg: string; fg: string }> = {
+  'MISSION CRITICAL':     { bg: '#F3DAD5', fg: '#8E4537' }, // мягкий терракот
+  'BUSINESS CRITICAL':    { bg: '#F4E8CC', fg: '#806121' }, // мягкое золото
+  'BUSINESS OPERATIONAL': { bg: '#E7EAEE', fg: '#5B6675' }, // нейтральный графит
+};
+
+export const critTagStyle = (criticality: string): CSSProperties => {
+  const t = CRIT[criticality] ?? CRIT['BUSINESS OPERATIONAL'];
+  return { background: t.bg, color: t.fg, border: 'none' };
+};

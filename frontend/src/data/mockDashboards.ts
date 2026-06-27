@@ -125,6 +125,85 @@ export interface ManagerSystem {
   characteristics: ManagerCharacteristic[];
 }
 
+export const MANAGER_MOCK_SYSTEMS: ManagerSystem[] = [
+  {
+    id: 'sys-ehd',
+    name: 'Единое Хранилище Данных (ЕХД)',
+    characteristics: [
+      {
+        key: 'testability', title: 'Тестируемость', score: 25,
+        metrics: [
+          { id: 'm1', name: 'Покрытие автотестами регресса', score: 16, formula: 'Sₓ = автоматизировано / всего тест-кейсов' },
+          { id: 'm2', name: 'Доля воспроизводимых дефектов', score: 25, formula: 'Sₓ = воспроизводимые / зарегистрированные' },
+          { id: 'm3', name: 'Готовность тестовых данных', score: 15, formula: 'Sₓ = готовые наборы / требуемые' },
+          { id: 'm4', name: 'Стабильность тестовой среды', score: 40, formula: 'Sₓ = 1 − простой среды / окно тестирования' },
+        ],
+      },
+      {
+        key: 'maintainability', title: 'Сопровождаемость', score: 48,
+        metrics: [
+          { id: 'm5', name: 'Модульность', score: 52, formula: 'экспертно по архитектуре' },
+          { id: 'm6', name: 'Анализируемость логов', score: 44, formula: 'Sₓ = структурир. логи / всего' },
+        ],
+      },
+      {
+        key: 'reliability', title: 'Надёжность', score: 55,
+        metrics: [
+          { id: 'm7', name: 'Доступность (uptime)', score: 78, formula: 'Sₓ = uptime / план' },
+          { id: 'm8', name: 'Зрелость (плотность дефектов)', score: 32, formula: 'Sₓ = 1 − дефекты / объём' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'sys-radius',
+    name: 'Systematica Radius',
+    characteristics: [
+      {
+        key: 'reliability', title: 'Надёжность', score: 30,
+        metrics: [
+          { id: 'r1', name: 'Доступность (uptime)', score: 28, formula: 'Sₓ = uptime / план' },
+          { id: 'r2', name: 'Среднее время восстановления', score: 35, formula: 'Sₓ = 1 − факт / норматив' },
+        ],
+      },
+      {
+        key: 'maintainability', title: 'Сопровождаемость', score: 70,
+        metrics: [
+          { id: 'r3', name: 'Корректность плановых релизов', score: 72, formula: 'Sₓ = 1 − проблемные / всего' },
+          { id: 'r4', name: 'Модульность', score: 68, formula: 'экспертно по архитектуре' },
+        ],
+      },
+      {
+        key: 'security', title: 'Безопасность', score: 82,
+        metrics: [
+          { id: 'r5', name: 'Реализация ролевой модели', score: 80, formula: 'Sₓ = реализовано / требуется' },
+          { id: 'r6', name: 'Корректность аутентификации', score: 84, formula: 'Sₓ = пройдено / проверок' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'sys-crm-opk',
+    name: 'CRM ОПК',
+    characteristics: [
+      {
+        key: 'maintainability', title: 'Сопровождаемость', score: 35,
+        metrics: [
+          { id: 'c1', name: 'Модульность', score: 30, formula: 'экспертно по архитектуре' },
+          { id: 'c2', name: 'Корректность срочных релизов', score: 40, formula: 'Sₓ = 1 − проблемные / всего' },
+        ],
+      },
+      {
+        key: 'functional', title: 'Функциональная пригодность', score: 40,
+        metrics: [
+          { id: 'c3', name: 'Функциональное покрытие', score: 38, formula: 'Sₓ = 1 − непокрытые / требования' },
+          { id: 'c4', name: 'Коррекция ошибок', score: 42, formula: 'Sₓ = исправленные / всего' },
+        ],
+      },
+    ],
+  },
+];
+
 export const MANAGER_MOCK: ManagerSystem = {
   id: 'sys-ehd',
   name: 'Единое Хранилище Данных (ЕХД)',

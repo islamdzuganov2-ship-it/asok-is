@@ -9,6 +9,7 @@
  */
 import { createSlice, PayloadAction, nanoid } from '@reduxjs/toolkit';
 import type { RootState } from '../index';
+import { SCALE_PROPOSALS } from '../../data/mockScaleData';
 
 export type ProposalStatus = 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
 
@@ -23,7 +24,8 @@ export interface Proposal {
   rationale: string;         // обоснование (профессиональное суждение)
   createRisk: boolean;       // создавать ли карточку риска
   riskTitle?: string;        // наименование риска
-  owner?: string;            // ответственный
+  owner?: string;            // ответственный (ФИО)
+  ownerRole?: string;        // должность ответственного
   dueDate?: string;          // срок
   /** Что ожидается от ЛПР и почему — для понятности топ-менеджменту (R2.5). */
   expectation: string;
@@ -32,17 +34,29 @@ export interface Proposal {
   status: ProposalStatus;
   decidedBy?: string;
   decidedAt?: string;
+  /** Комментарий ЛПР при одобрении/отклонении (обоснование решения). */
+  decisionComment?: string;
+  /** Контроль выполнения одобренной меры менеджером по качеству. */
+  execution?: ExecutionStatus;
+  executionComment?: string;   // как выполнено / почему не выполнено (обязательно)
+  executedBy?: string;
+  executedAt?: string;
 }
+
+export type ExecutionStatus = 'DONE' | 'NOT_DONE';
 
 const STORAGE_KEY = 'asok_governance';
 
 function loadProposals(): Proposal[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Proposal[]) : [];
+    if (raw) return JSON.parse(raw) as Proposal[];
   } catch {
-    return [];
+    /* битый кэш — пересоздаём из демо-набора */
   }
+  // Первый запуск: засеваем масштабный реестр мер (30 ИС) для демонстрации.
+  persist(SCALE_PROPOSALS);
+  return SCALE_PROPOSALS;
 }
 
 function persist(items: Proposal[]) {
@@ -86,28 +100,49 @@ const governanceSlice = createSlice({
         };
       },
     },
-    approveProposal(state, action: PayloadAction<{ id: string; by: string }>) {
+    approveProposal(state, action: PayloadAction<{ id: string; by: string; comment?: string }>) {
       const p = state.proposals.find((x) => x.id === action.payload.id);
       if (p) {
         p.status = 'APPROVED';
         p.decidedBy = action.payload.by;
         p.decidedAt = new Date().toISOString();
+        p.decisionComment = action.payload.comment;
         persist(state.proposals);
       }
     },
-    rejectProposal(state, action: PayloadAction<{ id: string; by: string }>) {
+    rejectProposal(state, action: PayloadAction<{ id: string; by: string; comment?: string }>) {
       const p = state.proposals.find((x) => x.id === action.payload.id);
       if (p) {
         p.status = 'REJECTED';
         p.decidedBy = action.payload.by;
         p.decidedAt = new Date().toISOString();
+        p.decisionComment = action.payload.comment;
+        persist(state.proposals);
+      }
+    },
+    updateProposalMeta(state, action: PayloadAction<{ id: string; owner?: string; ownerRole?: string; dueDate?: string }>) {
+      const p = state.proposals.find((x) => x.id === action.payload.id);
+      if (p && p.status === 'PENDING_APPROVAL') {
+        if (action.payload.owner !== undefined) p.owner = action.payload.owner;
+        if (action.payload.ownerRole !== undefined) p.ownerRole = action.payload.ownerRole;
+        if (action.payload.dueDate !== undefined) p.dueDate = action.payload.dueDate;
+        persist(state.proposals);
+      }
+    },
+    setExecution(state, action: PayloadAction<{ id: string; status: ExecutionStatus; comment: string; by: string }>) {
+      const p = state.proposals.find((x) => x.id === action.payload.id);
+      if (p && p.status === 'APPROVED') {
+        p.execution = action.payload.status;
+        p.executionComment = action.payload.comment;
+        p.executedBy = action.payload.by;
+        p.executedAt = new Date().toISOString();
         persist(state.proposals);
       }
     },
   },
 });
 
-export const { addProposal, approveProposal, rejectProposal } = governanceSlice.actions;
+export const { addProposal, approveProposal, rejectProposal, updateProposalMeta, setExecution } = governanceSlice.actions;
 export default governanceSlice.reducer;
 
 // --- Селекторы ---

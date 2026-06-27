@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import (
     create_access_token,
@@ -20,21 +21,21 @@ DEMO_USERS = {
         "username": "admin",
         "password": "Admin123!",
         "role": "ADMIN",
-        "full_name": "Администратор",
+        "full_name": "Демо-доступ",
     },
     "analyst": {
         "id": "00000000-0000-0000-0000-000000000002",
         "username": "analyst",
         "password": "Analyst123!",
         "role": "TEST_ANALYST",
-        "full_name": "Аналитик",
+        "full_name": "Демо-доступ",
     },
     "manager": {
         "id": "00000000-0000-0000-0000-000000000003",
         "username": "manager",
         "password": "Manager123!",
         "role": "QUALITY_MANAGER",
-        "full_name": "Руководитель",
+        "full_name": "Демо-доступ",
     },
 }
 
@@ -56,9 +57,12 @@ async def login(
     payload: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    demo_user = DEMO_USERS.get(payload.username)
-    if demo_user and payload.password == demo_user["password"]:
-        return _token_response(demo_user)
+    # Демо-учётки активны ТОЛЬКО в DEMO_MODE. В проде — никаких встроенных паролей
+    # (требование к управлению учётными данными, ГОСТ Р 57580, 152-ФЗ).
+    if settings.DEMO_MODE:
+        demo_user = DEMO_USERS.get(payload.username)
+        if demo_user and payload.password == demo_user["password"]:
+            return _token_response(demo_user)
 
     result = await db.execute(select(User).where(User.username == payload.username))
     user = result.scalar_one_or_none()
@@ -81,7 +85,14 @@ async def login(
 
 @router.post("/refresh")
 async def refresh_token(payload: TokenRefreshRequest) -> dict[str, str]:
-    token = decode_token(payload.refresh_token)
+    try:
+        token = decode_token(payload.refresh_token, expected_type="refresh")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
     return {
         "access_token": create_access_token({"sub": token.sub, "role": token.role}),
         "refresh_token": create_refresh_token({"sub": token.sub, "role": token.role}),

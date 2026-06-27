@@ -52,6 +52,7 @@ export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClo
         createRisk: true,
         riskTitle: `Снижение качества: ${target.characteristic}`,
         owner: '',
+        ownerRole: '',
         dueDate: null,
         adjustedLevel: undefined,
       });
@@ -68,7 +69,7 @@ export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClo
       `Прошу одобрить меру по «${target.characteristic}» ИС «${target.systemName}». ` +
       `Метрика «${target.metricName}» = ${target.score}% (${levelLabel(target.score)}). ` +
       (v.createRisk
-        ? `Предлагается завести риск «${v.riskTitle}»${v.owner ? `, ответственный — ${v.owner}` : ''}` +
+        ? `Предлагается завести риск «${v.riskTitle}»${v.owner ? `, ответственный — ${v.owner}${v.ownerRole ? ` (${v.ownerRole})` : ''}` : ''}` +
           `${v.dueDate ? `, срок — ${dayjs(v.dueDate).format('DD.MM.YYYY')}` : ''}.`
         : 'Корректировка экспертной оценки без заведения риска.');
 
@@ -84,6 +85,7 @@ export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClo
         createRisk: !!v.createRisk,
         riskTitle: v.createRisk ? v.riskTitle : undefined,
         owner: v.createRisk ? v.owner : undefined,
+        ownerRole: v.createRisk ? v.ownerRole : undefined,
         dueDate: v.createRisk && v.dueDate ? dayjs(v.dueDate).format('DD.MM.YYYY') : undefined,
         expectation,
         createdBy: fullName,
@@ -142,8 +144,11 @@ export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClo
             <Form.Item name="riskTitle" label="Риск" rules={[{ required: true, message: 'Укажите формулировку риска' }]}>
               <Input placeholder="Напр.: Нарушение непрерывности предоставления данных" />
             </Form.Item>
-            <Form.Item name="owner" label="Ответственный" rules={[{ required: true, message: 'Укажите ответственного' }]}>
+            <Form.Item name="owner" label="Ответственный (ФИО)" rules={[{ required: true, message: 'Укажите ответственного' }]}>
               <Input placeholder="Иванов И.И." />
+            </Form.Item>
+            <Form.Item name="ownerRole" label="Должность ответственного" rules={[{ required: true, message: 'Укажите должность' }]}>
+              <Input placeholder="Напр.: Руководитель ИТ-блока" />
             </Form.Item>
             <Form.Item name="dueDate" label="Срок">
               <DatePicker format="DD.MM.YYYY" style={{ width: '100%' }} />

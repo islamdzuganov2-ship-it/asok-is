@@ -93,7 +93,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+      # Относительный путь — запросы идут на тот же хост и проксируются Vite на бэкенд.
+      # Работает и на localhost, и по публичной ссылке туннеля (один источник, без CORS).
+      - VITE_API_BASE_URL=/api/v1
+      - VITE_PROXY_TARGET=http://backend:8000
     depends_on:
       - backend
     volumes:
@@ -103,6 +106,101 @@ services:
     networks:
       - asok_net
 
+  # ── Вариант 1: быстрый туннель (СЛУЧАЙНАЯ ссылка trycloudflare.com) ──────────────
+  # Протокол http2 (не quic) — обходит проблемы QUIC/UDP и ошибку Cloudflare 1033.
+  #   docker compose --profile tunnel up -d
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: asok_tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --protocol http2 --url http://frontend:3000
+    depends_on:
+      - frontend
+    networks:
+      - asok_net
+    profiles:
+      - tunnel
+
+  # ── Вариант 2: СТАТИЧНАЯ ссылка на ВАШЕМ домене (named tunnel, Cloudflare) ────────
+  # Стабильный URL https://asok.asokis.ai. Домен asokis.ai уже в Cloudflare.
+  # В Zero Trust → Tunnels создать туннель, Public hostname asok.asokis.ai →
+  # service http://frontend:3000, скопировать токен в .env как TUNNEL_TOKEN. Затем:
+  #   docker compose --profile named up -d
+  tunnel-named:
+    image: cloudflare/cloudflared:latest
+    container_name: asok_tunnel_named
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --protocol http2 --token ${TUNNEL_TOKEN:-}
+    depends_on:
+      - frontend
+    networks:
+      - asok_net
+    profiles:
+      - named
+
+  # ── Вариант 3: СТАТИЧНЫЙ домен без своего домена (ngrok, бесплатный статик-домен) ──
+  # В дашборде ngrok получить authtoken и забронировать бесплатный домен вида
+  # your-name.ngrok-free.app → задать в .env NGROK_AUTHTOKEN и NGROK_DOMAIN. Затем:
+  #   docker compose --profile ngrok up -d
+  tunnel-ngrok:
+    image: ngrok/ngrok:latest
+    container_name: asok_ngrok
+    restart: unless-stopped
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+    command: http frontend:3000 --url ${NGROK_DOMAIN:-} --log stdout
+    depends_on:
+      - frontend
+    networks:
+      - asok_net
+    profiles:
+      - ngrok
+
+  # ── Вариант 4: ПРЯМОЙ хостинг с вашего ПК (БЕЗ туннеля/прокси в трафике) ──────────
+  # Ваш ПК сам отдаёт https://asokis.ai. Caddy получает TLS-сертификат Let's Encrypt.
+  # Требуется (делается вне ПК): проброс портов 80 и 443 на роутере → 192.168.1.97,
+  # A-запись asokis.ai → ваш публичный IP в режиме DNS-only (серое облако), открытый firewall.
+  #   docker compose --profile direct up -d
+  webserver:
+    image: caddy:2-alpine
+    container_name: asok_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    networks:
+      - asok_net
+    profiles:
+      - direct
+
+  # ── Доп. к Варианту 4: авто-обновление A-записи при смене домашнего IP (DDNS) ─────
+  # Нужен Cloudflare API-токен с правом Zone:DNS:Edit для зоны asokis.ai.
+  # В .env: CLOUDFLARE_API_TOKEN=... (и при желании DDNS_DOMAINS).
+  #   docker compose --profile ddns up -d
+  ddns:
+    image: favonia/cloudflare-ddns:latest
+    container_name: asok_ddns
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [all]
+    security_opt: [no-new-privileges:true]
+    environment:
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
+      - DOMAINS=${DDNS_DOMAINS:-asokis.ai,www.asokis.ai}
+      - PROXIED=false
+      - IP6_PROVIDER=none
+    networks:
+      - asok_net
+    profiles:
+      - ddns
+
 networks:
   asok_net:
     driver: bridge
@@ -110,3 +208,5 @@ networks:
 volumes:
   pgdata:
   redisdata:
+  caddy_data:
+  caddy_config:

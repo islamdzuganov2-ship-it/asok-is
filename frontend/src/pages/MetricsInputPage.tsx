@@ -47,7 +47,7 @@ const MetricsInputPage: React.FC = () => {
   // Отслеживаем изменённые строки (для подсветки)
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
 
-  const token = localStorage.getItem('asok_access_token');
+  const token = localStorage.getItem('token');
   const headers = token
     ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
     : { 'Content-Type': 'application/json' };

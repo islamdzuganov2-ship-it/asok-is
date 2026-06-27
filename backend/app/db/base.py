@@ -16,6 +16,7 @@ from app.models.system import System                      # noqa: F401, E402
 from app.models.metric_catalog import MetricCatalog       # noqa: F401, E402
 from app.models.assessment import AssessmentPeriod, AssessmentValue, ExpertJudgmentHistory  # noqa: F401, E402
 from app.models.matrices import DefectMatrix, QualityPlanMatrix, RiskMatrix  # noqa: F401, E402
+from app.models.risk_base import RiskBase  # noqa: F401, E402
 
 __all__ = [
     "Base",
@@ -28,4 +29,5 @@ __all__ = [
     "RiskMatrix",
     "DefectMatrix",
     "QualityPlanMatrix",
+    "RiskBase",
 ]

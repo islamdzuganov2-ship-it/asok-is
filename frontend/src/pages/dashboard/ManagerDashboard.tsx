@@ -4,16 +4,18 @@
  * модал профессионального суждения + постановка задачи (карточка риска).
  * Созданные меры видны топ-менеджменту со статусом «ожидает одобрения».
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Col, Row, Typography, Table, Tag, Button, Select, Space, Segmented, List } from 'antd';
-import { EditOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { EditOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DatabaseOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store';
-import { MANAGER_MOCK, ManagerMetric } from '../../data/mockDashboards';
+import { ManagerMetric } from '../../data/mockDashboards';
+import { MANAGER_SCALE_SYSTEMS as MANAGER_MOCK_SYSTEMS } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND } from '../../theme/ragPalette';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
-import { ProposalStatus } from '../../store/slices/governanceSlice';
+import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
+import { ProposalStatus, type Proposal } from '../../store/slices/governanceSlice';
 
 const { Title, Text } = Typography;
 
@@ -24,11 +26,19 @@ const STATUS_META: Record<ProposalStatus, { label: string; color: string; icon: 
 };
 
 const ManagerDashboard: React.FC = () => {
-  const system = MANAGER_MOCK;
+  const [systemId, setSystemId] = useState(MANAGER_MOCK_SYSTEMS[0].id);
+  const system = useMemo(
+    () => MANAGER_MOCK_SYSTEMS.find((s) => s.id === systemId) ?? MANAGER_MOCK_SYSTEMS[0],
+    [systemId],
+  );
   const [charKey, setCharKey] = useState(system.characteristics[0].key);
   const [target, setTarget] = useState<JudgmentTarget | null>(null);
+  const [selectedMeasure, setSelectedMeasure] = useState<Proposal | null>(null);
 
-  const characteristic = system.characteristics.find((c) => c.key === charKey)!;
+  // При смене ИС перестраиваем борд: сбрасываем выбранную характеристику на первую.
+  useEffect(() => { setCharKey(system.characteristics[0].key); }, [systemId]);
+
+  const characteristic = system.characteristics.find((c) => c.key === charKey) ?? system.characteristics[0];
   const charTok = ragToken(characteristic.score);
 
   const myProposals = useSelector((s: RootState) =>
@@ -83,8 +93,25 @@ const ManagerDashboard: React.FC = () => {
 
   return (
     <div style={{ padding: 24, background: BRAND.canvas, minHeight: '100%' }}>
-      <Title level={4} style={{ margin: 0, color: BRAND.ink }}>Менеджер по качеству</Title>
-      <Text type="secondary">Оценка ИС: «{system.name}»</Text>
+      <Row align="middle" justify="space-between" gutter={[16, 8]} wrap>
+        <Col>
+          <Title level={4} style={{ margin: 0, color: BRAND.ink }}>Менеджер по качеству</Title>
+          <Text type="secondary">Оценка ИС: «{system.name}»</Text>
+        </Col>
+        <Col>
+          <Space>
+            <Text type="secondary"><DatabaseOutlined /> Система:</Text>
+            <Select
+              value={systemId}
+              onChange={setSystemId}
+              style={{ minWidth: 280 }}
+              showSearch
+              optionFilterProp="label"
+              options={MANAGER_MOCK_SYSTEMS.map((s) => ({ value: s.id, label: s.name }))}
+            />
+          </Space>
+        </Col>
+      </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} md={8}>
@@ -140,19 +167,25 @@ const ManagerDashboard: React.FC = () => {
             renderItem={(p) => {
               const meta = STATUS_META[p.status];
               return (
-                <List.Item>
+                <List.Item
+                  onClick={() => setSelectedMeasure(p)}
+                  style={{ cursor: 'pointer', borderRadius: 8, padding: '8px 10px' }}
+                >
                   <Space direction="vertical" size={2} style={{ width: '100%' }}>
                     <Space wrap>
                       <Text strong>{p.riskTitle || p.metricName}</Text>
                       <Tag icon={meta.icon} color={meta.color} style={{ color: '#fff', border: 'none' }}>
                         {meta.label}
                       </Tag>
+                      {p.execution === 'DONE' && <Tag color="green">выполнено</Tag>}
+                      {p.execution === 'NOT_DONE' && <Tag color="red">не выполнено</Tag>}
+                      {p.status === 'APPROVED' && !p.execution && <Tag color="blue">отчитаться о выполнении</Tag>}
                       <Text type="secondary" style={{ fontSize: 12 }}>{p.characteristic}</Text>
                     </Space>
                     <Text type="secondary" style={{ fontSize: 13 }}>{p.rationale}</Text>
                     {(p.owner || p.dueDate) && (
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        {p.owner && <>Ответственный: {p.owner}. </>}
+                        {p.owner && <>Ответственный: {p.owner}{p.ownerRole ? ` (${p.ownerRole})` : ''}. </>}
                         {p.dueDate && <>Срок: {p.dueDate}.</>}
                       </Text>
                     )}
@@ -170,6 +203,11 @@ const ManagerDashboard: React.FC = () => {
       </Card>
 
       <ProfessionalJudgmentModal open={!!target} target={target} onClose={() => setTarget(null)} />
+      <MeasureDecisionModal
+        open={!!selectedMeasure}
+        proposal={selectedMeasure}
+        onClose={() => setSelectedMeasure(null)}
+      />
     </div>
   );
 };

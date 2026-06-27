@@ -11,6 +11,7 @@ from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import require_role
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.assessment import AssessmentPeriod, AssessmentValue
@@ -22,6 +23,17 @@ from app.workers.tasks import celery_app, parse_excel_task
 router = APIRouter()
 
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+# Сигнатура ZIP/OOXML — .xlsx это zip-контейнер. Проверяем содержимое, а не только расширение.
+XLSX_MAGIC = b"PK\x03\x04"
+
+
+def _validate_xlsx(filename: str | None, content: bytes) -> None:
+    if not filename or not filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Only .xlsx files are supported")
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="File is larger than 10 MB")
+    if not content.startswith(XLSX_MAGIC):
+        raise HTTPException(status_code=400, detail="Файл не является корректным .xlsx (неверная сигнатура)")
 
 HEADER_ALIASES = {
     "metric_id": {"metric_id", "id", "код", "код метрики", "ид метрики"},
@@ -88,13 +100,13 @@ async def _find_metric(
 
 
 @router.post("/upload")
-async def upload_excel(period_id: str = Form(...), file: UploadFile = File(...)) -> dict[str, str]:
-    if not file.filename or not file.filename.lower().endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="Only .xlsx files are supported")
-
+async def upload_excel(
+    period_id: str = Form(...),
+    file: UploadFile = File(...),
+    _: dict = Depends(require_role("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")),
+) -> dict[str, str]:
     content = await file.read()
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail="File is larger than 10 MB")
+    _validate_xlsx(file.filename, content)
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     safe_name = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
@@ -123,13 +135,10 @@ async def import_assessment_excel(
     period_id: str = Form(...),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_role("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")),
 ) -> dict[str, Any]:
-    if not file.filename or not file.filename.lower().endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="Only .xlsx files are supported")
-
     content = await file.read()
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail="File is larger than 10 MB")
+    _validate_xlsx(file.filename, content)
 
     try:
         period_uuid = UUID(period_id)
@@ -240,9 +249,10 @@ async def import_workbook(
     period_id: str = Form(...),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_role("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")),
 ) -> dict[str, Any]:
-    if not file.filename or not file.filename.lower().endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="Only .xlsx files are supported")
+    content = await file.read()
+    _validate_xlsx(file.filename, content)
 
     try:
         period_uuid = UUID(period_id)
@@ -252,10 +262,6 @@ async def import_workbook(
     period = await db.get(AssessmentPeriod, period_uuid)
     if period is None:
         raise HTTPException(status_code=404, detail="Assessment period not found")
-
-    content = await file.read()
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail="File is larger than 10 MB")
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     safe_name = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
@@ -275,6 +281,9 @@ async def import_workbook(
 
 
 @router.post("/seed-project-files")
-async def seed_project_files(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def seed_project_files(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_role("ADMIN")),
+) -> dict[str, Any]:
     project_root = Path(__file__).resolve().parents[4]
     return await seed_project_excel_files(db, project_root)

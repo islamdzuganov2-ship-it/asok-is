@@ -7,16 +7,17 @@
  *   • Меры менеджера по качеству, ожидающие одобрения (с пояснением «что ждут и почему»)
  * Минимум текста и цвета, спокойные тона.
  */
-import React from 'react';
-import { Modal, Typography, Tag, Divider, List, Button, Empty, Space, Tooltip } from 'antd';
+import React, { useState } from 'react';
+import { Modal, Typography, Tag, Divider, List, Empty, Space, Button } from 'antd';
 import {
-  UserOutlined, RiseOutlined, BulbOutlined, CheckOutlined, CloseOutlined, ClockCircleOutlined,
+  UserOutlined, RiseOutlined, BulbOutlined, ClockCircleOutlined, RightOutlined,
 } from '@ant-design/icons';
-import { useDispatch, useSelector, shallowEqual } from 'react-redux';
+import { useSelector, shallowEqual } from 'react-redux';
 import { RootState } from '../store';
-import { approveProposal, rejectProposal } from '../store/slices/governanceSlice';
+import type { Proposal } from '../store/slices/governanceSlice';
 import { ragToken } from '../theme/ragPalette';
 import type { ExecSystemInsight } from '../data/mockDashboards';
+import { MeasureDecisionModal } from './MeasureDecisionModal';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -38,12 +39,11 @@ const Block: React.FC<{ icon: React.ReactNode; title: string; children: React.Re
 );
 
 export const ActionInsightModal: React.FC<Props> = ({ open, system, onClose }) => {
-  const dispatch = useDispatch();
-  const fullName = useSelector((s: RootState) => s.auth.fullName) || 'Топ-менеджмент';
   const proposals = useSelector(
     (s: RootState) => s.governance.proposals.filter((p) => p.systemName === system?.name),
     shallowEqual,
   );
+  const [decisionProposal, setDecisionProposal] = useState<Proposal | null>(null);
 
   if (!system) return null;
   const tok = ragToken(system.score);
@@ -105,34 +105,29 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, onClose }) =
           dataSource={pending}
           renderItem={(p) => (
             <List.Item
-              style={{ display: 'block', background: tok.soft, borderRadius: 8, padding: 12, marginBottom: 8, border: `1px solid ${tok.border}` }}
+              onClick={() => setDecisionProposal(p)}
+              style={{ display: 'block', cursor: 'pointer', background: tok.soft, borderRadius: 8, padding: 12, marginBottom: 8, border: `1px solid ${tok.border}` }}
             >
-              <Text strong>{p.riskTitle || p.metricName}</Text>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Text strong>{p.riskTitle || p.metricName}</Text>
+                <Button type="link" size="small" style={{ padding: 0 }}>
+                  Рассмотреть <RightOutlined />
+                </Button>
+              </Space>
               <Paragraph style={{ fontSize: 13, margin: '4px 0' }}>{p.expectation}</Paragraph>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 Обоснование: {p.rationale}
               </Text>
-              <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                <Tooltip title="Одобрить меру">
-                  <Button
-                    size="small" type="primary" icon={<CheckOutlined />}
-                    style={{ background: ragToken(85).color, borderColor: ragToken(85).color }}
-                    onClick={() => dispatch(approveProposal({ id: p.id, by: fullName }))}
-                  >
-                    Одобрить
-                  </Button>
-                </Tooltip>
-                <Button
-                  size="small" icon={<CloseOutlined />}
-                  onClick={() => dispatch(rejectProposal({ id: p.id, by: fullName }))}
-                >
-                  Отклонить
-                </Button>
-              </div>
             </List.Item>
           )}
         />
       )}
+
+      <MeasureDecisionModal
+        open={!!decisionProposal}
+        proposal={decisionProposal}
+        onClose={() => setDecisionProposal(null)}
+      />
     </Modal>
   );
 };

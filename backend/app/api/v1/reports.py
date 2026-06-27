@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from uuid import UUID
 
@@ -9,7 +10,9 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.models.assessment import AssessmentPeriod, AssessmentValue
 from app.models.matrices import DefectMatrix, QualityPlanMatrix, RiskMatrix
+from app.models.risk_base import RiskBase
 from app.models.system import System
+from app.services import llm_service
 from app.schemas.assessment import (
     DashboardDataOut,
     DefectMatrixRow,
@@ -20,6 +23,12 @@ from app.schemas.assessment import (
 )
 
 router = APIRouter()
+
+
+@router.get("/llm-status")
+async def get_llm_status() -> dict:
+    """Статус встроенной LLM — для UI-переключателя «Моки ↔ LLM»."""
+    return llm_service.model_info()
 
 
 @router.get("/assessment-period/{period_id}/matrices", response_model=FullExcelMatricesOut)
@@ -181,9 +190,39 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db)) -> Dashboa
         if (system := systems_by_id.get(system_id)) is not None
     ][:10]
 
+    # --- Управленческое резюме: встроенная LLM с обоснованием из базы рисков ---
+    char_avg: dict[str, list[float]] = defaultdict(list)
+    for (system_name, characteristic), scores in cells.items():
+        char_avg[characteristic].append(sum(scores) / len(scores))
+    char_pct = {c: round(sum(v) / len(v) * 100) for c, v in char_avg.items() if v}
+    metrics_block = "\n".join(
+        f"{c} | средняя по ИС | {pct}%" for c, pct in sorted(char_pct.items(), key=lambda kv: kv[1])
+    )
+    weak_chars = [c for c, pct in sorted(char_pct.items(), key=lambda kv: kv[1])[:2]]
+
+    known_risks = ""
+    if weak_chars:
+        risk_rows = list((await db.execute(
+            select(RiskBase)
+            .where(RiskBase.status == "active")
+            .where(RiskBase.characteristic.in_(weak_chars))
+            .limit(5)
+        )).scalars().all())
+        known_risks = "\n".join(
+            f"- {r.title}: {r.mitigation or '—'}" for r in risk_rows
+        )
+
+    ai_insights = await asyncio.to_thread(
+        llm_service.generate_summary,
+        "ИТ-ландшафт банка",
+        "текущий период",
+        metrics_block or f"Средний интегральный показатель — {global_score}%.",
+        known_risks,
+    )
+
     return DashboardDataOut(
         globalHealthScore=global_score,
-        aiInsights=f"Средний интегральный показатель качества составляет {global_score}%.",
+        aiInsights=ai_insights,
         heatmapData=heatmap,
         xAxisLabels=characteristic_names,
         yAxisLabels=system_names,

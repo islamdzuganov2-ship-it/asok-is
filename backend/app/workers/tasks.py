@@ -62,40 +62,20 @@ def parse_excel_task(self, file_path: str, period_id: str) -> dict:
         raise self.retry(exc=exc)
 
 
-@celery_app.task(bind=True, name="tasks.generate_ai_summary", max_retries=3)
-def generate_ai_summary_task(self, period_id: str, system_name: str, period_label: str) -> dict:
-    """Генерация AI-резюме через Ollama (on-premise LLM)."""
-    import httpx
+@celery_app.task(name="tasks.generate_ai_summary")
+def generate_ai_summary_task(period_id: str, system_name: str, period_label: str,
+                             metrics_block: str = "", known_risks: str = "") -> dict:
+    """Генерация AI-резюме встроенной (in-process) LLM. Без внешних сервисов."""
+    from app.services import llm_service
 
-    if not settings.DEMO_MODE:
-        try:
-            prompt = (
-                f"Ты — технический директор банка. Проанализируй показатели качества "
-                f"за период {period_label} для ИС \"{system_name}\". "
-                f"Сформируй краткий управленческий вывод (2-3 предложения). "
-                f"Строгий деловой стиль."
-            )
-            response = httpx.post(
-                settings.OLLAMA_API_URL + "/api/generate",
-                json={"model": settings.OLLAMA_MODEL, "prompt": prompt, "stream": False},
-                timeout=60.0,
-            )
-            summary = response.json().get("response", "").strip()
-            if len(summary) < 50:
-                raise ValueError("Ответ слишком короткий")
-            return {"status": "COMPLETED", "summary": summary}
-        except Exception as exc:
-            logger.exception("AI summary failed: %s", exc)
-            raise self.retry(exc=exc)
-
-    return {
-        "status": "COMPLETED",
-        "summary": (
-            f"В периоде {period_label} система {system_name} демонстрирует "
-            f"показатели в рамках целевых значений. "
-            f"Критических отклонений не выявлено. [DEMO]"
-        ),
-    }
+    summary = llm_service.generate_summary(
+        system_name=system_name,
+        period_label=period_label,
+        metrics_block=metrics_block,
+        known_risks=known_risks,
+    )
+    return {"status": "COMPLETED", "summary": summary,
+            "llm": llm_service.is_available()}
 
 
 @celery_app.task(name="tasks.cache_invalidate")

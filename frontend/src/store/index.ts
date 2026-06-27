@@ -7,6 +7,7 @@ import { setupListeners } from '@reduxjs/toolkit/query';
 import { apiSlice } from './api/apiSlice';
 import authReducer from './slices/authSlice';
 import governanceReducer from './slices/governanceSlice';
+import { uiReducer } from './slices/uiSlice';
 
 export const store = configureStore({
     reducer: {
@@ -14,6 +15,8 @@ export const store = configureStore({
         auth: authReducer,
         // Governance-петля: меры/суждения, ожидающие одобрения топ-менеджмента
         governance: governanceReducer,
+        // UI: тема, модалки, режим данных (моки ↔ LLM)
+        ui: uiReducer,
         // RTK Query Cache & API Reducer
         [apiSlice.reducerPath]: apiSlice.reducer,
     },
