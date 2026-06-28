@@ -88,12 +88,14 @@ const DashboardPage: React.FC = () => {
       .map(([name, value]) => ({ name, value, itemStyle: { color: LEVEL_COLORS[name] ?? '#d9d9d9' } }));
     donutChart.current.setOption({
       tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-      legend: { orient: 'vertical', left: 'left', textStyle: { fontSize: 11 } },
+      // Встроенную легенду отключаем — она перекрывала бублик. Легенда — HTML-строкой ниже.
+      legend: { show: false },
       series: [{
-        type: 'pie', radius: ['42%', '70%'], data: seriesData,
-        label: { show: false }, emphasis: { label: { show: true, fontSize: 13, fontWeight: 'bold' } },
+        type: 'pie', radius: ['45%', '72%'], center: ['50%', '50%'], data: seriesData,
+        label: { show: false }, emphasis: { label: { show: true, fontSize: 13, fontWeight: 500 } },
       }],
     });
+    donutChart.current.resize();
     const onResize = () => donutChart.current?.resize();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
@@ -208,7 +210,21 @@ const DashboardPage: React.FC = () => {
             {loading ? <Skeleton active paragraph={{ rows: 6 }} />
               : data?.totalMetrics === 0
                 ? <Text type="secondary">Нет данных. Создайте период оценки и введите метрики.</Text>
-                : <div ref={donutRef} style={{ height: 310, width: '100%' }} />}
+                : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, height: 296 }}>
+                    <div ref={donutRef} style={{ flex: '0 0 44%', height: 260, minWidth: 140 }} />
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {levelDist.map((r) => (
+                        <span key={r.level} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#5B6675' }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 3, background: LEVEL_COLORS[r.level], flex: '0 0 auto' }} />
+                          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.level}</span>
+                          <b style={{ color: '#2B3A4B' }}>{r.count}</b>
+                          <span style={{ color: '#9AA0A6', width: 38, textAlign: 'right' }}>{r.pct}%</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
           </Card>
         </Col>
 

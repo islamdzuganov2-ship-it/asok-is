@@ -34,11 +34,24 @@ interface Props {
   maxHeight?: number;
 }
 
+// Короткие однострочные подписи характеристик для ровной шапки (полное имя — в подсказке).
+const ABBR: Record<string, string> = {
+  'Функциональная пригодность': 'Функц.',
+  'Производительность': 'Произв.',
+  'Совместимость': 'Совмест.',
+  'Удобство использования': 'Удобство',
+  'Надёжность': 'Надёжн.',
+  'Защищённость': 'Защищ.',
+  'Сопровождаемость': 'Сопров.',
+  'Переносимость': 'Переност.',
+};
+const short = (c: string) => ABBR[c] ?? c;
+
 const thBase: React.CSSProperties = {
   position: 'sticky', top: 0, zIndex: 2, background: '#fff',
   fontWeight: 500, fontSize: 11, color: '#5B6675',
   padding: '8px 6px', borderBottom: '1px solid #E8EAED', textAlign: 'center',
-  minWidth: 92, verticalAlign: 'bottom',
+  width: 86, minWidth: 86, whiteSpace: 'nowrap', verticalAlign: 'middle',
 };
 
 const LevelHeatmap: React.FC<Props> = ({ xLabels, yLabels, matrix, maxHeight = 460 }) => (
@@ -50,7 +63,7 @@ const LevelHeatmap: React.FC<Props> = ({ xLabels, yLabels, matrix, maxHeight = 4
             Система \ характеристика
           </th>
           {xLabels.map((c) => (
-            <th key={c} style={thBase} title={c}>{c}</th>
+            <th key={c} style={thBase} title={c}>{short(c)}</th>
           ))}
         </tr>
       </thead>

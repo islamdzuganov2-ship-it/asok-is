@@ -55,7 +55,8 @@ const RiskBasePage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const url = new URL(`${VITE_API}/risks`);
+      // База обязательна: VITE_API может быть относительным (/api/v1) — без неё new URL падает.
+      const url = new URL(`${VITE_API}/risks`, window.location.origin);
       if (search) url.searchParams.set('q', search);
       const resp = await fetch(url.toString(), { headers });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
