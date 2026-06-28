@@ -125,10 +125,6 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
         ))}
       </div>
 
-      <Text style={{ fontSize: 13, display: 'block', marginTop: 12 }}>
-        Всего одобрено: <b>{approvedCount}</b> · из них выполнено: <b style={{ color: RAG.good.color }}>{lists.done.length}</b>
-      </Text>
-
       <Modal
         open={!!detail}
         onCancel={() => setDetail(null)}

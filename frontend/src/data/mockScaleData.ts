@@ -166,6 +166,10 @@ const REC: Record<string, { rationale: string; action: string; risk: string; act
 // --- Генерация ---
 interface GenMetric { name: string; formula: Formula; a: number; b: number; x: number }
 interface GenChar { def: CharDef; metrics: GenMetric[]; score: number }
+
+// Пары (системаIdx-характеристикаIdx), где характеристика «Невозможно измерить»
+// (нет базы B → X = -1). Даёт серые ячейки в теплокарте и меры под них.
+const UNMEASURABLE = new Set(['3-7', '7-2', '9-4', '12-5', '18-1', '24-6']);
 interface GenSystem {
   name: string; criticality: ExecSystemInsight['criticality'];
   chars: GenChar[]; score: number; weakest: GenChar;
@@ -182,13 +186,20 @@ function genMetric(seed: string, sub: SubDef, base: number): GenMetric {
 
 const SYSTEMS: GenSystem[] = SYSTEM_NAMES.map((name, idx) => {
   const base = 0.32 + rngOf(name)() * 0.58; // профиль здоровья системы 0.32..0.90
-  const chars: GenChar[] = ISO25010.map((def) => {
-    const metrics = def.subs.map((sub) => genMetric(`${name}|${sub.name}`, sub, base));
-    const score = metrics.reduce((s, m) => s + m.x, 0) / metrics.length;
+  const chars: GenChar[] = ISO25010.map((def, charIdx) => {
+    const unmeasurable = UNMEASURABLE.has(`${idx}-${charIdx}`);
+    const metrics: GenMetric[] = def.subs.map((sub) =>
+      unmeasurable
+        ? { name: sub.name, formula: sub.formula, a: 0, b: 0, x: -1 }   // нет базы B → невозможно измерить
+        : genMetric(`${name}|${sub.name}`, sub, base));
+    const measurable = metrics.filter((m) => m.x >= 0);
+    const score = measurable.length ? measurable.reduce((s, m) => s + m.x, 0) / measurable.length : -1;
     return { def, metrics, score };
   });
-  const sysScore = chars.reduce((s, c) => s + c.score, 0) / chars.length;
-  const weakest = [...chars].sort((a, b) => a.score - b.score)[0];
+  const measChars = chars.filter((c) => c.score >= 0);
+  const sysScore = measChars.length ? measChars.reduce((s, c) => s + c.score, 0) / measChars.length : 0;
+  // Наиболее просевшая — среди измеримых (чтобы не показывать «-100%» в резюме).
+  const weakest = [...measChars].sort((a, b) => a.score - b.score)[0] ?? chars[0];
   return { name, criticality: CRITICALITY[idx % 3], chars, score: sysScore, weakest };
 });
 
@@ -269,7 +280,12 @@ function buildProposals(): Proposal[] {
 
     for (const t of targets) {
       const rec = REC[t.char];
-      const score = pct(t.m.x);
+      const unmeasurable = t.m.x < 0;
+      const score = unmeasurable ? 0 : pct(t.m.x);
+      const level = unmeasurable ? 'Невозможно измерить' : levelLabel(score);
+      const metricInfo = unmeasurable
+        ? `Метрика «${t.m.name}» — невозможно измерить (нет базы B).`
+        : `Метрика «${t.m.name}» = ${score}% (${formulaStr(t.m)}).`;
       // распределение статусов: ~70% ожидают, ~20% одобрено, ~10% отклонено
       const bucket = i % 10;
       const status: Proposal['status'] =
@@ -279,9 +295,10 @@ function buildProposals(): Proposal[] {
         systemName: sys.name,
         characteristic: t.char,
         metricName: t.m.name,
+        isDemo: true,
         calculatedScore: score,
-        calculatedLevel: levelLabel(score),
-        rationale: `${rec.rationale} Метрика «${t.m.name}» = ${score}% (${formulaStr(t.m)}).`,
+        calculatedLevel: level,
+        rationale: `${rec.rationale} ${metricInfo}`,
         createRisk: true,
         riskTitle: `${rec.risk}: ${t.char}`,
         owner: RESP_FIO,
@@ -320,6 +337,13 @@ function levelBucket(p: number): number {
   if (p < 0) return 0; if (p < 21) return 1; if (p < 41) return 2;
   if (p < 61) return 3; if (p < 81) return 4; return 5;
 }
+const lowCount = (sys: GenSystem) =>
+  sys.chars.reduce((n, c) => n + c.metrics.filter((m) => pct(m.x) < 41).length, 0);
+
+// ЕДИНЫЙ порядок систем для аналитики: по числу низких метрик ↓ (как в «Проблемных ИС»),
+// затем по баллу. Один и тот же для теплокарты и списка проблемных ИС → сортировки совпадают.
+const ANALYTICS_ORDER = [...SYSTEMS].sort((a, b) => (lowCount(b) - lowCount(a)) || (a.score - b.score));
+
 const levelCounts: Record<string, number> = {};
 let totalMetrics = 0;
 for (const sys of SYSTEMS) {
@@ -332,27 +356,54 @@ for (const sys of SYSTEMS) {
   }
 }
 const heatmapData: [number, number, number][] = [];
-SORTED.forEach((sys, y) => {
+ANALYTICS_ORDER.forEach((sys, y) => {
   sys.chars.forEach((c, x) => { heatmapData.push([x, y, levelBucket(pct(c.score))]); });
 });
-const problematicSystems = [...SORTED]
-  .map((sys) => ({
-    id: `sys-${hashStr(sys.name)}`,
-    name: sys.name,
-    criticality: sys.criticality,
-    lowMetricsCount: sys.chars.reduce((n, c) => n + c.metrics.filter((m) => pct(m.x) < 41).length, 0),
-  }))
-  .sort((a, b) => b.lowMetricsCount - a.lowMetricsCount)
-  .slice(0, 10);
+const problematicSystems = ANALYTICS_ORDER.map((sys) => ({
+  id: `sys-${hashStr(sys.name)}`,
+  name: sys.name,
+  criticality: sys.criticality,
+  lowMetricsCount: lowCount(sys),
+})).slice(0, 10);
+
+// Детали характеристик: средний балл характеристики + по каждой подхарактеристике (среднее
+// по всем системам). Количество подхарактеристик одинаково для всех систем (ISO/IEC 25010).
+export interface SubDetail { name: string; score: number }      // score: % или -1 (невозможно измерить)
+export interface CharDetail { title: string; abbr: string; score: number; subs: SubDetail[] }
+const CHAR_DETAILS: CharDetail[] = ISO25010.map((def, charIdx) => {
+  const subs: SubDetail[] = def.subs.map((sub, subIdx) => {
+    const vals = SYSTEMS.map((s) => s.chars[charIdx].metrics[subIdx].x).filter((x) => x >= 0);
+    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : -1;
+    return { name: sub.name, score: avg < 0 ? -1 : pct(avg) };
+  });
+  const meas = subs.filter((s) => s.score >= 0);
+  const score = meas.length ? Math.round(meas.reduce((a, b) => a + b.score, 0) / meas.length) : -1;
+  return { title: def.title, abbr: def.abbr, score, subs };
+});
+
+// Детали ПО КАЖДОЙ системе: характеристика (балл) + её подхарактеристики (балл).
+// Порядок систем и характеристик совпадает с теплокартой (ANALYTICS_ORDER × ISO).
+export interface SystemDetail { name: string; chars: CharDetail[] }
+const SYSTEM_DETAILS: SystemDetail[] = ANALYTICS_ORDER.map((sys) => ({
+  name: sys.name,
+  chars: sys.chars.map((c) => ({
+    title: c.def.title,
+    abbr: c.def.abbr,
+    score: c.score < 0 ? -1 : pct(c.score),
+    subs: c.metrics.map((m) => ({ name: m.name, score: m.x < 0 ? -1 : pct(m.x) })),
+  })),
+}));
 
 export const ANALYTICS_SCALE = {
   globalHealthScore: GLOBAL_INDEX / 100,
   levelCounts,
   heatmapData,
   xAxisLabels: ISO25010.map((c) => c.title),   // полные названия характеристик для шапки
-  yAxisLabels: SORTED.map((s) => s.name),
+  yAxisLabels: ANALYTICS_ORDER.map((s) => s.name),
   problematicSystems,
   totalMetrics,
+  characteristics: CHAR_DETAILS,                // средние по характеристике (шапка)
+  systemDetails: SYSTEM_DETAILS,                // по каждой системе: характеристики + подхарактеристики
 };
 
 // Техдолг = доля одобренных мер от общего числа (реальная связка с реестром).
@@ -361,3 +412,34 @@ EXECUTIVE_SCALE.techDebt.resolvedPct = SCALE_PROPOSALS.length
   ? Math.round((approved / SCALE_PROPOSALS.length) * 100)
   : 0;
 EXECUTIVE_SCALE.techDebt.note = `мер одобрено: ${approved} из ${SCALE_PROPOSALS.length} (план обеспечения качества)`;
+
+// --- DYNAMICS: качество в разрезе времени (по характеристикам и подхарактеристикам) ---
+export const QUARTERS = ['Q1-2025', 'Q2-2025', 'Q3-2025', 'Q4-2025', 'Q1-2026', 'Q2-2026'];
+
+// Ряд значений по кварталам: последний квартал = текущее значение, ранние — с дрейфом.
+function makeSeries(seed: string, current: number): number[] {
+  if (current < 0) return QUARTERS.map(() => -1);   // невозможно измерить — нет ряда
+  const r = rngOf(seed);
+  return QUARTERS.map((_, q) =>
+    q === QUARTERS.length - 1
+      ? current
+      : Math.round(clamp((current + (r() - 0.5) * 30) / 100, 0.05, 0.99) * 100));
+}
+
+export interface DynSeries { key: string; name: string; char: string; series: number[] }
+export interface SystemDynamics { name: string; chars: DynSeries[]; subs: DynSeries[] }
+
+export const DYNAMICS: Record<string, SystemDynamics> = {};
+SYSTEMS.forEach((sys) => {
+  DYNAMICS[sys.name] = {
+    name: sys.name,
+    chars: sys.chars.map((c) => ({
+      key: `char:${c.def.abbr}`, name: c.def.title, char: c.def.title,
+      series: makeSeries(`${sys.name}|c|${c.def.title}`, c.score < 0 ? -1 : pct(c.score)),
+    })),
+    subs: sys.chars.flatMap((c) => c.metrics.map((m) => ({
+      key: `sub:${m.name}`, name: m.name, char: c.def.title,
+      series: makeSeries(`${sys.name}|s|${m.name}`, m.x < 0 ? -1 : pct(m.x)),
+    }))),
+  };
+});

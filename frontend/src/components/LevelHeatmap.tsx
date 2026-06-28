@@ -31,8 +31,16 @@ interface Props {
   xLabels: string[];           // характеристики (полные названия) — шапка
   yLabels: string[];           // системы — строки
   matrix: (number | null)[][]; // matrix[y][x] = bucket 0..5
+  charScores?: number[];       // балл характеристики (%) для шапки; -1 = невозможно измерить
+  onCharClick?: (char: string, index: number) => void; // клик по характеристике (колонка)
+  cellScores?: (number | null)[][]; // балл по каждой ячейке (система × характеристика), %
+  onCellClick?: (y: number, x: number) => void;        // клик по конкретной ячейке
   maxHeight?: number;
 }
+
+const scoreColor = (p: number) =>
+  p < 0 ? LEVEL_COLORS['Невозможно измерить']
+    : LEVEL_COLORS[BUCKET_LEVEL[p < 21 ? 1 : p < 41 ? 2 : p < 61 ? 3 : p < 81 ? 4 : 5]];
 
 // Короткие однострочные подписи характеристик для ровной шапки (полное имя — в подсказке).
 const ABBR: Record<string, string> = {
@@ -54,7 +62,9 @@ const thBase: React.CSSProperties = {
   width: 86, minWidth: 86, whiteSpace: 'nowrap', verticalAlign: 'middle',
 };
 
-const LevelHeatmap: React.FC<Props> = ({ xLabels, yLabels, matrix, maxHeight = 460 }) => (
+const LevelHeatmap: React.FC<Props> = ({
+  xLabels, yLabels, matrix, charScores, onCharClick, cellScores, onCellClick, maxHeight = 460,
+}) => (
   <div style={{ maxHeight, overflow: 'auto', border: '1px solid #E8EAED', borderRadius: 8 }}>
     <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
       <thead>
@@ -62,9 +72,24 @@ const LevelHeatmap: React.FC<Props> = ({ xLabels, yLabels, matrix, maxHeight = 4
           <th style={{ ...thBase, left: 0, zIndex: 3, textAlign: 'left', minWidth: 180, paddingLeft: 12 }}>
             Система \ характеристика
           </th>
-          {xLabels.map((c) => (
-            <th key={c} style={thBase} title={c}>{short(c)}</th>
-          ))}
+          {xLabels.map((c, i) => {
+            const sc = charScores?.[i];
+            return (
+              <th
+                key={c}
+                style={{ ...thBase, cursor: onCharClick ? 'pointer' : 'default' }}
+                title={onCharClick ? `${c} — нажмите для подхарактеристик` : c}
+                onClick={onCharClick ? () => onCharClick(c, i) : undefined}
+              >
+                <div>{short(c)}</div>
+                {sc !== undefined && (
+                  <div style={{ fontSize: 11, fontWeight: 500, color: scoreColor(sc) }}>
+                    {sc < 0 ? 'н/д' : `${sc}%`}
+                  </div>
+                )}
+              </th>
+            );
+          })}
         </tr>
       </thead>
       <tbody>
@@ -78,15 +103,23 @@ const LevelHeatmap: React.FC<Props> = ({ xLabels, yLabels, matrix, maxHeight = 4
             {xLabels.map((c, x) => {
               const b = matrix[y]?.[x];
               const level = b == null ? null : BUCKET_LEVEL[b];
+              const sc = cellScores?.[y]?.[x];
+              const label = sc != null ? (sc < 0 ? 'н/д' : `${sc}%`) : '';
               return (
                 <td key={x} style={{ padding: 2, borderBottom: '1px solid #F0F1F3' }}>
                   <div
-                    title={level ? `${sys} · ${c}: ${level}` : `${sys} · ${c}: нет данных`}
+                    onClick={onCellClick ? () => onCellClick(y, x) : undefined}
+                    title={`${sys} · ${c}: ${level ?? 'нет данных'}${label ? ` · ${label}` : ''}`}
                     style={{
-                      height: 24, borderRadius: 3,
+                      height: 26, borderRadius: 3,
                       background: level ? LEVEL_COLORS[level] : '#F1F2F3',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, fontWeight: 500, color: '#2B3A4B',
+                      cursor: onCellClick ? 'pointer' : 'default',
                     }}
-                  />
+                  >
+                    {label}
+                  </div>
                 </td>
               );
             })}

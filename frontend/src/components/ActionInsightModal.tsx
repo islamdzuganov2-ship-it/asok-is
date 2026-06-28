@@ -13,17 +13,20 @@ import {
   UserOutlined, RiseOutlined, BulbOutlined, ClockCircleOutlined, RightOutlined,
 } from '@ant-design/icons';
 import { useSelector, shallowEqual } from 'react-redux';
-import { RootState } from '../store';
-import type { Proposal } from '../store/slices/governanceSlice';
+import { selectVisibleProposals, type Proposal } from '../store/slices/governanceSlice';
 import { ragToken } from '../theme/ragPalette';
 import type { ExecSystemInsight } from '../data/mockDashboards';
 import { MeasureDecisionModal } from './MeasureDecisionModal';
 
 const { Title, Text, Paragraph } = Typography;
 
+const norm = (s?: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
+
 interface Props {
   open: boolean;
   system: ExecSystemInsight | null;
+  /** Если задана — карточка сфокусирована на характеристике: меры фильтруются по ней. */
+  characteristic?: string;
   onClose: () => void;
 }
 
@@ -38,24 +41,26 @@ const Block: React.FC<{ icon: React.ReactNode; title: string; children: React.Re
   </div>
 );
 
-export const ActionInsightModal: React.FC<Props> = ({ open, system, onClose }) => {
-  const proposals = useSelector(
-    (s: RootState) => s.governance.proposals.filter((p) => p.systemName === system?.name),
-    shallowEqual,
-  );
+export const ActionInsightModal: React.FC<Props> = ({ open, system, characteristic, onClose }) => {
+  const visible = useSelector(selectVisibleProposals, shallowEqual);
+  const proposals = visible.filter((p) => p.systemName === system?.name);
   const [decisionProposal, setDecisionProposal] = useState<Proposal | null>(null);
 
   if (!system) return null;
   const tok = ragToken(system.score);
-  const pending = proposals.filter((p) => p.status === 'PENDING_APPROVAL');
+  // Если карточка открыта по характеристике — показываем меры только по ней.
+  const pending = proposals.filter((p) =>
+    p.status === 'PENDING_APPROVAL'
+    && (!characteristic || norm(p.characteristic) === norm(characteristic)));
 
   return (
     <Modal open={open} onCancel={onClose} footer={null} width={520} title={null}>
-      <Space align="center" style={{ marginBottom: 4 }}>
+      <Space align="center" style={{ marginBottom: 4 }} wrap>
         <Title level={5} style={{ margin: 0 }}>{system.name}</Title>
         <Tag color={tok.color} style={{ color: '#fff', border: 'none' }}>
           {system.score}% · {tok.label}
         </Tag>
+        {characteristic && <Tag>{characteristic}</Tag>}
       </Space>
       <Paragraph type="secondary" style={{ fontSize: 13, marginTop: 8 }}>
         {system.aiSummary}
@@ -90,13 +95,13 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, onClose }) =
       <Divider style={{ margin: '12px 0' }} />
 
       <Text type="secondary" style={{ fontSize: 12 }}>
-        <ClockCircleOutlined /> Меры менеджера по качеству, ожидающие вашего решения
+        <ClockCircleOutlined /> Меры{characteristic ? ` по характеристике «${characteristic}»` : ''}, ожидающие вашего решения
       </Text>
 
       {pending.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="Нет мер на одобрение"
+          description={characteristic ? 'По этой характеристике мер на решение нет' : 'Нет мер на одобрение'}
           style={{ margin: '8px 0' }}
         />
       ) : (

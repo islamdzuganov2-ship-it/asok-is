@@ -11,9 +11,11 @@ import {
 import { RightOutlined } from '@ant-design/icons';
 import * as echarts from 'echarts';
 import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { RootState } from '../store';
 import { ANALYTICS_SCALE } from '../data/mockScaleData';
 import LevelHeatmap, { LEVEL_COLORS } from '../components/LevelHeatmap';
-import { critTagStyle } from '../theme/ragPalette';
+import { critTagStyle, levelLabel } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
 
@@ -24,6 +26,9 @@ const LEVEL_ORDER = [
 
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
+interface SubDetail { name: string; score: number }
+interface CharDetail { title: string; abbr: string; score: number; subs: SubDetail[] }
+
 interface DashboardData {
   globalHealthScore: number;
   levelCounts: Record<string, number>;
@@ -32,7 +37,11 @@ interface DashboardData {
   yAxisLabels: string[];
   problematicSystems: { id: string; name: string; criticality: string; lowMetricsCount: number }[];
   totalMetrics: number;
+  characteristics?: CharDetail[];   // средние по характеристикам (шапка)
+  systemDetails?: { name: string; chars: CharDetail[] }[]; // по каждой системе
 }
+
+type CharModal = CharDetail & { system?: string };
 
 type DetailKey = 'global' | 'metrics' | 'systems' | 'low';
 
@@ -45,17 +54,34 @@ const DETAIL_TITLE: Record<DetailKey, string> = {
 
 const critTag = (v: string) => <Tag style={critTagStyle(v)}>{v}</Tag>;
 
+const EMPTY_DASHBOARD: DashboardData = {
+  globalHealthScore: 0, levelCounts: {}, heatmapData: [],
+  xAxisLabels: [], yAxisLabels: [], problematicSystems: [], totalMetrics: 0,
+};
+
 const DashboardPage: React.FC = () => {
+  const dataMode = useSelector((s: RootState) => s.ui.dataMode);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isMock, setIsMock] = useState(false);
   const [detail, setDetail] = useState<DetailKey | null>(null);
+  const [charDetail, setCharDetail] = useState<CharModal | null>(null);
   const donutRef = useRef<HTMLDivElement>(null);
   const donutChart = useRef<echarts.ECharts | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Демо-режим — демо-набор без обращения к бэкенду.
+    if (dataMode === 'mock') {
+      setData(ANALYTICS_SCALE as DashboardData);
+      setIsMock(true);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    // LLM-режим — ТОЛЬКО реальные данные из БД (без подмешивания моков).
+    let alive = true;
     const fetchDashboard = async () => {
       setLoading(true);
       setError(null);
@@ -67,17 +93,21 @@ const DashboardPage: React.FC = () => {
         if (resp.status === 401) { navigate('/login'); return; }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const json: DashboardData = await resp.json();
-        if (!json || !json.totalMetrics) { setData(ANALYTICS_SCALE as DashboardData); setIsMock(true); }
-        else { setData(json); setIsMock(false); }
+        if (!alive) return;
+        setData(json && json.totalMetrics ? json : EMPTY_DASHBOARD);
+        setIsMock(false);
       } catch {
-        setData(ANALYTICS_SCALE as DashboardData);
-        setIsMock(true);
+        if (!alive) return;
+        setError('Backend недоступен — реальных данных нет. Заполните оценки или включите Демо.');
+        setData(EMPTY_DASHBOARD);
+        setIsMock(false);
       } finally {
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     };
     fetchDashboard();
-  }, [navigate]);
+    return () => { alive = false; };
+  }, [dataMode, navigate]);
 
   // Donut Chart
   useEffect(() => {
@@ -211,8 +241,8 @@ const DashboardPage: React.FC = () => {
               : data?.totalMetrics === 0
                 ? <Text type="secondary">Нет данных. Создайте период оценки и введите метрики.</Text>
                 : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, height: 296 }}>
-                    <div ref={donutRef} style={{ flex: '0 0 44%', height: 260, minWidth: 140 }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, minHeight: 220 }}>
+                    <div ref={donutRef} style={{ width: 200, height: 200, flex: '0 0 200px' }} />
                     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {levelDist.map((r) => (
                         <span key={r.level} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#5B6675' }}>
@@ -238,8 +268,7 @@ const DashboardPage: React.FC = () => {
                   { title: 'ИС', dataIndex: 'name', ellipsis: true },
                   { title: 'Критичность', dataIndex: 'criticality', render: critTag },
                   { title: 'Низких метрик', dataIndex: 'lowMetricsCount',
-                    render: (v: number) => <Text type="danger" strong>{v}</Text>,
-                    sorter: (a: any, b: any) => a.lowMetricsCount - b.lowMetricsCount },
+                    render: (v: number) => <Text type="danger" strong>{v}</Text> },
                 ]}
               />
             )}
@@ -247,14 +276,29 @@ const DashboardPage: React.FC = () => {
         </Col>
 
         <Col xs={24}>
-          <Card title="Тепловая карта: ИС × характеристики качества"
+          <Card title="Тепловая карта: характеристики качества ИС"
             styles={{ body: { paddingTop: 12 } }}>
             {loading ? <Skeleton active paragraph={{ rows: 8 }} />
               : !data || !data.heatmapData.length
                 ? <Text type="secondary">Нет данных для тепловой карты.</Text>
                 : (
                   <>
-                    <LevelHeatmap xLabels={data.xAxisLabels} yLabels={data.yAxisLabels} matrix={matrix} />
+                    <LevelHeatmap
+                      xLabels={data.xAxisLabels}
+                      yLabels={data.yAxisLabels}
+                      matrix={matrix}
+                      charScores={data.characteristics?.map((c) => c.score)}
+                      onCharClick={data.characteristics
+                        ? (_c, i) => setCharDetail(data.characteristics![i] ?? null)
+                        : undefined}
+                      cellScores={data.systemDetails?.map((s) => s.chars.map((c) => c.score))}
+                      onCellClick={data.systemDetails
+                        ? (y, x) => {
+                          const sd = data.systemDetails![y]?.chars[x];
+                          if (sd) setCharDetail({ ...sd, system: data.yAxisLabels[y] });
+                        }
+                        : undefined}
+                    />
                     <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
                       {LEVEL_ORDER.map((lvl) => (
                         <span key={lvl} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#5B6675' }}>
@@ -277,6 +321,40 @@ const DashboardPage: React.FC = () => {
         width={620}
       >
         {renderDetail()}
+      </Modal>
+
+      {/* Подхарактеристики выбранной характеристики — список с цветом и точными цифрами */}
+      <Modal
+        open={!!charDetail}
+        onCancel={() => setCharDetail(null)}
+        footer={null}
+        width={560}
+        title={charDetail
+          ? `${charDetail.system ? charDetail.system + ' · ' : ''}${charDetail.title} — ${charDetail.score < 0 ? 'невозможно измерить' : charDetail.score + '%'}`
+          : ''}
+      >
+        {charDetail && (
+          <Table<SubDetail>
+            dataSource={charDetail.subs}
+            rowKey="name"
+            size="small"
+            pagination={false}
+            columns={[
+              { title: 'Подхарактеристика', dataIndex: 'name' },
+              {
+                title: 'Качество', dataIndex: 'score', width: 200,
+                render: (v: number) => {
+                  const lvl = levelLabel(v < 0 ? -1 : v);
+                  return (
+                    <Tag color={LEVEL_COLORS[lvl]} style={{ color: '#fff', border: 'none' }}>
+                      {v < 0 ? 'н/д' : `${v}%`} · {lvl}
+                    </Tag>
+                  );
+                },
+              },
+            ]}
+          />
+        )}
       </Modal>
     </div>
   );

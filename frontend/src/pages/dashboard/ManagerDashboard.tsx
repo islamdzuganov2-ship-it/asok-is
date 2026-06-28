@@ -5,17 +5,17 @@
  * Созданные меры видны топ-менеджменту со статусом «ожидает одобрения».
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Col, Row, Typography, Table, Tag, Button, Select, Space, Segmented, List } from 'antd';
+import { Alert, Card, Col, Row, Typography, Table, Tag, Button, Select, Space, List } from 'antd';
 import { EditOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DatabaseOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
-import { useSelector } from 'react-redux';
+import { useSelector, shallowEqual } from 'react-redux';
 import { RootState } from '../../store';
 import { ManagerMetric } from '../../data/mockDashboards';
 import { MANAGER_SCALE_SYSTEMS as MANAGER_MOCK_SYSTEMS } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND } from '../../theme/ragPalette';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
-import { ProposalStatus, type Proposal } from '../../store/slices/governanceSlice';
+import { ProposalStatus, selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 
 const { Title, Text } = Typography;
 
@@ -34,6 +34,8 @@ const ManagerDashboard: React.FC = () => {
   const [charKey, setCharKey] = useState(system.characteristics[0].key);
   const [target, setTarget] = useState<JudgmentTarget | null>(null);
   const [selectedMeasure, setSelectedMeasure] = useState<Proposal | null>(null);
+  const dataMode = useSelector((s: RootState) => s.ui.dataMode);
+  const isLive = dataMode === 'live';
 
   // При смене ИС перестраиваем борд: сбрасываем выбранную характеристику на первую.
   useEffect(() => { setCharKey(system.characteristics[0].key); }, [systemId]);
@@ -41,9 +43,9 @@ const ManagerDashboard: React.FC = () => {
   const characteristic = system.characteristics.find((c) => c.key === charKey) ?? system.characteristics[0];
   const charTok = ragToken(characteristic.score);
 
-  const myProposals = useSelector((s: RootState) =>
-    s.governance.proposals.filter((p) => p.systemName === system.name),
-  );
+  const visibleProposals = useSelector(selectVisibleProposals, shallowEqual);
+  // В демо — меры выбранной (демо) ИС; в LLM — все реальные меры (демо-системы скрыты).
+  const myProposals = isLive ? visibleProposals : visibleProposals.filter((p) => p.systemName === system.name);
 
   const gaugeOption = useMemo(
     () => ({
@@ -96,60 +98,92 @@ const ManagerDashboard: React.FC = () => {
       <Row align="middle" justify="space-between" gutter={[16, 8]} wrap>
         <Col>
           <Title level={4} style={{ margin: 0, color: BRAND.ink }}>Менеджер по качеству</Title>
-          <Text type="secondary">Оценка ИС: «{system.name}»</Text>
+          <Text type="secondary">{isLive ? 'Режим LLM · реальные данные' : `Оценка ИС: «${system.name}»`}</Text>
         </Col>
-        <Col>
-          <Space>
-            <Text type="secondary"><DatabaseOutlined /> Система:</Text>
-            <Select
-              value={systemId}
-              onChange={setSystemId}
-              style={{ minWidth: 280 }}
-              showSearch
-              optionFilterProp="label"
-              options={MANAGER_MOCK_SYSTEMS.map((s) => ({ value: s.id, label: s.name }))}
-            />
-          </Space>
-        </Col>
+        {!isLive && (
+          <Col>
+            <Space>
+              <Text type="secondary"><DatabaseOutlined /> Система:</Text>
+              <Select
+                value={systemId}
+                onChange={setSystemId}
+                style={{ minWidth: 280 }}
+                showSearch
+                optionFilterProp="label"
+                options={MANAGER_MOCK_SYSTEMS.map((s) => ({ value: s.id, label: s.name }))}
+              />
+            </Space>
+          </Col>
+        )}
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} md={8}>
-          <Card style={{ borderColor: charTok.border, background: charTok.soft, height: '100%' }}>
-            <Text type="secondary">Характеристика</Text>
-            <Title level={5} style={{ margin: '2px 0 0', color: BRAND.ink }}>
-              {characteristic.title}{' '}
-              <Tag color={charTok.color} style={{ color: '#fff', border: 'none' }}>{characteristic.score}%</Tag>
-            </Title>
-            <div style={{ height: 150 }}>
-              <ReactECharts option={gaugeOption} style={{ height: '100%', width: '100%' }} />
-            </div>
-            <Segmented
-              block
-              size="small"
-              value={charKey}
-              onChange={(v) => setCharKey(v as string)}
-              options={system.characteristics.map((c) => ({ label: c.title, value: c.key }))}
-            />
-          </Card>
-        </Col>
+      {isLive ? (
+        <Alert
+          style={{ marginTop: 16 }}
+          type="info"
+          showIcon
+          message="Режим LLM: демо-системы скрыты"
+          description="Показаны только реальные данные. Для разбора метрик и постановки профессиональных суждений заполните оценки в разделе «Оценка ИС». Реальные меры — ниже."
+        />
+      ) : (
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          <Col xs={24} md={10}>
+            <Card style={{ borderColor: charTok.border, background: charTok.soft, height: '100%' }}>
+              <Text type="secondary">Характеристика</Text>
+              <Title level={5} style={{ margin: '2px 0 8px', color: BRAND.ink }}>
+                {characteristic.title}{' '}
+                <Tag color={charTok.color} style={{ color: '#fff', border: 'none' }}>{characteristic.score}%</Tag>
+              </Title>
+              {/* Визуал (gauge) — слева, перечисление характеристик — сбоку справа */}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <div style={{ flex: '0 0 122px', height: 150 }}>
+                  <ReactECharts option={gaugeOption} style={{ height: '100%', width: '100%' }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {system.characteristics.map((c) => {
+                    const activeC = c.key === charKey;
+                    return (
+                      <div
+                        key={c.key}
+                        onClick={() => setCharKey(c.key)}
+                        title={c.title}
+                        style={{
+                          cursor: 'pointer', fontSize: 12, padding: '5px 8px', borderRadius: 6,
+                          background: activeC ? '#fff' : 'transparent',
+                          border: `1px solid ${activeC ? charTok.border : 'transparent'}`,
+                          display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center',
+                        }}
+                      >
+                        <span style={{
+                          color: BRAND.ink, overflow: 'hidden', textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap', fontWeight: activeC ? 500 : 400,
+                        }}>{c.title}</span>
+                        <span style={{ color: ragToken(c.score).color, fontWeight: 500, flex: '0 0 auto' }}>{c.score}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </Card>
+          </Col>
 
-        <Col xs={24} md={16}>
-          <Card
-            title={<span style={{ color: BRAND.ink }}>Метрики характеристики «{characteristic.title}»</span>}
-            style={{ borderColor: BRAND.divider, height: '100%' }}
-            styles={{ body: { padding: 0 } }}
-          >
-            <Table<ManagerMetric>
-              dataSource={characteristic.metrics}
-              columns={columns}
-              rowKey="id"
-              size="small"
-              pagination={false}
-            />
-          </Card>
-        </Col>
-      </Row>
+          <Col xs={24} md={14}>
+            <Card
+              title={<span style={{ color: BRAND.ink }}>Метрики характеристики «{characteristic.title}»</span>}
+              style={{ borderColor: BRAND.divider, height: '100%' }}
+              styles={{ body: { padding: 0 } }}
+            >
+              <Table<ManagerMetric>
+                dataSource={characteristic.metrics}
+                columns={columns}
+                rowKey="id"
+                size="small"
+                pagination={false}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
 
       {/* Меры/намерения, поставленные менеджером (видны топ-менеджменту) */}
       <Card

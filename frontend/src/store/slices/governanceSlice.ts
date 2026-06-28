@@ -41,6 +41,8 @@ export interface Proposal {
   executionComment?: string;   // как выполнено / почему не выполнено (обязательно)
   executedBy?: string;
   executedAt?: string;
+  /** Демо-мера (засеяна для презентации). В режиме LLM такие меры скрываются. */
+  isDemo?: boolean;
 }
 
 export type ExecutionStatus = 'DONE' | 'NOT_DONE';
@@ -147,6 +149,18 @@ export default governanceSlice.reducer;
 
 // --- Селекторы ---
 export const selectProposals = (s: RootState) => s.governance.proposals;
+
+/**
+ * Видимые меры с учётом режима данных:
+ *  - 'mock' (Демо) — все меры, включая засеянные демонстрационные;
+ *  - 'live' (LLM)  — только реальные (созданные вручную), демо-меры скрыты.
+ * Использовать с shallowEqual в useSelector (ссылки элементов сохраняются).
+ */
+export const selectVisibleProposals = (s: RootState): Proposal[] =>
+  s.ui.dataMode === 'mock'
+    ? s.governance.proposals
+    : s.governance.proposals.filter((p) => !p.isDemo);
+
 export const selectPendingProposals = (s: RootState) =>
   s.governance.proposals.filter((p) => p.status === 'PENDING_APPROVAL');
 export const selectProposalsBySystem = (system: string) => (s: RootState) =>

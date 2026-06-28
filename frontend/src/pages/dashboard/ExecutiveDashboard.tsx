@@ -8,17 +8,17 @@ import { Card, Col, Row, Typography, Tag, Progress, Badge, Space, Button, Spin, 
 import { RobotOutlined, FireOutlined, AppstoreOutlined, FundOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import ReactECharts from 'echarts-for-react';
-import { useSelector } from 'react-redux';
+import { useSelector, shallowEqual } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { RootState } from '../../store';
-import { ExecSystemInsight } from '../../data/mockDashboards';
+import { ExecSystemInsight, ExecutiveDashboardData } from '../../data/mockDashboards';
 import { EXECUTIVE_SCALE, HEATMAP_CHARS_FULL } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND, critTagStyle } from '../../theme/ragPalette';
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
 import { TechDebtCard } from '../../components/TechDebtCard';
-import type { Proposal } from '../../store/slices/governanceSlice';
+import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 
 // Точное сопоставление меры с ячейкой теплокарты (по полному названию характеристики).
 const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
@@ -31,7 +31,66 @@ const CRIT_RANK: Record<string, number> = {
 const { Title, Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
-interface LiveDashboard { globalHealthScore: number; aiInsights: string; }
+interface LiveDashboard {
+  globalHealthScore: number;
+  aiInsights: string;
+  heatmapData?: [number, number, number][];
+  xAxisLabels?: string[];
+  yAxisLabels?: string[];
+  problematicSystems?: { id: string; name: string; criticality: string; lowMetricsCount: number }[];
+}
+
+// Бакет уровня (0..5) → представительный % для RAG-индикации.
+const BUCKET_SCORE = [-1, 10, 30, 50, 70, 90];
+
+// Сборка структуры управленческого дашборда из реального ответа API (LLM-режим).
+function buildExecFromLive(live: LiveDashboard | null): ExecutiveDashboardData {
+  const empty: ExecutiveDashboardData = {
+    globalIndex: live ? Math.round(live.globalHealthScore) : 0,
+    systems: [], heatmap: { characteristics: [], rows: [] },
+    techDebt: { resolvedPct: 0, period: '', note: '' },
+  };
+  if (!live || !live.yAxisLabels?.length || !live.xAxisLabels?.length) return empty;
+
+  const chars = live.xAxisLabels;
+  const sysNames = live.yAxisLabels;
+  const matrix: number[][] = sysNames.map(() => chars.map(() => 0));
+  (live.heatmapData ?? []).forEach(([x, y, b]) => { if (matrix[y] && x < chars.length) matrix[y][x] = b; });
+  const critMap = new Map((live.problematicSystems ?? []).map((s) => [s.name, s.criticality]));
+
+  const rows = sysNames.map((sys, y) => ({
+    system: sys,
+    cells: chars.map((_, x) => ({ score: BUCKET_SCORE[matrix[y][x]] ?? -1 })),
+  }));
+
+  const systems: ExecSystemInsight[] = sysNames.map((sys, y) => {
+    const scores = chars.map((_, x) => BUCKET_SCORE[matrix[y][x]] ?? -1).filter((s) => s >= 0);
+    const score = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    let weakIdx = 0, weakScore = 101;
+    chars.forEach((_, x) => {
+      const s = BUCKET_SCORE[matrix[y][x]] ?? -1;
+      if (s >= 0 && s < weakScore) { weakScore = s; weakIdx = x; }
+    });
+    const weakChar = chars[weakIdx] ?? '';
+    return {
+      id: `live-${y}`, name: sys, score,
+      criticality: (critMap.get(sys) as ExecSystemInsight['criticality']) ?? 'BUSINESS OPERATIONAL',
+      weakCharacteristic: weakChar,
+      aiSummary: `Интегральная оценка качества — ${score}%. Наиболее просевшая характеристика — ${weakChar} (${weakScore <= 100 ? weakScore : '—'}%).`,
+      recommendation: 'Сформировать меры по просевшим характеристикам.',
+      owner: 'Руководитель ИТ-блока (Иванов И.И.)',
+      escalateTo: 'CTO',
+      actions: ['Назначить ответственного и срок', 'Зафиксировать меру в плане качества', 'Включить контроль выполнения'],
+    };
+  });
+
+  return {
+    globalIndex: Math.round(live.globalHealthScore),
+    systems,
+    heatmap: { characteristics: chars, rows },
+    techDebt: { resolvedPct: 0, period: '', note: '' },
+  };
+}
 
 const RagDot: React.FC<{ score: number; size?: number; label?: string }> = ({ score, size = 14, label }) => (
   <span
@@ -44,20 +103,50 @@ const RagDot: React.FC<{ score: number; size?: number; label?: string }> = ({ sc
 );
 
 const ExecutiveDashboard: React.FC = () => {
-  const data = EXECUTIVE_SCALE;
   const navigate = useNavigate();
+  const dataMode = useSelector((s: RootState) => s.ui.dataMode);
+  const isLive = dataMode === 'live';
   const [active, setActive] = useState<ExecSystemInsight | null>(null);
-  const proposals = useSelector((s: RootState) => s.governance.proposals);
+  const proposals = useSelector(selectVisibleProposals, shallowEqual);
   const pendingProposals = proposals.filter((p) => p.status === 'PENDING_APPROVAL');
   const pendingCount = pendingProposals.length;
   const [decisionProposal, setDecisionProposal] = useState<Proposal | null>(null);
   const [allOpen, setAllOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [showAllHeatmap, setShowAllHeatmap] = useState(false);
+  // Фокус на характеристике для карточки ИС (клик по ячейке теплокарты).
+  const [activeChar, setActiveChar] = useState<string | undefined>(undefined);
 
-  // Зелёная точка — ТОЛЬКО если по характеристике есть мера, ПО КОТОРОЙ НЕ ПРИНЯТО РЕШЕНИЕ
-  // (статус «ожидает решения»). Решённые меры точкой не подсвечиваются.
-  // Сравнение точное — по нормализованным имени ИС и полному названию характеристики.
+  // Источник данных: 'mock' (демо) ↔ 'live' (реальное API + LLM, без моков).
+  const [live, setLive] = useState<LiveDashboard | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isLive) { setLive(null); setLiveError(null); return; }
+    let alive = true;
+    setLiveLoading(true);
+    setLiveError(null);
+    const token = localStorage.getItem('token');
+    fetch(`${VITE_API}/reports/executive-dashboard`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: LiveDashboard) => { if (alive) setLive(d); })
+      .catch((e) => { if (alive) setLiveError(e.message); })
+      .finally(() => { if (alive) setLiveLoading(false); });
+    return () => { alive = false; };
+  }, [isLive]);
+
+  // Демо → моки; LLM → построено из реального API (или пусто, без подмешивания моков).
+  const data: ExecutiveDashboardData = useMemo(
+    () => (isLive ? buildExecFromLive(live) : EXECUTIVE_SCALE),
+    [isLive, live],
+  );
+  // Полные названия характеристик для сопоставления мер с ячейками (по режиму).
+  const heatCharsFull = isLive ? data.heatmap.characteristics : HEATMAP_CHARS_FULL;
+
+  // Зелёная точка — только если есть мера, ПО КОТОРОЙ НЕ ПРИНЯТО РЕШЕНИЕ (ожидает решения).
   const cellHasMeasure = (sys: string, fullChar: string) =>
     proposals.some((p) =>
       p.status === 'PENDING_APPROVAL'
@@ -79,30 +168,7 @@ const ExecutiveDashboard: React.FC = () => {
   });
   const shownHeatRows = showAllHeatmap ? orderedHeatRows : orderedHeatRows.slice(0, 5);
 
-  // Источник данных: 'mock' (демо для презентации) ↔ 'live' (реальное API + LLM).
-  const dataMode = useSelector((s: RootState) => s.ui.dataMode);
-  const [live, setLive] = useState<LiveDashboard | null>(null);
-  const [liveLoading, setLiveLoading] = useState(false);
-  const [liveError, setLiveError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (dataMode !== 'live') { setLive(null); setLiveError(null); return; }
-    let alive = true;
-    setLiveLoading(true);
-    setLiveError(null);
-    const token = localStorage.getItem('token');
-    fetch(`${VITE_API}/reports/executive-dashboard`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d: LiveDashboard) => { if (alive) setLive(d); })
-      .catch((e) => { if (alive) setLiveError(e.message); })
-      .finally(() => { if (alive) setLiveLoading(false); });
-    return () => { alive = false; };
-  }, [dataMode]);
-
-  const isLive = dataMode === 'live';
-  const globalIndex = isLive && live ? Math.round(live.globalHealthScore) : data.globalIndex;
+  const globalIndex = data.globalIndex;
   const idxTok = ragToken(globalIndex);
 
   const gaugeOption = useMemo(
@@ -286,18 +352,23 @@ const ExecutiveDashboard: React.FC = () => {
                 {shownHeatRows.map((r) => {
                   const sys = data.systems.find((s) => s.name === r.system || s.name.includes(r.system));
                   return (
-                    <tr
-                      key={r.system}
-                      onClick={() => sys && setActive(sys)}
-                      style={{ cursor: sys ? 'pointer' : 'default' }}
-                    >
-                      <td style={{ fontSize: 13, color: BRAND.ink, paddingRight: 12 }}>{r.system}</td>
+                    <tr key={r.system}>
+                      <td
+                        onClick={() => { if (sys) { setActiveChar(undefined); setActive(sys); } }}
+                        title="Открыть карточку ИС (кто отвечает, действия, все меры)"
+                        style={{ fontSize: 13, color: BRAND.ink, paddingRight: 12, cursor: sys ? 'pointer' : 'default' }}
+                      >{r.system}</td>
                       {r.cells.map((cell, i) => {
-                        const measured = cellHasMeasure(r.system, HEATMAP_CHARS_FULL[i]);
+                        const measured = cellHasMeasure(r.system, heatCharsFull[i]);
                         return (
-                          <td key={i} style={{ textAlign: 'center' }}>
+                          <td
+                            key={i}
+                            onClick={() => { if (sys) { setActiveChar(heatCharsFull[i]); setActive(sys); } }}
+                            title={`${heatCharsFull[i]} — карточка ИС с мерами по характеристике`}
+                            style={{ textAlign: 'center', cursor: sys ? 'pointer' : 'default' }}
+                          >
                             <span style={{ position: 'relative', display: 'inline-block', lineHeight: 0 }}>
-                              <RagDot score={cell.score} label={`${r.system} · ${HEATMAP_CHARS_FULL[i]}${measured ? ' · мера ожидает решения' : ''}`} />
+                              <RagDot score={cell.score} label={`${r.system} · ${heatCharsFull[i]}${measured ? ' · мера ожидает решения' : ''}`} />
                               {measured && (
                                 <span
                                   title="По этой характеристике есть мера, ожидающая решения"
@@ -348,7 +419,12 @@ const ExecutiveDashboard: React.FC = () => {
       {/* Реестр мер качества — фильтры, приоритетная сортировка, сроки, решение по клику */}
       <MeasuresRegistryCard proposals={proposals} onOpen={setDecisionProposal} />
 
-      <ActionInsightModal open={!!active} system={active} onClose={() => setActive(null)} />
+      <ActionInsightModal
+        open={!!active}
+        system={active}
+        characteristic={activeChar}
+        onClose={() => { setActive(null); setActiveChar(undefined); }}
+      />
       <MeasureDecisionModal
         open={!!decisionProposal}
         proposal={decisionProposal}

@@ -11,6 +11,7 @@ import {
     AuditOutlined,
     WarningOutlined,
     RobotOutlined,
+    LineChartOutlined,
 } from '@ant-design/icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -64,6 +65,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     ];
     const managerMenu = [
         { key: '/dashboard/manager', icon: <AuditOutlined />, label: 'Менеджер по качеству' },
+        { key: '/dashboard/manager/dynamics', icon: <LineChartOutlined />, label: 'Динамика качества' },
         { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
         { key: '/assessments/new', icon: <FormOutlined />, label: 'Оценка ИС' },
         { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
