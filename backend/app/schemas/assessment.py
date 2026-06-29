@@ -116,6 +116,9 @@ class ValueOut(BaseModel):
 class EditableMetricOut(BaseModel):
     id: str
     name: str
+    characteristic: str = ""
+    subcharacteristic: str = ""
+    metric_id: int | None = None
     description: str
     val_a: float | None = None
     val_b: float | None = None
@@ -129,6 +132,28 @@ class EditableMetricIn(BaseModel):
     val_a: float | None = Field(None, ge=0)
     val_b: float | None = Field(None, ge=0)
     expert_comment: str | None = Field("", max_length=2000)
+
+
+class ValueAddIn(BaseModel):
+    """Добавление/заполнение оценки для одной пары (характеристика, подхарактеристика)."""
+    characteristic: str = Field(..., min_length=1, max_length=255)
+    subcharacteristic: str = Field(..., min_length=1, max_length=255)
+    formula_type: str | None = Field(None, pattern="^(DIRECT|INVERSE)$")
+    val_a: float | None = Field(None, ge=0)
+    val_b: float | None = Field(None, ge=0)
+    expert_comment: str | None = Field(None, max_length=2000)
+
+
+class PeriodSummaryOut(BaseModel):
+    """Сводка по периоду оценки: сколько подхарактеристик заполнено и полна ли оценка."""
+    id: UUID
+    system_id: UUID
+    system_name: str
+    period: str
+    status: str
+    filled: int
+    total: int
+    complete: bool
 
 
 class CalculatedMetricOut(BaseModel):

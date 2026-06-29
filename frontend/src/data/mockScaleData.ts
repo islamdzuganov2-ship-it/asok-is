@@ -15,6 +15,7 @@
  *   SCALE_PROPOSALS        — реестр мер качества по всем системам (всё повешено на руководителя).
  */
 import { levelLabel } from '../theme/ragPalette';
+import { QUALITY_MODEL, type Formula, type QualityCharacteristic, type QualitySub } from '../constants/qualityModel';
 import type {
   ExecutiveDashboardData, ExecSystemInsight, ManagerSystem, ManagerMetric,
 } from './mockDashboards';
@@ -37,61 +38,10 @@ function mulberry32(a: number) {
 const rngOf = (seed: string) => mulberry32(hashStr(seed));
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-type Formula = 'DIRECT' | 'INVERSE';
-
-// --- Модель качества ISO/IEC 25010: 8 характеристик, все подхарактеристики ---
-interface SubDef { name: string; formula: Formula; unit: string }
-interface CharDef { title: string; abbr: string; subs: SubDef[] }
-
-const ISO25010: CharDef[] = [
-  { title: 'Функциональная пригодность', abbr: 'Функц.', subs: [
-    { name: 'Функциональная полнота', formula: 'INVERSE', unit: 'требований' },
-    { name: 'Функциональная корректность', formula: 'DIRECT', unit: 'проверок' },
-    { name: 'Функциональная целесообразность', formula: 'DIRECT', unit: 'сценариев' },
-  ] },
-  { title: 'Производительность', abbr: 'Произв.', subs: [
-    { name: 'Временные характеристики (отклик)', formula: 'INVERSE', unit: 'замеров' },
-    { name: 'Использование ресурсов', formula: 'INVERSE', unit: 'узлов' },
-    { name: 'Ёмкость (пропускная способность)', formula: 'DIRECT', unit: 'операций' },
-  ] },
-  { title: 'Совместимость', abbr: 'Совмест.', subs: [
-    { name: 'Сосуществование', formula: 'DIRECT', unit: 'окружений' },
-    { name: 'Интероперабельность', formula: 'DIRECT', unit: 'интеграций' },
-  ] },
-  { title: 'Удобство использования', abbr: 'Удобство', subs: [
-    { name: 'Узнаваемость уместности', formula: 'DIRECT', unit: 'функций' },
-    { name: 'Изучаемость', formula: 'DIRECT', unit: 'сценариев' },
-    { name: 'Управляемость', formula: 'DIRECT', unit: 'операций' },
-    { name: 'Защита от ошибок пользователя', formula: 'DIRECT', unit: 'форм' },
-    { name: 'Эстетика интерфейса', formula: 'DIRECT', unit: 'экранов' },
-    { name: 'Доступность (accessibility)', formula: 'DIRECT', unit: 'требований' },
-  ] },
-  { title: 'Надёжность', abbr: 'Надёжн.', subs: [
-    { name: 'Зрелость (плотность дефектов)', formula: 'INVERSE', unit: 'функц. точек' },
-    { name: 'Доступность (uptime)', formula: 'DIRECT', unit: 'часов' },
-    { name: 'Отказоустойчивость', formula: 'DIRECT', unit: 'отказов' },
-    { name: 'Восстанавливаемость (MTTR)', formula: 'INVERSE', unit: 'инцидентов' },
-  ] },
-  { title: 'Защищённость', abbr: 'Защищ.', subs: [
-    { name: 'Конфиденциальность', formula: 'DIRECT', unit: 'проверок' },
-    { name: 'Целостность', formula: 'DIRECT', unit: 'проверок' },
-    { name: 'Неотказуемость', formula: 'DIRECT', unit: 'операций' },
-    { name: 'Подотчётность (аудит)', formula: 'DIRECT', unit: 'событий' },
-    { name: 'Аутентичность', formula: 'DIRECT', unit: 'проверок' },
-  ] },
-  { title: 'Сопровождаемость', abbr: 'Сопров.', subs: [
-    { name: 'Модульность', formula: 'DIRECT', unit: 'модулей' },
-    { name: 'Повторное использование', formula: 'DIRECT', unit: 'компонентов' },
-    { name: 'Анализируемость', formula: 'DIRECT', unit: 'логов' },
-    { name: 'Модифицируемость', formula: 'DIRECT', unit: 'изменений' },
-    { name: 'Тестируемость', formula: 'DIRECT', unit: 'тест-кейсов' },
-  ] },
-  { title: 'Переносимость', abbr: 'Переност.', subs: [
-    { name: 'Адаптируемость', formula: 'DIRECT', unit: 'сред' },
-    { name: 'Устанавливаемость', formula: 'INVERSE', unit: 'установок' },
-    { name: 'Заменяемость', formula: 'DIRECT', unit: 'компонентов' },
-  ] },
-];
+// --- Модель качества ISO/IEC 25010 (единый источник: constants/qualityModel.ts) ---
+type SubDef = QualitySub;
+type CharDef = QualityCharacteristic;
+const ISO25010: CharDef[] = QUALITY_MODEL;
 
 // --- 30 информационных систем банка ---
 const SYSTEM_NAMES = [

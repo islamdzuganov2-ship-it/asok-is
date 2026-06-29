@@ -1,7 +1,10 @@
 /**
- * mockDashboards.ts — демо-данные для ролевых дашбордов (по макетам ТЗ v9).
- * Используются как fallback, пока бэкенд-эндпоинты /dashboard/{role} не готовы.
- * Структура совместима с будущими ответами API.
+ * mockDashboards.ts — ТИПЫ ролевых дашбордов.
+ *
+ * Демо-значения (EXECUTIVE_MOCK / MANAGER_MOCK / MANAGER_MOCK_SYSTEMS) удалены —
+ * вытеснены генератором data/mockScaleData.ts (см. архив в Obsidian:
+ * Архитектура/Архив/mockDashboards_удалённые_значения). Здесь остались только типы,
+ * используемые mockScaleData, ExecutiveDashboard, ManagerDashboard, ActionInsightModal.
  */
 
 export interface ExecSystemInsight {
@@ -9,12 +12,12 @@ export interface ExecSystemInsight {
   name: string;
   score: number;                 // RAG-процент качества ИС
   criticality: 'MISSION CRITICAL' | 'BUSINESS CRITICAL' | 'BUSINESS OPERATIONAL';
-  aiSummary: string;             // AI-резюме проблемы (R1.2)
-  recommendation: string;        // одна рекомендация к действию (R1.2)
-  owner: string;                 // «кто виноват» — владелец/ответственный (R1.5)
-  escalateTo: string;            // «с кого спрашивать» — эскалация (R1.5)
+  aiSummary: string;             // AI-резюме проблемы
+  recommendation: string;        // одна рекомендация к действию
+  owner: string;                 // «кто виноват» — владелец/ответственный
+  escalateTo: string;            // «с кого спрашивать» — эскалация
   weakCharacteristic: string;    // наиболее просевшая характеристика
-  actions: string[];             // рекомендуемые действия (R1.5)
+  actions: string[];             // рекомендуемые действия
 }
 
 export interface HeatCell {
@@ -22,88 +25,14 @@ export interface HeatCell {
 }
 
 export interface ExecutiveDashboardData {
-  globalIndex: number;           // общий индекс ИТ-ландшафта (R1.1)
-  systems: ExecSystemInsight[];  // топ-проблемные ИС (R1.2)
+  globalIndex: number;
+  systems: ExecSystemInsight[];
   heatmap: {
-    characteristics: string[];   // столбцы
+    characteristics: string[];
     rows: { system: string; cells: HeatCell[] }[];
   };
-  techDebt: { resolvedPct: number; period: string; note: string }; // R1.4
+  techDebt: { resolvedPct: number; period: string; note: string };
 }
-
-export const EXECUTIVE_MOCK: ExecutiveDashboardData = {
-  globalIndex: 68,
-  systems: [
-    {
-      id: 'sys-radius',
-      name: 'Systematica Radius',
-      score: 33,
-      criticality: 'MISSION CRITICAL',
-      weakCharacteristic: 'Надёжность',
-      aiSummary:
-        'Качество ИС на критически низком уровне: просадка по надёжности и сопровождаемости. Растёт частота инцидентов в пиковые окна.',
-      recommendation: 'Заморозить релизы и запустить программу стабилизации.',
-      owner: 'Иванов И.И. (владелец ИС)',
-      escalateTo: 'Директор по ИТ-эксплуатации',
-      actions: [
-        'Назначить владельца программы стабилизации в течение 3 дней',
-        'Провести root-cause по топ-5 инцидентам надёжности',
-        'Ввести регресс-тестирование критических сценариев',
-      ],
-    },
-    {
-      id: 'sys-crm-opk',
-      name: 'CRM ОПК',
-      score: 41,
-      criticality: 'BUSINESS CRITICAL',
-      weakCharacteristic: 'Сопровождаемость',
-      aiSummary:
-        'Качество ниже целевого: разрозненная архитектура, низкая тестируемость, технический долг растёт быстрее, чем устраняется.',
-      recommendation: 'Утвердить план снижения техдолга на квартал.',
-      owner: 'Петров П.П. (владелец ИС)',
-      escalateTo: 'CTO',
-      actions: [
-        'Согласовать бюджет рефакторинга модуля интеграций',
-        'Внедрить автоматизацию регрессионного тестирования',
-        'Зафиксировать SLA по сопровождению',
-      ],
-    },
-    {
-      id: 'sys-ehd',
-      name: 'Единое Хранилище Данных (ЕХД)',
-      score: 46,
-      criticality: 'BUSINESS CRITICAL',
-      weakCharacteristic: 'Тестируемость',
-      aiSummary:
-        'Тестируемость на низком уровне (25%): не хватает ресурсов автоматизации тест-кейсов, риск необнаруженных дефектов в данных.',
-      recommendation: 'Выделить ресурс на автоматизацию тест-кейсов.',
-      owner: 'Сидоров С.С. (владелец ИС)',
-      escalateTo: 'Менеджер по качеству → CTO',
-      actions: [
-        'Утвердить найм/перевод 1 QA-автоматизатора',
-        'Приоритизировать покрытие критических витрин данных',
-        'Включить контроль качества данных в релизный гейт',
-      ],
-    },
-  ],
-  heatmap: {
-    characteristics: ['Функц.', 'Произв.', 'Надёжн.', 'Сопров.', 'Безоп.'],
-    rows: [
-      { system: 'ЕХД',                cells: [{ score: 30 }, { score: 35 }, { score: 55 }, { score: 72 }, { score: 80 }] },
-      { system: 'Единое Хранилище',   cells: [{ score: 28 }, { score: 60 }, { score: 75 }, { score: 52 }, { score: 78 }] },
-      { system: 'Systematica Radius', cells: [{ score: 25 }, { score: 33 }, { score: 30 }, { score: 70 }, { score: 82 }] },
-      { system: 'CRM ОПК',            cells: [{ score: 40 }, { score: 45 }, { score: 58 }, { score: 35 }, { score: 76 }] },
-      { system: 'СЭД',                cells: [{ score: 62 }, { score: 70 }, { score: 80 }, { score: 66 }, { score: 85 }] },
-    ],
-  },
-  techDebt: {
-    resolvedPct: 65,
-    period: 'Q1',
-    note: 'устранено задач по плану обеспечения качества',
-  },
-};
-
-// --- Дашборд Менеджера по качеству ---
 
 export interface ManagerMetric {
   id: string;
@@ -124,118 +53,3 @@ export interface ManagerSystem {
   name: string;
   characteristics: ManagerCharacteristic[];
 }
-
-export const MANAGER_MOCK_SYSTEMS: ManagerSystem[] = [
-  {
-    id: 'sys-ehd',
-    name: 'Единое Хранилище Данных (ЕХД)',
-    characteristics: [
-      {
-        key: 'testability', title: 'Тестируемость', score: 25,
-        metrics: [
-          { id: 'm1', name: 'Покрытие автотестами регресса', score: 16, formula: 'Sₓ = автоматизировано / всего тест-кейсов' },
-          { id: 'm2', name: 'Доля воспроизводимых дефектов', score: 25, formula: 'Sₓ = воспроизводимые / зарегистрированные' },
-          { id: 'm3', name: 'Готовность тестовых данных', score: 15, formula: 'Sₓ = готовые наборы / требуемые' },
-          { id: 'm4', name: 'Стабильность тестовой среды', score: 40, formula: 'Sₓ = 1 − простой среды / окно тестирования' },
-        ],
-      },
-      {
-        key: 'maintainability', title: 'Сопровождаемость', score: 48,
-        metrics: [
-          { id: 'm5', name: 'Модульность', score: 52, formula: 'экспертно по архитектуре' },
-          { id: 'm6', name: 'Анализируемость логов', score: 44, formula: 'Sₓ = структурир. логи / всего' },
-        ],
-      },
-      {
-        key: 'reliability', title: 'Надёжность', score: 55,
-        metrics: [
-          { id: 'm7', name: 'Доступность (uptime)', score: 78, formula: 'Sₓ = uptime / план' },
-          { id: 'm8', name: 'Зрелость (плотность дефектов)', score: 32, formula: 'Sₓ = 1 − дефекты / объём' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'sys-radius',
-    name: 'Systematica Radius',
-    characteristics: [
-      {
-        key: 'reliability', title: 'Надёжность', score: 30,
-        metrics: [
-          { id: 'r1', name: 'Доступность (uptime)', score: 28, formula: 'Sₓ = uptime / план' },
-          { id: 'r2', name: 'Среднее время восстановления', score: 35, formula: 'Sₓ = 1 − факт / норматив' },
-        ],
-      },
-      {
-        key: 'maintainability', title: 'Сопровождаемость', score: 70,
-        metrics: [
-          { id: 'r3', name: 'Корректность плановых релизов', score: 72, formula: 'Sₓ = 1 − проблемные / всего' },
-          { id: 'r4', name: 'Модульность', score: 68, formula: 'экспертно по архитектуре' },
-        ],
-      },
-      {
-        key: 'security', title: 'Безопасность', score: 82,
-        metrics: [
-          { id: 'r5', name: 'Реализация ролевой модели', score: 80, formula: 'Sₓ = реализовано / требуется' },
-          { id: 'r6', name: 'Корректность аутентификации', score: 84, formula: 'Sₓ = пройдено / проверок' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'sys-crm-opk',
-    name: 'CRM ОПК',
-    characteristics: [
-      {
-        key: 'maintainability', title: 'Сопровождаемость', score: 35,
-        metrics: [
-          { id: 'c1', name: 'Модульность', score: 30, formula: 'экспертно по архитектуре' },
-          { id: 'c2', name: 'Корректность срочных релизов', score: 40, formula: 'Sₓ = 1 − проблемные / всего' },
-        ],
-      },
-      {
-        key: 'functional', title: 'Функциональная пригодность', score: 40,
-        metrics: [
-          { id: 'c3', name: 'Функциональное покрытие', score: 38, formula: 'Sₓ = 1 − непокрытые / требования' },
-          { id: 'c4', name: 'Коррекция ошибок', score: 42, formula: 'Sₓ = исправленные / всего' },
-        ],
-      },
-    ],
-  },
-];
-
-export const MANAGER_MOCK: ManagerSystem = {
-  id: 'sys-ehd',
-  name: 'Единое Хранилище Данных (ЕХД)',
-  characteristics: [
-    {
-      key: 'testability',
-      title: 'Тестируемость',
-      score: 25,
-      metrics: [
-        { id: 'm1', name: 'Покрытие автотестами регресса', score: 16, formula: 'Sₓ = автоматизировано / всего тест-кейсов' },
-        { id: 'm2', name: 'Доля воспроизводимых дефектов',  score: 25, formula: 'Sₓ = воспроизводимые / зарегистрированные' },
-        { id: 'm3', name: 'Готовность тестовых данных',     score: 15, formula: 'Sₓ = готовые наборы / требуемые' },
-        { id: 'm4', name: 'Стабильность тестовой среды',    score: 40, formula: 'Sₓ = 1 − простой среды / окно тестирования' },
-      ],
-    },
-    {
-      key: 'maintainability',
-      title: 'Сопровождаемость',
-      score: 48,
-      metrics: [
-        { id: 'm5', name: 'Модульность',          score: 52, formula: 'экспертно по архитектуре' },
-        { id: 'm6', name: 'Анализируемость логов', score: 44, formula: 'Sₓ = структурир. логи / всего' },
-      ],
-    },
-    {
-      key: 'reliability',
-      title: 'Надёжность',
-      score: 55,
-      metrics: [
-        { id: 'm7', name: 'Доступность (uptime)',   score: 78, formula: 'Sₓ = uptime / план' },
-        { id: 'm8', name: 'Зрелость (плотность дефектов)', score: 32, formula: 'Sₓ = 1 − дефекты / объём' },
-      ],
-    },
-  ],
-};
