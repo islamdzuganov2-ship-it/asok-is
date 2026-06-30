@@ -342,25 +342,6 @@ async def import_matrices_from_workbook(db: AsyncSession, path: Path, period_id:
     return summary
 
 
-async def seed_project_excel_files(db: AsyncSession, project_root: Path) -> dict[str, Any]:
-    candidates = [project_root, project_root / "seed_data", Path("/app/seed_data"), Path("/app")]
-    def find_file(name: str) -> Path:
-        for base in candidates:
-            candidate = base / name
-            if candidate.exists():
-                return candidate
-        return candidates[0] / name
-
-    files = {
-        "metrics_template": find_file("таблица для заполнения v8.1.xlsx"),
-        "quality_timeline": find_file("Качество системы в разрезе времени по всем характеристикам.xlsx"),
-    }
-    result: dict[str, Any] = {}
-    if files["metrics_template"].exists():
-        summary = await import_metric_catalog_from_workbook(db, files["metrics_template"])
-        result["metrics_template"] = summary.as_dict()
-    if files["quality_timeline"].exists():
-        summary = await import_quality_timeline(db, files["quality_timeline"])
-        result["quality_timeline"] = summary.as_dict()
-    await db.commit()
-    return result
+# Функция seed_project_excel_files удалена (отвязка от Excel-файлов проекта):
+# каталог метрик сеется ИЗ КОДА — scripts/seed_iso25010 + constants/quality_model.
+# Импортёры workbook выше остаются для ПОЛЬЗОВАТЕЛЬСКОЙ загрузки Excel (/excel/import-workbook).

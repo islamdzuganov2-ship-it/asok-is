@@ -20,8 +20,8 @@ import { critTagStyle, levelLabel } from '../theme/ragPalette';
 const { Title, Text } = Typography;
 
 const LEVEL_ORDER = [
-  'Высокий уровень', 'Уровень выше среднего', 'Средний уровень',
-  'Уровень ниже среднего', 'Низкий уровень', 'Невозможно измерить',
+  'Высокий уровень', 'Выше среднего', 'Средний уровень',
+  'Ниже среднего', 'Низкий уровень', 'Невозможно измерить',
 ];
 
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';

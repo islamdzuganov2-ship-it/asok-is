@@ -51,9 +51,9 @@ export function ragByScore(score: number): RagKey {
 export function levelLabel(score: number): string {
   if (score < 0) return 'Невозможно измерить';
   if (score >= 81) return 'Высокий уровень';
-  if (score >= 61) return 'Уровень выше среднего';
+  if (score >= 61) return 'Выше среднего';
   if (score >= 41) return 'Средний уровень';
-  if (score >= 21) return 'Уровень ниже среднего';
+  if (score >= 21) return 'Ниже среднего';
   return 'Низкий уровень';
 }
 

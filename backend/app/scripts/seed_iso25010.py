@@ -10,19 +10,26 @@
 """
 import asyncio
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.constants.quality_model import QUALITY_MODEL
 from app.core.database import AsyncSessionLocal
-from app.models.metric_catalog import MetricCatalog
+from app.models.metric_catalog import FormulaType, MetricCatalog
 
 
 async def seed_iso25010_async() -> dict[str, int]:
     created = 0
     updated = 0
     async with AsyncSessionLocal() as db:
+        # Каталог мог быть засеян с явными id (seed_metrics), из-за чего sequence
+        # отстаёт от MAX(id) и INSERT новых пар даёт duplicate key. Синхронизируем.
+        await db.execute(text(
+            "SELECT setval(pg_get_serial_sequence('metric_catalog', 'id'), "
+            "GREATEST(COALESCE((SELECT MAX(id) FROM metric_catalog), 1), 1))"
+        ))
         for characteristic, subs in QUALITY_MODEL:
-            for subcharacteristic, formula_type in subs:
+            for subcharacteristic, formula in subs:
+                formula_type = FormulaType(formula)
                 result = await db.execute(
                     select(MetricCatalog).where(
                         MetricCatalog.characteristic == characteristic,

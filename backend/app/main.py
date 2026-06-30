@@ -5,13 +5,12 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pathlib import Path
 
 from app.core.config import settings
 from app.api.v1.api import api_router
-from app.core.database import AsyncSessionLocal, engine
+from app.core.database import engine
 from app.db.base import Base
-from app.services.excel_importer import seed_project_excel_files
+from app.scripts.seed_iso25010 import seed_iso25010_async
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +58,14 @@ async def health_check():
 
 
 @app.on_event("startup")
-async def startup_seed_excel_data() -> None:
+async def startup_init() -> None:
     if not settings.DEMO_MODE:
         return
+    # Создаём таблицы и сеем каталог метрик ИЗ КОДА (constants/quality_model.py),
+    # без зависимости от Excel-файлов проекта.
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        async with AsyncSessionLocal() as db:
-            project_root = Path(__file__).resolve().parents[2]
-            await seed_project_excel_files(db, project_root)
+        await seed_iso25010_async()
     except Exception as exc:
-        print(f"Excel seed skipped: {exc}")
+        logger.warning("Стартовый сид пропущен: %s", exc)

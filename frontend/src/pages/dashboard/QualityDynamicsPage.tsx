@@ -7,9 +7,11 @@
  *  3) ввод причин изменения качества по кварталам (в модалке).
  */
 import React, { useMemo, useState } from 'react';
-import { Card, Col, Row, Select, Space, Typography, Tag } from 'antd';
+import { Alert, Card, Col, Row, Select, Space, Typography, Tag } from 'antd';
 import { DatabaseOutlined, LineChartOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../store';
 import { MANAGER_SCALE_SYSTEMS } from '../../data/mockScaleData';
 import { DYNAMICS, QUARTERS, type DynSeries } from '../../data/mockScaleData';
 import { BRAND, ragToken } from '../../theme/ragPalette';
@@ -26,6 +28,8 @@ const lastValue = (series: number[]) => {
 };
 
 const QualityDynamicsPage: React.FC = () => {
+  const dataMode = useSelector((s: RootState) => s.ui.dataMode);
+  const isLive = dataMode === 'live';
   const [systemId, setSystemId] = useState(MANAGER_SCALE_SYSTEMS[0].id);
   const system = useMemo(
     () => MANAGER_SCALE_SYSTEMS.find((s) => s.id === systemId) ?? MANAGER_SCALE_SYSTEMS[0],
@@ -57,23 +61,39 @@ const QualityDynamicsPage: React.FC = () => {
           <Title level={4} style={{ margin: 0, color: BRAND.ink }}>
             <LineChartOutlined /> Динамика качества
           </Title>
-          <Text type="secondary">Изменение качества во времени по характеристикам и подхарактеристикам ИС «{system.name}».</Text>
+          <Text type="secondary">
+            {isLive
+              ? 'Режим LLM · реальные данные'
+              : `Изменение качества во времени по характеристикам и подхарактеристикам ИС «${system.name}».`}
+          </Text>
         </Col>
-        <Col>
-          <Space>
-            <Text type="secondary"><DatabaseOutlined /> Система:</Text>
-            <Select
-              value={systemId}
-              onChange={setSystemId}
-              style={{ minWidth: 280 }}
-              showSearch
-              optionFilterProp="label"
-              options={MANAGER_SCALE_SYSTEMS.map((s) => ({ value: s.id, label: s.name }))}
-            />
-          </Space>
-        </Col>
+        {!isLive && (
+          <Col>
+            <Space>
+              <Text type="secondary"><DatabaseOutlined /> Система:</Text>
+              <Select
+                value={systemId}
+                onChange={setSystemId}
+                style={{ minWidth: 280 }}
+                showSearch
+                optionFilterProp="label"
+                options={MANAGER_SCALE_SYSTEMS.map((s) => ({ value: s.id, label: s.name }))}
+              />
+            </Space>
+          </Col>
+        )}
       </Row>
 
+      {isLive ? (
+        <Alert
+          style={{ marginTop: 16 }}
+          type="info"
+          showIcon
+          message="Режим LLM: демо-динамика скрыта"
+          description="Динамика строится из истории периодов оценки. Заполните оценки за несколько периодов в разделе «Оценка ИС» — графики по характеристикам и подхарактеристикам появятся здесь по реальным данным."
+        />
+      ) : (
+      <>
       {/* 1. Динамика по характеристикам */}
       <Card
         title={<span style={{ color: BRAND.ink }}>Качество по характеристикам во времени</span>}
@@ -132,6 +152,8 @@ const QualityDynamicsPage: React.FC = () => {
           })}
         </Row>
       </Card>
+      </>
+      )}
 
       <DynamicsModal
         open={!!modalSeries}

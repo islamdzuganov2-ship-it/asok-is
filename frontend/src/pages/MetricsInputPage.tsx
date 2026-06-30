@@ -31,9 +31,9 @@ interface MetricRow {
 
 const LEVEL_TAG_COLOR: Record<string, string> = {
   'Высокий уровень':        'green',
-  'Уровень выше среднего':  'cyan',
+  'Выше среднего':          'cyan',
   'Средний уровень':        'gold',
-  'Уровень ниже среднего':  'orange',
+  'Ниже среднего':          'orange',
   'Низкий уровень':         'red',
   'Невозможно измерить':    'default',
 };

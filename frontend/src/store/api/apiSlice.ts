@@ -77,12 +77,37 @@ export interface ExpertJudgmentDto {
 export interface EditableMetric {
     id: string;
     name: string;
+    characteristic?: string;
+    subcharacteristic?: string;
+    metric_id?: number | null;
     description: string;
     val_a: number | null;
     val_b: number | null;
     expert_comment: string;
     calculatedX?: number | null;
     qualityLevel?: string | null;
+}
+
+/** Тело добавления оценки для одной пары (характеристика × подхарактеристика). */
+export interface ValueAddDto {
+    characteristic: string;
+    subcharacteristic: string;
+    formula_type?: 'DIRECT' | 'INVERSE';
+    val_a: number | null;
+    val_b: number | null;
+    expert_comment?: string;
+}
+
+/** Сводка по периоду оценки: полнота заполнения подхарактеристик модели. */
+export interface PeriodSummary {
+    id: string;
+    system_id: string;
+    system_name: string;
+    period: string;
+    status: string;
+    filled: number;
+    total: number;
+    complete: boolean;
 }
 
 export interface CalculatedMetric {
@@ -203,6 +228,28 @@ export const apiSlice = createApi({
             query: (id) => `/assessments/${id}/calculated`,
             providesTags: ['Assessment'],
         }),
+        getPeriodSummaries: builder.query<PeriodSummary[], { system_id?: string } | void>({
+            query: (params) => {
+                const query = params?.system_id ? `?system_id=${params.system_id}` : '';
+                return `/assessments/periods/summary${query}`;
+            },
+            providesTags: ['Assessment'],
+        }),
+        createAssessmentValue: builder.mutation<EditableMetric, { id: string; body: ValueAddDto }>({
+            query: ({ id, body }) => ({
+                url: `/assessments/${id}/values`,
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['Metrics', 'Assessment', 'Dashboard'],
+        }),
+        finalizeAssessment: builder.mutation<PeriodSummary, string>({
+            query: (id) => ({
+                url: `/assessments/${id}/finalize`,
+                method: 'POST',
+            }),
+            invalidatesTags: ['Assessment', 'Dashboard'],
+        }),
         importAssessmentExcel: builder.mutation<ExcelImportResult, { id: string; file: File }>({
             query: ({ id, file }) => {
                 const formData = new FormData();
@@ -234,10 +281,13 @@ export const apiSlice = createApi({
 
 export const {
     useCreateAssessmentPeriodMutation,
+    useCreateAssessmentValueMutation,
     useCreateMetricMutation,
     useCreateSystemMutation,
+    useFinalizeAssessmentMutation,
     useGetAssessmentMetricsQuery,
     useGetCalculatedMetricsQuery,
+    useGetPeriodSummariesQuery,
     useGetExecutiveDashboardQuery,
     useGetSystemsQuery,
     useImportAssessmentExcelMutation,

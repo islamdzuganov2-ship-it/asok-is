@@ -3,64 +3,72 @@
 ВАЖНО: держать синхронно с frontend/src/constants/qualityModel.ts.
 Используется сидом каталога (scripts/seed_iso25010.py) и серверной проверкой
 полноты оценки (эндпоинт /assessments/{id}/finalize и /periods/summary).
+
+Намеренно НЕ импортирует ORM-модели: тип формулы хранится строкой ("DIRECT"/"INVERSE"),
+чтобы модуль констант был независим от порядка импорта и не вызывал циклический импорт
+(metric_catalog ↔ db.base). Сид конвертирует строку в FormulaType.
 """
 from __future__ import annotations
 
-from app.models.metric_catalog import FormulaType
+from typing import Literal
+
+Formula = Literal["DIRECT", "INVERSE"]
+DIRECT: Formula = "DIRECT"
+INVERSE: Formula = "INVERSE"
 
 # (характеристика, [(подхарактеристика, тип формулы), ...])
-QUALITY_MODEL: list[tuple[str, list[tuple[str, FormulaType]]]] = [
+QUALITY_MODEL: list[tuple[str, list[tuple[str, Formula]]]] = [
     ("Функциональная пригодность", [
-        ("Функциональная полнота", FormulaType.INVERSE),
-        ("Функциональная корректность", FormulaType.DIRECT),
-        ("Функциональная целесообразность", FormulaType.DIRECT),
+        ("Функциональная полнота", INVERSE),
+        ("Функциональная корректность", DIRECT),
+        ("Функциональная целесообразность", DIRECT),
     ]),
     ("Производительность", [
-        ("Временные характеристики (отклик)", FormulaType.INVERSE),
-        ("Использование ресурсов", FormulaType.INVERSE),
-        ("Ёмкость (пропускная способность)", FormulaType.DIRECT),
+        ("Временные характеристики (отклик)", INVERSE),
+        ("Использование ресурсов", INVERSE),
+        ("Ёмкость (пропускная способность)", DIRECT),
     ]),
     ("Совместимость", [
-        ("Сосуществование", FormulaType.DIRECT),
-        ("Интероперабельность", FormulaType.DIRECT),
+        ("Сосуществование", DIRECT),
+        ("Интероперабельность", DIRECT),
     ]),
     ("Удобство использования", [
-        ("Узнаваемость уместности", FormulaType.DIRECT),
-        ("Изучаемость", FormulaType.DIRECT),
-        ("Управляемость", FormulaType.DIRECT),
-        ("Защита от ошибок пользователя", FormulaType.DIRECT),
-        ("Эстетика интерфейса", FormulaType.DIRECT),
-        ("Доступность (accessibility)", FormulaType.DIRECT),
+        ("Узнаваемость уместности", DIRECT),
+        ("Изучаемость", DIRECT),
+        ("Управляемость", DIRECT),
+        ("Защита от ошибок пользователя", DIRECT),
+        ("Эстетика интерфейса", DIRECT),
+        ("Доступность (accessibility)", DIRECT),
     ]),
     ("Надёжность", [
-        ("Зрелость (плотность дефектов)", FormulaType.INVERSE),
-        ("Доступность (uptime)", FormulaType.DIRECT),
-        ("Отказоустойчивость", FormulaType.DIRECT),
-        ("Восстанавливаемость (MTTR)", FormulaType.INVERSE),
+        ("Зрелость (плотность дефектов)", INVERSE),
+        ("Доступность (uptime)", DIRECT),
+        ("Отказоустойчивость", DIRECT),
+        ("Восстанавливаемость (MTTR)", INVERSE),
     ]),
     ("Защищённость", [
-        ("Конфиденциальность", FormulaType.DIRECT),
-        ("Целостность", FormulaType.DIRECT),
-        ("Неотказуемость", FormulaType.DIRECT),
-        ("Подотчётность (аудит)", FormulaType.DIRECT),
-        ("Аутентичность", FormulaType.DIRECT),
+        ("Конфиденциальность", DIRECT),
+        ("Целостность", DIRECT),
+        ("Неотказуемость", DIRECT),
+        ("Подотчётность (аудит)", DIRECT),
+        ("Аутентичность", DIRECT),
     ]),
     ("Сопровождаемость", [
-        ("Модульность", FormulaType.DIRECT),
-        ("Повторное использование", FormulaType.DIRECT),
-        ("Анализируемость", FormulaType.DIRECT),
-        ("Модифицируемость", FormulaType.DIRECT),
-        ("Тестируемость", FormulaType.DIRECT),
+        ("Модульность", DIRECT),
+        ("Повторное использование", DIRECT),
+        ("Анализируемость", DIRECT),
+        ("Модифицируемость", DIRECT),
+        ("Тестируемость", DIRECT),
     ]),
     ("Переносимость", [
-        ("Адаптируемость", FormulaType.DIRECT),
-        ("Устанавливаемость", FormulaType.INVERSE),
-        ("Заменяемость", FormulaType.DIRECT),
+        ("Адаптируемость", DIRECT),
+        ("Устанавливаемость", INVERSE),
+        ("Заменяемость", DIRECT),
     ]),
 ]
 
 # Плоский список всех пар (характеристика, подхарактеристика, формула) — 31 пара.
-QUALITY_PAIRS: list[tuple[str, str, FormulaType]] = [
+QUALITY_PAIRS: list[tuple[str, str, Formula]] = [
     (characteristic, sub, formula)
     for characteristic, subs in QUALITY_MODEL
     for sub, formula in subs

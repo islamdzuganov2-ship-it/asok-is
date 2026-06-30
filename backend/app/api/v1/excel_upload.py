@@ -17,7 +17,7 @@ from app.core.database import get_db
 from app.models.assessment import AssessmentPeriod, AssessmentValue
 from app.models.metric_catalog import MetricCatalog
 from app.services.calculation_engine import calculate_metric, map_to_level
-from app.services.excel_importer import import_matrices_from_workbook, import_metric_catalog_from_workbook, seed_project_excel_files
+from app.services.excel_importer import import_matrices_from_workbook, import_metric_catalog_from_workbook
 from app.workers.tasks import celery_app, parse_excel_task
 
 router = APIRouter()
@@ -278,12 +278,3 @@ async def import_workbook(
         "metrics": metrics_summary.as_dict(),
         "matrices": matrices_summary.as_dict(),
     }
-
-
-@router.post("/seed-project-files")
-async def seed_project_files(
-    db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role("ADMIN")),
-) -> dict[str, Any]:
-    project_root = Path(__file__).resolve().parents[4]
-    return await seed_project_excel_files(db, project_root)

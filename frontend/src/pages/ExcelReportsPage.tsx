@@ -1,18 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, Empty, Row, Segmented, Select, Space, Spin, Table, Tabs, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, Card, Col, Empty, Input, Row, Segmented, Select, Space, Spin, Table, Tabs, Tag, Typography, Upload, message } from 'antd';
 import { FileExcelOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
-import { useDispatch, useSelector } from 'react-redux';
+import { shallowEqual, useDispatch, useSelector } from 'react-redux';
 import {
+    EditableMetric,
+    useGetAssessmentMetricsQuery,
     useGetAssessmentPeriodsQuery,
     useGetExcelMatricesQuery,
     useGetSystemsQuery,
     useImportWorkbookMutation,
+    useSaveAssessmentMetricsMutation,
 } from '../store/api/apiSlice';
 import { RootState } from '../store';
 import {
-    approveProposal, rejectProposal, selectProposals, type ProposalStatus,
+    approveProposal, rejectProposal, selectVisibleProposals, type ProposalStatus,
 } from '../store/slices/governanceSlice';
 
 const { Title, Text } = Typography;
@@ -41,25 +44,74 @@ const PROPOSAL_STATUS_TAG: Record<ProposalStatus, { color: string; label: string
     REJECTED: { color: 'red', label: 'Отклонена' },
 };
 
+/** Цвета уровней качества — ключи совпадают с выводом backend map_to_level. */
+const LEVEL_COLOR: Record<string, string> = {
+    'Высокий уровень': 'green',
+    'Выше среднего': 'cyan',
+    'Средний уровень': 'gold',
+    'Ниже среднего': 'orange',
+    'Низкий уровень': 'red',
+    'Невозможно измерить': 'default',
+};
+
 const reportCardStyle: React.CSSProperties = {
     border: '1px solid #d9e2f3',
     borderRadius: 4,
 };
 
+/** Ячейка с редактируемым комментарием — сохраняет через PUT /assessments/{id}/metrics. */
+const CommentCell: React.FC<{ row: EditableMetric; periodId: string }> = ({ row, periodId }) => {
+    const [value, setValue] = useState(row.expert_comment || '');
+    const [save, { isLoading }] = useSaveAssessmentMetricsMutation();
+    const dirty = (value || '') !== (row.expert_comment || '');
+    const handleSave = async () => {
+        try {
+            await save({ id: periodId, metrics: [{ ...row, expert_comment: value }] }).unwrap();
+            message.success('Комментарий сохранён');
+        } catch {
+            message.error('Не удалось сохранить комментарий');
+        }
+    };
+    return (
+        <Space.Compact style={{ width: '100%' }}>
+            <Input
+                size="small"
+                value={value}
+                placeholder="Комментарий / корректировка"
+                onChange={(e) => setValue(e.target.value)}
+                onPressEnter={handleSave}
+            />
+            <Button size="small" type="primary" loading={isLoading} disabled={!dirty} onClick={handleSave}>
+                OK
+            </Button>
+        </Space.Compact>
+    );
+};
+
 export const ExcelReportsPage: React.FC = () => {
     const { data: systems } = useGetSystemsQuery();
-    const { data: periods, isLoading: periodsLoading } = useGetAssessmentPeriodsQuery();
+    const [systemId, setSystemId] = useState<string | undefined>();
     const [periodId, setPeriodId] = useState<string | undefined>();
-    const activePeriodId = periodId || periods?.[0]?.id;
+
+    const { data: periods, isFetching: periodsLoading } = useGetAssessmentPeriodsQuery(
+        systemId ? { system_id: systemId } : undefined,
+        { skip: !systemId },
+    );
+    const activePeriodId = periodId;
+
     const { data, isFetching, isError, refetch } = useGetExcelMatricesQuery(activePeriodId || '', {
+        skip: !activePeriodId,
+    });
+    const { data: qualityMetrics, isFetching: qualityLoading } = useGetAssessmentMetricsQuery(activePeriodId || '', {
         skip: !activePeriodId,
     });
     const [importWorkbook, { isLoading: uploading }] = useImportWorkbookMutation();
 
     const dispatch = useDispatch();
-    const proposals = useSelector(selectProposals);
+    // Реестр мер: в Демо — все, в LLM — только реальные (демо-меры скрыты).
+    const proposals = useSelector(selectVisibleProposals, shallowEqual);
     const currentUser = useSelector((s: RootState) => s.auth.fullName) || 'Топ-менеджмент';
-    const [activeTab, setActiveTab] = useState('risks');
+    const [activeTab, setActiveTab] = useState('quality');
     const [proposalFilter, setProposalFilter] = useState<'ALL' | ProposalStatus>('ALL');
 
     const filteredProposals = useMemo(
@@ -67,15 +119,14 @@ export const ExcelReportsPage: React.FC = () => {
         [proposals, proposalFilter],
     );
 
-    const systemById = useMemo(() => {
-        const map = new Map<string, string>();
-        (systems?.items || []).forEach((system) => map.set(system.id, system.name));
-        return map;
-    }, [systems]);
+    const systemOptions = (systems?.items || []).map((system) => ({
+        value: system.id,
+        label: `${system.name}${system.code ? ` (${system.code})` : ''}`,
+    }));
 
     const periodOptions = (periods || []).map((period) => ({
         value: period.id,
-        label: `${period.period} — ${systemById.get(period.system_id) || period.system_id}`,
+        label: period.period,
     }));
 
     const uploadProps: UploadProps = {
@@ -84,7 +135,7 @@ export const ExcelReportsPage: React.FC = () => {
         showUploadList: false,
         beforeUpload: async (file) => {
             if (!activePeriodId) {
-                message.warning('Сначала выберите период оценки');
+                message.warning('Сначала выберите систему и период');
                 return false;
             }
             try {
@@ -97,6 +148,27 @@ export const ExcelReportsPage: React.FC = () => {
             return false;
         },
     };
+
+    const qualityColumns: ColumnsType<EditableMetric> = [
+        { title: 'Характеристика', dataIndex: 'characteristic', width: 220 },
+        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 230 },
+        { title: 'A', dataIndex: 'val_a', width: 70, render: (v: number | null) => (v ?? '—') },
+        { title: 'B', dataIndex: 'val_b', width: 70, render: (v: number | null) => (v ?? '—') },
+        {
+            title: 'X', dataIndex: 'calculatedX', width: 80,
+            render: (x: number | null | undefined) =>
+                (x != null ? <Text strong>{x.toFixed(2)}</Text> : <Text type="secondary">—</Text>),
+        },
+        {
+            title: 'Уровень', dataIndex: 'qualityLevel', width: 170,
+            render: (level: string | null | undefined) =>
+                (level ? <Tag color={LEVEL_COLOR[level] ?? 'default'}>{level}</Tag> : <Text type="secondary">—</Text>),
+        },
+        {
+            title: 'Комментарий', dataIndex: 'expert_comment', width: 280,
+            render: (_: unknown, row) => (activePeriodId ? <CommentCell row={row} periodId={activePeriodId} /> : null),
+        },
+    ];
 
     const risksColumns: ColumnsType<any> = [
         { title: 'Характеристика', dataIndex: 'characteristic', width: 220 },
@@ -166,15 +238,25 @@ export const ExcelReportsPage: React.FC = () => {
     };
 
     const handleExport = () => {
-        const map: Record<string, { cols: ColumnsType<any>; rows: any[]; name: string }> = {
-            risks: { cols: risksColumns, rows: data?.risks || [], name: 'риски' },
-            defects: { cols: defectsColumns, rows: data?.defects || [], name: 'недостатки' },
-            plan: { cols: planColumns, rows: data?.plan || [], name: 'план_качества' },
-            measures: { cols: proposalsColumns.filter((c: any) => c.dataIndex), rows: filteredProposals, name: 'реестр_мер' },
+        const qualityExportCols = [
+            { title: 'Характеристика', dataIndex: 'characteristic' },
+            { title: 'Подхарактеристика', dataIndex: 'subcharacteristic' },
+            { title: 'A', dataIndex: 'val_a' },
+            { title: 'B', dataIndex: 'val_b' },
+            { title: 'X', dataIndex: 'calculatedX' },
+            { title: 'Уровень', dataIndex: 'qualityLevel' },
+            { title: 'Комментарий', dataIndex: 'expert_comment' },
+        ];
+        const map: Record<string, { cols: { title: string; dataIndex: string }[]; rows: any[]; name: string }> = {
+            quality: { cols: qualityExportCols, rows: qualityMetrics || [], name: 'характеристики_качества' },
+            risks: { cols: risksColumns as any, rows: data?.risks || [], name: 'риски' },
+            defects: { cols: defectsColumns as any, rows: data?.defects || [], name: 'недостатки' },
+            plan: { cols: planColumns as any, rows: data?.plan || [], name: 'план_качества' },
+            measures: { cols: proposalsColumns.filter((c: any) => c.dataIndex) as any, rows: filteredProposals, name: 'реестр_мер' },
         };
         const sel = map[activeTab];
         if (!sel || !sel.rows.length) { message.info('Нет данных для экспорта в этой вкладке'); return; }
-        exportCsv(`asok_${sel.name}.csv`, sel.cols as any, sel.rows);
+        exportCsv(`asok_${sel.name}.csv`, sel.cols, sel.rows);
         message.success('CSV сформирован');
     };
 
@@ -183,16 +265,26 @@ export const ExcelReportsPage: React.FC = () => {
             <Row gutter={[16, 16]} align="middle" justify="space-between">
                 <Col>
                     <Title level={3} style={{ margin: 0, color: '#1F3864' }}>Реестры и отчеты по качеству ИС</Title>
-                    <Text type="secondary">Представление повторяет структуру Excel-шаблонов: риски, недостатки и план обеспечения качества.</Text>
+                    <Text type="secondary">Результаты оценки (характеристики качества ИС), риски, недостатки и план обеспечения качества.</Text>
                 </Col>
                 <Col>
-                    <Space>
+                    <Space wrap>
                         <Select
-                            style={{ width: 360 }}
+                            style={{ width: 280 }}
+                            showSearch
+                            optionFilterProp="label"
+                            placeholder="Система"
+                            value={systemId}
+                            options={systemOptions}
+                            onChange={(v) => { setSystemId(v); setPeriodId(undefined); }}
+                        />
+                        <Select
+                            style={{ width: 180 }}
                             loading={periodsLoading}
-                            placeholder="Период оценки"
-                            value={activePeriodId}
+                            placeholder="Период"
+                            value={periodId}
                             options={periodOptions}
+                            disabled={!systemId}
                             onChange={setPeriodId}
                         />
                         <Button icon={<DownloadOutlined />} onClick={handleExport}>
@@ -207,19 +299,34 @@ export const ExcelReportsPage: React.FC = () => {
                 </Col>
             </Row>
 
-            {!activePeriodId && <Alert type="info" showIcon message="Создайте оценку ИС, чтобы увидеть отчетные матрицы." />}
+            {!systemId && <Alert type="info" showIcon message="Выберите систему и период, чтобы увидеть результаты оценки и отчётные матрицы." />}
+            {systemId && !periodId && <Alert type="info" showIcon message="Выберите период оценки для выбранной системы." />}
             {isError && <Alert type="warning" showIcon message="Не удалось загрузить матрицы для выбранного периода." />}
 
             <Card style={reportCardStyle}>
                 <Space style={{ marginBottom: 16 }}>
                     <FileExcelOutlined style={{ color: '#1F3864' }} />
                     <Text strong>Данные из БД</Text>
-                    {isFetching && <Spin size="small" />}
+                    {(isFetching || qualityLoading) && <Spin size="small" />}
                 </Space>
                 <Tabs
                     activeKey={activeTab}
                     onChange={setActiveTab}
                     items={[
+                        {
+                            key: 'quality',
+                            label: `Характеристики качества ИС (${qualityMetrics?.length || 0})`,
+                            children: (
+                                <Table<EditableMetric>
+                                    columns={qualityColumns}
+                                    dataSource={qualityMetrics || []}
+                                    rowKey="id"
+                                    {...tableProps}
+                                    scroll={{ x: 1200 }}
+                                    locale={{ emptyText: <Empty description="Нет результатов оценки за период. Заполните оценку во вкладке «Новая оценка»." /> }}
+                                />
+                            ),
+                        },
                         {
                             key: 'risks',
                             label: `Таблица возможных рисков (${data?.risks?.length || 0})`,
