@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://redis:6379/0"
 
     # LLM (in-process, llama.cpp / GGUF — без внешних сервисов)
-    # Модель: Qwen 9B Q4_K_M, файл models/llm/asok-model.gguf
+    # Модель: Qwen2.5-1.5B-Instruct Q4_K_M (arch `qwen2`), файл models/llm/asok-model.gguf.
+    # NB: arch `qwen35` (Qwen3.5) текущим рантаймом не поддерживается — см. docs/LLM_SETUP.md.
     LLM_ENABLED: bool = True
     LOCAL_LLM_MODEL_DIR: str = "models/llm"
     LOCAL_LLM_MODEL_FILE: str = "asok-model.gguf"

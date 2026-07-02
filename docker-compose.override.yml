@@ -1,0 +1,10 @@
+# QA-артефакт (2026-06-30) — живая демонстрация LLM.
+# Переключает встроенную LLM на РАБОЧУЮ модель Qwen2.5-0.5B-Instruct Q4_K_M (стандартная
+# архитектура GGUF `qwen2`, грузится текущим llama-cpp-python==0.2.90) вместо несовместимой
+# `asok-model.gguf` (Qwen3.5, arch `qwen35` — не загружается, см. дефект DEF-01).
+# Файл модели лежит в models/llm/ (примонтирован в контейнер). Чтобы вернуть исходную
+# конфигурацию — удалите этот файл и выполните `docker compose up -d backend`.
+services:
+  backend:
+    environment:
+      - LOCAL_LLM_MODEL_FILE=qwen2.5-0.5b-instruct-q4_k_m.gguf

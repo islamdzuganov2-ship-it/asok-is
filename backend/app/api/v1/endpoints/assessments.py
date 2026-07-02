@@ -3,11 +3,18 @@ from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_role
-from app.constants.quality_model import QUALITY_PAIR_KEYS, TOTAL_SUBS
+from app.constants.quality_model import (
+    ABBR,
+    CHARACTERISTICS,
+    QUALITY_MODEL,
+    QUALITY_PAIR_KEYS,
+    TOTAL_SUBS,
+    canonical_characteristic,
+)
 from app.models.assessment import AssessmentPeriod, AssessmentValue
 from app.models.metric_catalog import FormulaType, MetricCatalog
 from app.models.system import System
@@ -35,6 +42,8 @@ def _empty_dashboard() -> dict:
         "yAxisLabels": [],
         "problematicSystems": [],
         "totalMetrics": 0,
+        "characteristics": [],
+        "systemDetails": [],
     }
 
 
@@ -50,6 +59,27 @@ def _x_to_level(x: float) -> int:
     if x > 0:
         return 1
     return 0
+
+
+def _level_bucket_pct(pct: float) -> int:
+    """Бакет уровня по проценту (0..100); pct<0 → 0 («невозможно измерить»/нет данных)."""
+    if pct < 0:
+        return 0
+    if pct < 21:
+        return 1
+    if pct < 41:
+        return 2
+    if pct < 61:
+        return 3
+    if pct < 81:
+        return 4
+    return 5
+
+
+def _avg_measured(vals: list[float]) -> float:
+    """Среднее по измеримым (>=0) значениям в процентах; -1, если измеримых нет."""
+    meas = [v for v in vals if v >= 0]
+    return round(sum(meas) / len(meas)) if meas else -1.0
 
 
 @router.get("/dashboard")
@@ -69,7 +99,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         .where(
             System.is_active.is_(True),
             System.is_deleted.is_(False),
-            AssessmentValue.calculated_x.isnot(None),
+            or_(AssessmentValue.calculated_x.isnot(None), AssessmentValue.unmeasurable.is_(True)),
         )
         .order_by(AssessmentPeriod.created_at.desc(), AssessmentPeriod.period.desc())
     )
@@ -77,63 +107,121 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     if not rows:
         return _empty_dashboard()
 
+    # Последний период по каждой ИС.
     latest_period_per_system: dict[str, str] = {}
     for _, period, system, _ in rows:
-        sid = str(system.id)
-        latest_period_per_system.setdefault(sid, str(period.id))
-
+        latest_period_per_system.setdefault(str(system.id), str(period.id))
     latest_rows = [
-        (value, period, system, metric)
+        (value, system, metric)
         for value, period, system, metric in rows
         if latest_period_per_system.get(str(system.id)) == str(period.id)
     ]
 
-    characteristics = sorted({metric.characteristic for _, _, _, metric in latest_rows})
-    systems_with_values = [system for system in systems if str(system.id) in latest_period_per_system]
-    system_names = [system.name for system in systems_with_values]
-    characteristic_index = {name: index for index, name in enumerate(characteristics)}
-    system_index = {system.id: index for index, system in enumerate(systems_with_values)}
-
+    # Дерево: ИС → каноническая характеристика → {подхарактеристика: балл%} (-1 = невозможно измерить).
+    # Имена характеристик нормализуются к модели 25010 (DEF-02): дашборд = 8 характеристик, как в моках.
+    tree: dict[str, dict[str, dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
+    crit_by_name: dict[str, str] = {}
     level_counts: dict[str, int] = defaultdict(int)
-    heatmap_agg: dict[tuple[int, int], list[float]] = defaultdict(list)
-    low_counts: dict[str, int] = defaultdict(int)
-    all_scores: list[float] = []
+    measured_x: list[float] = []
+    for value, system, metric in latest_rows:
+        canon = canonical_characteristic(metric.characteristic)
+        if canon is None:
+            continue  # имя вне канонической модели — не показываем (защита от мусора)
+        crit_by_name[system.name] = (
+            system.criticality_class.value if hasattr(system.criticality_class, "value")
+            else str(system.criticality_class)
+        )
+        if value.unmeasurable or value.calculated_x is None:
+            tree[system.name][canon][metric.subcharacteristic] = -1.0
+            level_counts["Невозможно измерить"] += 1
+        else:
+            x = float(value.calculated_x)
+            measured_x.append(x)
+            tree[system.name][canon][metric.subcharacteristic] = round(x * 100)
+            level_counts[value.quality_level or map_to_level(x)] += 1
 
-    for value, _, system, metric in latest_rows:
-        score = float(value.calculated_x)
-        all_scores.append(score)
-        level_counts[value.quality_level or map_to_level(score)] += 1
-        heatmap_agg[(characteristic_index[metric.characteristic], system_index[system.id])].append(score)
-        if score < 0.41:
-            low_counts[str(system.id)] += 1
+    if not tree:
+        return _empty_dashboard()
+
+    # Метаданные по каждой ИС: баллы характеристик, итоговый балл, число «низких» метрик.
+    sys_meta: dict[str, dict] = {}
+    for name, chars in tree.items():
+        char_scores = {c: _avg_measured(list(subs.values())) for c, subs in chars.items()}
+        meas_chars = [s for s in char_scores.values() if s >= 0]
+        sys_meta[name] = {
+            "char_scores": char_scores,
+            "score": round(sum(meas_chars) / len(meas_chars)) if meas_chars else 0,
+            "low": sum(1 for subs in chars.values() for v in subs.values() if 0 <= v < 41),
+        }
+
+    # Порядок ИС: больше «низких» метрик → выше; затем по итоговому баллу (как ANALYTICS_ORDER в моках).
+    ordered = sorted(sys_meta.keys(), key=lambda n: (-sys_meta[n]["low"], sys_meta[n]["score"]))
+    sys_index = {name: i for i, name in enumerate(ordered)}
+    char_index = {c: i for i, c in enumerate(CHARACTERISTICS)}
+
+    # systemDetails: по каждой ИС — характеристики и подхарактеристики в каноническом порядке.
+    system_details = [
+        {
+            "name": name,
+            "chars": [
+                {
+                    "title": char_title,
+                    "abbr": ABBR.get(char_title, char_title),
+                    "score": sys_meta[name]["char_scores"].get(char_title, -1),
+                    "subs": [
+                        {"name": sub, "score": tree[name].get(char_title, {}).get(sub, -1)}
+                        for sub, _ in subs_def
+                    ],
+                }
+                for char_title, subs_def in QUALITY_MODEL
+            ],
+        }
+        for name in ordered
+    ]
+
+    # characteristics: средние по характеристикам/подхарактеристикам across ИС (шапка теплокарты).
+    characteristics_out = [
+        {
+            "title": char_title,
+            "abbr": ABBR.get(char_title, char_title),
+            "score": _avg_measured([sys_meta[n]["char_scores"].get(char_title, -1) for n in ordered]),
+            "subs": [
+                {"name": sub, "score": _avg_measured([tree[n].get(char_title, {}).get(sub, -1) for n in ordered])}
+                for sub, _ in subs_def
+            ],
+        }
+        for char_title, subs_def in QUALITY_MODEL
+    ]
 
     heatmap_data = [
-        [char_idx, sys_idx, _x_to_level(sum(scores) / len(scores))]
-        for (char_idx, sys_idx), scores in heatmap_agg.items()
+        [char_index[char_title], sys_index[name], _level_bucket_pct(sys_meta[name]["char_scores"].get(char_title, -1))]
+        for name in ordered
+        for char_title, _ in QUALITY_MODEL
     ]
 
-    systems_by_id = {str(system.id): system for system in systems}
     problematic = [
         {
-            "id": sid,
-            "name": system.name,
-            "criticality": system.criticality_class.value
-            if hasattr(system.criticality_class, "value")
-            else str(system.criticality_class),
-            "lowMetricsCount": count,
+            "id": name,
+            "name": name,
+            "criticality": crit_by_name.get(name, "BUSINESS OPERATIONAL"),
+            "lowMetricsCount": sys_meta[name]["low"],
         }
-        for sid, count in sorted(low_counts.items(), key=lambda item: item[1], reverse=True)[:10]
-        if (system := systems_by_id.get(sid)) is not None
-    ]
+        for name in ordered
+        if sys_meta[name]["low"] > 0
+    ][:10]
+
+    total_metrics = sum(len(subs) for chars in tree.values() for subs in chars.values())
 
     return {
-        "globalHealthScore": round(sum(all_scores) / len(all_scores), 4) if all_scores else 0.0,
+        "globalHealthScore": round(sum(measured_x) / len(measured_x), 4) if measured_x else 0.0,
         "levelCounts": dict(level_counts),
         "heatmapData": heatmap_data,
-        "xAxisLabels": characteristics,
-        "yAxisLabels": system_names,
+        "xAxisLabels": list(CHARACTERISTICS),
+        "yAxisLabels": ordered,
         "problematicSystems": problematic,
-        "totalMetrics": len(all_scores),
+        "totalMetrics": total_metrics,
+        "characteristics": characteristics_out,
+        "systemDetails": system_details,
     }
 
 
@@ -208,7 +296,10 @@ async def list_period_summaries(
             .join(MetricCatalog, AssessmentValue.metric_id == MetricCatalog.id)
             .where(
                 AssessmentValue.period_id.in_(period_ids),
-                AssessmentValue.calculated_x.isnot(None),
+                or_(
+                    AssessmentValue.calculated_x.isnot(None),
+                    AssessmentValue.unmeasurable.is_(True),
+                ),
             )
         )
     ).all()
@@ -255,6 +346,7 @@ async def get_assessment_metrics(period_id: UUID, db: AsyncSession = Depends(get
             val_a=float(value.val_a) if value.val_a is not None else None,
             val_b=float(value.val_b) if value.val_b is not None else None,
             expert_comment=value.expert_comment or "",
+            unmeasurable=bool(value.unmeasurable),
             calculatedX=float(value.calculated_x) if value.calculated_x is not None else None,
             qualityLevel=value.quality_level,
         )
@@ -284,15 +376,29 @@ async def save_assessment_metrics(
             continue
 
         value, metric = row
-        value.val_a = item.val_a
-        value.val_b = item.val_b
         value.expert_comment = item.expert_comment
-        if item.val_a is not None and item.val_b is not None:
+        value.unmeasurable = bool(item.unmeasurable)
+        if value.unmeasurable:
+            # «Невозможно измерить»: комментарий с причиной обязателен.
+            if not (item.expert_comment or "").strip():
+                errors.append(
+                    f"Metric value id={item.id}: для «Невозможно измерить» обязателен комментарий (причина)"
+                )
+                continue
+            value.val_a = None
+            value.val_b = None
+            value.calculated_x = None
+            value.quality_level = "Невозможно измерить"
+        elif item.val_a is not None and item.val_b is not None:
+            value.val_a = item.val_a
+            value.val_b = item.val_b
             formula_type = metric.formula_type.value if hasattr(metric.formula_type, "value") else str(metric.formula_type)
             x = calculate_metric(item.val_a, item.val_b, formula_type)
             value.calculated_x = x
             value.quality_level = map_to_level(x)
         else:
+            value.val_a = item.val_a
+            value.val_b = item.val_b
             value.calculated_x = None
             value.quality_level = None
         updated += 1
@@ -363,15 +469,29 @@ async def add_assessment_value(
         value = AssessmentValue(period_id=period_id, metric_id=metric.id, data_source="MANUAL")
         db.add(value)
 
-    value.val_a = payload.val_a
-    value.val_b = payload.val_b
     value.expert_comment = (payload.expert_comment or "").strip() or None
-    if payload.val_a is not None and payload.val_b is not None:
+    value.unmeasurable = bool(payload.unmeasurable)
+    if value.unmeasurable:
+        # «Невозможно измерить» (нет возможности собрать данные) → комментарий обязателен.
+        if not value.expert_comment:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Для «Невозможно измерить» обязателен комментарий с причиной",
+            )
+        value.val_a = None
+        value.val_b = None
+        value.calculated_x = None
+        value.quality_level = "Невозможно измерить"
+    elif payload.val_a is not None and payload.val_b is not None:
+        value.val_a = payload.val_a
+        value.val_b = payload.val_b
         formula_type = metric.formula_type.value if hasattr(metric.formula_type, "value") else str(metric.formula_type)
         x = calculate_metric(float(payload.val_a), float(payload.val_b), formula_type)
         value.calculated_x = x
         value.quality_level = map_to_level(x)
     else:
+        value.val_a = payload.val_a
+        value.val_b = payload.val_b
         value.calculated_x = None
         value.quality_level = None
     value.data_source = "MANUAL"
@@ -388,6 +508,7 @@ async def add_assessment_value(
         val_a=float(value.val_a) if value.val_a is not None else None,
         val_b=float(value.val_b) if value.val_b is not None else None,
         expert_comment=value.expert_comment or "",
+        unmeasurable=bool(value.unmeasurable),
         calculatedX=float(value.calculated_x) if value.calculated_x is not None else None,
         qualityLevel=value.quality_level,
     )
@@ -412,7 +533,10 @@ async def finalize_assessment(
             .join(AssessmentValue, AssessmentValue.metric_id == MetricCatalog.id)
             .where(
                 AssessmentValue.period_id == period_id,
-                AssessmentValue.calculated_x.isnot(None),
+                or_(
+                    AssessmentValue.calculated_x.isnot(None),
+                    AssessmentValue.unmeasurable.is_(True),
+                ),
             )
         )
     ).all()

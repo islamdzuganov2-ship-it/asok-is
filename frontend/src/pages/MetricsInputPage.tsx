@@ -6,7 +6,7 @@
  */
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  Alert, Button, InputNumber, Space, Spin, Table,
+  Alert, Button, Checkbox, Input, InputNumber, Space, Spin, Table,
   Tag, Tooltip, Typography, message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -24,6 +24,8 @@ interface MetricRow {
   val_a: number | null;
   val_b: number | null;
   expert_comment: string;
+  // «Невозможно измерить» (нет возможности собрать данные) — комментарий обязателен.
+  unmeasurable?: boolean;
   // После сохранения — расчётные поля
   calculatedX?: number | null;
   qualityLevel?: string | null;
@@ -83,12 +85,31 @@ const MetricsInputPage: React.FC = () => {
     [],
   );
 
+  // «Невозможно измерить»: при включении очищаем val_a/val_b (расчёт не делается),
+  // комментарий становится обязательным (проверяется при сохранении).
+  const handleUnmeasurable = useCallback((id: string, checked: boolean) => {
+    setMetrics((prev) => prev.map((m) =>
+      m.id === id
+        ? { ...m, unmeasurable: checked, ...(checked ? { val_a: null, val_b: null } : {}) }
+        : m));
+    setDirtyIds((prev) => new Set(prev).add(id));
+  }, []);
+
   // Сохранение всех изменений
   const handleSaveAll = async () => {
     if (!periodId || dirtyIds.size === 0) return;
+    const dirtyMetrics = metrics.filter((m) => dirtyIds.has(m.id));
+    // «Невозможно измерить» требует обязательного комментария с причиной.
+    const missingComment = dirtyMetrics.filter((m) => m.unmeasurable && !(m.expert_comment || '').trim());
+    if (missingComment.length > 0) {
+      message.error(
+        `Для «Невозможно измерить» обязателен комментарий (строк: ${missingComment.length}). `
+        + 'Опишите, почему нет возможности собрать данные.',
+      );
+      return;
+    }
     setSaving(true);
     try {
-      const dirtyMetrics = metrics.filter((m) => dirtyIds.has(m.id));
       const resp = await fetch(`${VITE_API}/assessments/${periodId}/metrics`, {
         method: 'PUT',
         headers,
@@ -128,7 +149,7 @@ const MetricsInputPage: React.FC = () => {
     {
       title: 'val_a (факт)',
       dataIndex: 'val_a',
-      width: 120,
+      width: 110,
       render: (_: unknown, rec: MetricRow) => (
         <InputNumber
           size="small"
@@ -137,18 +158,19 @@ const MetricsInputPage: React.FC = () => {
           onChange={(v) => handleCellChange(rec.id, 'val_a', v)}
           style={{ width: '100%' }}
           precision={2}
+          disabled={rec.unmeasurable}
         />
       ),
     },
     {
       title: 'val_b (план)',
       dataIndex: 'val_b',
-      width: 120,
+      width: 110,
       render: (_: unknown, rec: MetricRow) => {
-        const isZero = rec.val_b === 0;
+        const isZero = rec.val_b === 0 && !rec.unmeasurable;
         return (
           <Tooltip
-            title={isZero ? 'val_b = 0: введите причину в комментарии' : ''}
+            title={isZero ? 'val_b = 0: отметьте «Невозможно измерить» и укажите причину' : ''}
             color="red"
             open={isZero || undefined}
           >
@@ -160,8 +182,38 @@ const MetricsInputPage: React.FC = () => {
               style={{ width: '100%' }}
               status={isZero ? 'error' : ''}
               precision={2}
+              disabled={rec.unmeasurable}
             />
           </Tooltip>
+        );
+      },
+    },
+    {
+      title: <Tooltip title="Нет возможности собрать данные. Требует обязательного комментария.">Невозм. изм.</Tooltip>,
+      dataIndex: 'unmeasurable',
+      width: 92,
+      align: 'center' as const,
+      render: (_: unknown, rec: MetricRow) => (
+        <Checkbox
+          checked={!!rec.unmeasurable}
+          onChange={(e) => handleUnmeasurable(rec.id, e.target.checked)}
+        />
+      ),
+    },
+    {
+      title: 'Комментарий',
+      dataIndex: 'expert_comment',
+      width: 220,
+      render: (_: unknown, rec: MetricRow) => {
+        const required = !!rec.unmeasurable && !(rec.expert_comment || '').trim();
+        return (
+          <Input
+            size="small"
+            value={rec.expert_comment}
+            onChange={(e) => handleCellChange(rec.id, 'expert_comment', e.target.value)}
+            placeholder={rec.unmeasurable ? 'Причина: почему нельзя измерить (обязательно)' : 'Комментарий (необязательно)'}
+            status={required ? 'error' : ''}
+          />
         );
       },
     },
@@ -238,7 +290,7 @@ const MetricsInputPage: React.FC = () => {
               rowKey="id"
               size="small"
               bordered
-              scroll={{ x: 700 }}
+              scroll={{ x: 1040 }}
               pagination={{ pageSize: 30, hideOnSinglePage: true }}
               rowClassName={(rec) =>
                 dirtyIds.has(rec.id) ? 'ant-table-row-selected' : ''

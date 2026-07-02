@@ -83,6 +83,14 @@ services:
       - ./models/llm:/app/models/llm:ro
       - /app/__pycache__
     command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=2
+    # У воркера нет HTTP-порта, поэтому unhealthy-проверка из Dockerfile (curl :8000) всегда
+    # падала. Проверяем готовность брокера/воркера через celery inspect ping.
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.tasks.celery_app inspect ping -t 10 | grep -q pong || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
     networks:
       - asok_net
 

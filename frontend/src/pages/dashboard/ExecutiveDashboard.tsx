@@ -19,9 +19,14 @@ import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
 import { TechDebtCard } from '../../components/TechDebtCard';
 import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
+import { QUALITY_MODEL } from '../../constants/qualityModel';
 
 // Точное сопоставление меры с ячейкой теплокарты (по полному названию характеристики).
 const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
+
+// Аббревиатуры характеристик для шапки теплокарты (паритет с моками: в демо шапка короткая).
+const ABBR_BY_TITLE: Record<string, string> = Object.fromEntries(QUALITY_MODEL.map((c) => [c.title, c.abbr]));
+const abbr = (c: string) => ABBR_BY_TITLE[c] ?? c;
 
 // Ранг критичности: чем меньше — тем критичнее (для отбора топ-3 систем).
 const CRIT_RANK: Record<string, number> = {
@@ -344,7 +349,7 @@ const ExecutiveDashboard: React.FC = () => {
                 <tr>
                   <th style={{ textAlign: 'left', fontWeight: 500, color: BRAND.inkSoft, fontSize: 12 }}>Система</th>
                   {data.heatmap.characteristics.map((c) => (
-                    <th key={c} style={{ fontWeight: 500, color: BRAND.inkSoft, fontSize: 12, padding: '0 4px' }}>{c}</th>
+                    <th key={c} title={c} style={{ fontWeight: 500, color: BRAND.inkSoft, fontSize: 12, padding: '0 4px' }}>{abbr(c)}</th>
                   ))}
                 </tr>
               </thead>

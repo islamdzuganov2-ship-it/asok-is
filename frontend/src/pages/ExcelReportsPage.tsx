@@ -111,6 +111,9 @@ export const ExcelReportsPage: React.FC = () => {
     // Реестр мер: в Демо — все, в LLM — только реальные (демо-меры скрыты).
     const proposals = useSelector(selectVisibleProposals, shallowEqual);
     const currentUser = useSelector((s: RootState) => s.auth.fullName) || 'Топ-менеджмент';
+    const role = useSelector((s: RootState) => s.auth.role) || '';
+    // Согласование работ по мере (одобрить/отклонить) — только топ-менеджмент (ADMIN-уровень), SoD ТЗ v12.
+    const canDecide = ['ADMIN', 'CTO', 'CEO', 'CIO', 'EXECUTIVE'].includes(role);
     const [activeTab, setActiveTab] = useState('quality');
     const [proposalFilter, setProposalFilter] = useState<'ALL' | ProposalStatus>('ALL');
 
@@ -213,16 +216,20 @@ export const ExcelReportsPage: React.FC = () => {
             title: 'Решение', key: 'decision', width: 170, fixed: 'right' as const,
             render: (_: unknown, rec: any) =>
                 rec.status === 'PENDING_APPROVAL' ? (
-                    <Space>
-                        <Button size="small" type="primary"
-                            onClick={() => dispatch(approveProposal({ id: rec.id, by: currentUser }))}>
-                            Одобрить
-                        </Button>
-                        <Button size="small" danger
-                            onClick={() => dispatch(rejectProposal({ id: rec.id, by: currentUser }))}>
-                            Отклонить
-                        </Button>
-                    </Space>
+                    canDecide ? (
+                        <Space>
+                            <Button size="small" type="primary"
+                                onClick={() => dispatch(approveProposal({ id: rec.id, by: currentUser }))}>
+                                Одобрить
+                            </Button>
+                            <Button size="small" danger
+                                onClick={() => dispatch(rejectProposal({ id: rec.id, by: currentUser }))}>
+                                Отклонить
+                            </Button>
+                        </Space>
+                    ) : (
+                        <Text type="secondary" style={{ fontSize: 12 }}>Ожидает решения топ-менеджмента</Text>
+                    )
                 ) : (
                     <Text type="secondary" style={{ fontSize: 12 }}>{rec.decidedBy || '—'}</Text>
                 ),

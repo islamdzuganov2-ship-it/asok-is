@@ -56,10 +56,12 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
   if (!proposal) return null;
   const isPending = proposal.status === 'PENDING_APPROVAL';
   const isApproved = proposal.status === 'APPROVED';
-  // Отчёт о выполнении — зона ответственности ТОЛЬКО менеджера по качеству.
+  // Отчёт о выполнении (закрытие меры) — зона ответственности ТОЛЬКО менеджера по качеству (SoD, ТЗ v12).
   const canReportExecution = role === 'QUALITY_MANAGER';
+  // Согласование работ по мере (одобрить/отклонить) — ТОЛЬКО топ-менеджмент (ADMIN-уровень) (SoD, ТЗ v12).
+  const canDecide = ['ADMIN', 'CTO', 'CEO', 'CIO', 'EXECUTIVE'].includes(role);
   // Менять ответственного/срок перед решением может топ-менеджмент (ЛПР).
-  const canEditMeta = ['ADMIN', 'CTO', 'CEO', 'CIO', 'EXECUTIVE'].includes(role);
+  const canEditMeta = canDecide;
   const st = STATUS_TAG[proposal.status];
   const tok = ragToken(proposal.calculatedScore);
 
@@ -124,26 +126,33 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
       <Divider style={{ margin: '12px 0' }} />
 
       {isPending ? (
-        <>
-          <Field label="Комментарий к решению (необязательно)">
-            <Input.TextArea
-              rows={3}
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="Обоснуйте решение: условия, приоритет, что требуется уточнить…"
-            />
-          </Field>
-          <Space style={{ marginTop: 8 }}>
-            <Button type="primary" icon={<CheckOutlined />}
-              style={{ background: ragToken(85).color, borderColor: ragToken(85).color }}
-              onClick={() => decide(approveProposal)}>
-              Одобрить
-            </Button>
-            <Button danger icon={<CloseOutlined />} onClick={() => decide(rejectProposal)}>
-              Отклонить
-            </Button>
-          </Space>
-        </>
+        canDecide ? (
+          <>
+            <Field label="Комментарий к решению (необязательно)">
+              <Input.TextArea
+                rows={3}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Обоснуйте решение: условия, приоритет, что требуется уточнить…"
+              />
+            </Field>
+            <Space style={{ marginTop: 8 }}>
+              <Button type="primary" icon={<CheckOutlined />}
+                style={{ background: ragToken(85).color, borderColor: ragToken(85).color }}
+                onClick={() => decide(approveProposal)}>
+                Одобрить
+              </Button>
+              <Button danger icon={<CloseOutlined />} onClick={() => decide(rejectProposal)}>
+                Отклонить
+              </Button>
+            </Space>
+          </>
+        ) : (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Согласование работ по мере (одобрить/отклонить) принимает только топ-менеджмент (роль ADMIN).
+            Мера ожидает решения ЛПР верхнего уровня.
+          </Text>
+        )
       ) : (
         <Field label={`Решение (${proposal.decidedBy || '—'})`}>
           <Paragraph style={{ marginBottom: 0 }}>

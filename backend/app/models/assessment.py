@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, Text, UniqueConstraint, Enum as SQLEnum
+from sqlalchemy import Boolean, Column, Integer, String, Numeric, ForeignKey, Text, UniqueConstraint, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import uuid
@@ -30,7 +30,11 @@ class AssessmentValue(Base, TimestampMixin):
     val_b = Column(Numeric(10, 2), nullable=True)
     calculated_x = Column(Numeric(4, 2), nullable=True)
     quality_level = Column(String(50), nullable=True)
-    
+
+    # «Невозможно измерить»: нет возможности собрать данные. При True расчёт X не делается,
+    # quality_level = «Невозможно измерить», а expert_comment ОБЯЗАТЕЛЕН (причина).
+    unmeasurable = Column(Boolean, nullable=False, default=False, server_default="false")
+
     expert_comment = Column(Text, nullable=True)
     artifact_links = Column(JSONB, nullable=True)
     data_source = Column(String(20), default="MANUAL")

@@ -123,6 +123,7 @@ class EditableMetricOut(BaseModel):
     val_a: float | None = None
     val_b: float | None = None
     expert_comment: str | None = ""
+    unmeasurable: bool = False
     calculatedX: float | None = None
     qualityLevel: str | None = None
 
@@ -132,6 +133,8 @@ class EditableMetricIn(BaseModel):
     val_a: float | None = Field(None, ge=0)
     val_b: float | None = Field(None, ge=0)
     expert_comment: str | None = Field("", max_length=2000)
+    # «Невозможно измерить»: при True комментарий обязателен (валидируется на эндпоинте).
+    unmeasurable: bool = False
 
 
 class ValueAddIn(BaseModel):
@@ -142,6 +145,7 @@ class ValueAddIn(BaseModel):
     val_a: float | None = Field(None, ge=0)
     val_b: float | None = Field(None, ge=0)
     expert_comment: str | None = Field(None, max_length=2000)
+    unmeasurable: bool = False
 
 
 class PeriodSummaryOut(BaseModel):

@@ -27,7 +27,11 @@ openpyxl==3.1.2
 pandas==2.2.0
 
 # === LLM (in-process, on-prem; читает models/llm/asok-model.gguf) ===
-# CPU-сборка llama.cpp. Модель кладётся в models/llm/asok-model.gguf (Qwen2.5-1.5B-Instruct Q4_K_M).
+# CPU-сборка llama.cpp. Модель — Qwen2.5-1.5B-Instruct Q4_K_M (стандартная архитектура GGUF
+# `qwen2`, поддерживается этой версией рантайма; ~1 ГБ, помещается в лимит памяти контейнера).
+# ВНИМАНИЕ: модель с архитектурой `qwen35` (Qwen3.5) этой и любой текущей стабильной сборкой
+# llama.cpp НЕ загружается ("unknown model architecture: 'qwen35'"). Для более новых архитектур
+# (qwen3) требуется llama-cpp-python>=0.3.x; arch `qwen35` нестандартен и непереносим.
 llama-cpp-python==0.2.90
 
 # === Dev (опционально для контейнера) ===

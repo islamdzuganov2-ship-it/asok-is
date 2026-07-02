@@ -53,6 +53,10 @@ async def seed_iso25010_async() -> dict[str, int]:
                 else:
                     metric.formula_type = formula_type
                     metric.is_active = True
+                    # Канонические пары всегда помечаем как ISO25010, даже если пара была
+                    # ранее заведена из Excel/UI с иным data_source — иначе отчётность по
+                    # эталонной модели расходится (пара «теряется» из фильтра ISO25010).
+                    metric.data_source = "ISO25010"
                     if not metric.description:
                         metric.description = description
                     updated += 1

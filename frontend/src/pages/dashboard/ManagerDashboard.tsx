@@ -3,14 +3,19 @@
  * Выбор ИС/характеристики, Gauge характеристики, таблица метрик,
  * модал профессионального суждения + постановка задачи (карточка риска).
  * Созданные меры видны топ-менеджменту со статусом «ожидает одобрения».
+ *
+ * Режим данных:
+ *  - 'mock' (Демо) — масштабный демо-набор (30 ИС) из mockScaleData;
+ *  - 'live' (LLM)  — РЕАЛЬНЫЕ оценки из БД (GET /assessments/dashboard → systemDetails):
+ *    выбор реальной ИС, характеристики/метрики, «невозможно измерить» = н/д, суждения по реальным данным.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Card, Col, Row, Typography, Table, Tag, Button, Select, Space, List } from 'antd';
+import { Alert, Card, Col, Row, Typography, Table, Tag, Button, Select, Space, List, Spin, Empty } from 'antd';
 import { EditOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DatabaseOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { useSelector, shallowEqual } from 'react-redux';
 import { RootState } from '../../store';
-import { ManagerMetric } from '../../data/mockDashboards';
+import { ManagerMetric, ManagerSystem } from '../../data/mockDashboards';
 import { MANAGER_SCALE_SYSTEMS as MANAGER_MOCK_SYSTEMS } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND } from '../../theme/ragPalette';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
@@ -18,6 +23,7 @@ import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { ProposalStatus, selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 
 const { Title, Text } = Typography;
+const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
 const STATUS_META: Record<ProposalStatus, { label: string; color: string; icon: React.ReactNode }> = {
   PENDING_APPROVAL: { label: 'Ожидает одобрения', color: RAG.medium.color, icon: <ClockCircleOutlined /> },
@@ -25,27 +31,81 @@ const STATUS_META: Record<ProposalStatus, { label: string; color: string; icon: 
   REJECTED:         { label: 'Отклонено',         color: RAG.bad.color,    icon: <CloseCircleOutlined /> },
 };
 
+// score -1 = «невозможно измерить» → серый/нулевой gauge, честная подпись.
+const scoreLevel = (s: number) => (s < 0 ? 'Невозможно измерить' : levelLabel(s));
+const scoreTok = (s: number) => (s < 0 ? { color: '#AAB0B6', soft: '#F1F2F3', border: '#D9DBDE' } : ragToken(s));
+
+// Ответ /assessments/dashboard → список систем в форме дашборда менеджера.
+interface LiveSub { name: string; score: number }
+interface LiveChar { title: string; abbr: string; score: number; subs: LiveSub[] }
+interface LiveSystemDetail { name: string; chars: LiveChar[] }
+
+function mapLiveSystems(details: LiveSystemDetail[]): ManagerSystem[] {
+  return details.map((s, i) => ({
+    id: `live-${i}-${s.name}`,
+    name: s.name,
+    characteristics: s.chars.map((c) => ({
+      key: c.abbr || c.title,
+      title: c.title,
+      score: c.score,
+      metrics: c.subs.map((sub, j): ManagerMetric => ({
+        id: `${i}-${c.title}-${j}`, name: sub.name, score: sub.score, formula: '',
+      })),
+    })),
+  }));
+}
+
 const ManagerDashboard: React.FC = () => {
-  const [systemId, setSystemId] = useState(MANAGER_MOCK_SYSTEMS[0].id);
-  const system = useMemo(
-    () => MANAGER_MOCK_SYSTEMS.find((s) => s.id === systemId) ?? MANAGER_MOCK_SYSTEMS[0],
-    [systemId],
-  );
-  const [charKey, setCharKey] = useState(system.characteristics[0].key);
-  const [target, setTarget] = useState<JudgmentTarget | null>(null);
-  const [selectedMeasure, setSelectedMeasure] = useState<Proposal | null>(null);
   const dataMode = useSelector((s: RootState) => s.ui.dataMode);
   const isLive = dataMode === 'live';
 
-  // При смене ИС перестраиваем борд: сбрасываем выбранную характеристику на первую.
-  useEffect(() => { setCharKey(system.characteristics[0].key); }, [systemId]);
+  const [liveSystems, setLiveSystems] = useState<ManagerSystem[]>([]);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [systemId, setSystemId] = useState<string>(MANAGER_MOCK_SYSTEMS[0].id);
+  const [charKey, setCharKey] = useState<string>(MANAGER_MOCK_SYSTEMS[0].characteristics[0].key);
+  const [target, setTarget] = useState<JudgmentTarget | null>(null);
+  const [selectedMeasure, setSelectedMeasure] = useState<Proposal | null>(null);
 
-  const characteristic = system.characteristics.find((c) => c.key === charKey) ?? system.characteristics[0];
-  const charTok = ragToken(characteristic.score);
+  // LLM-режим: тянем реальные оценки из БД.
+  useEffect(() => {
+    if (!isLive) { setLiveError(null); return; }
+    let alive = true;
+    setLiveLoading(true);
+    setLiveError(null);
+    const token = localStorage.getItem('token');
+    fetch(`${VITE_API}/assessments/dashboard`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { systemDetails?: LiveSystemDetail[] }) => {
+        if (!alive) return;
+        const mapped = mapLiveSystems(d.systemDetails ?? []);
+        setLiveSystems(mapped);
+        if (mapped.length) { setSystemId(mapped[0].id); setCharKey(mapped[0].characteristics[0].key); }
+      })
+      .catch((e) => { if (alive) setLiveError(e.message); })
+      .finally(() => { if (alive) setLiveLoading(false); });
+    return () => { alive = false; };
+  }, [isLive]);
+
+  const activeSystems = isLive ? liveSystems : MANAGER_MOCK_SYSTEMS;
+  const system = useMemo(
+    () => activeSystems.find((s) => s.id === systemId) ?? activeSystems[0],
+    [activeSystems, systemId],
+  );
+
+  // При смене ИС сбрасываем выбранную характеристику на первую.
+  useEffect(() => {
+    if (system) setCharKey(system.characteristics[0].key);
+  }, [systemId, system?.id]);
 
   const visibleProposals = useSelector(selectVisibleProposals, shallowEqual);
-  // В демо — меры выбранной (демо) ИС; в LLM — все реальные меры (демо-системы скрыты).
-  const myProposals = isLive ? visibleProposals : visibleProposals.filter((p) => p.systemName === system.name);
+  // В LLM — реальные меры выбранной ИС (демо-меры скрыты); в демо — меры выбранной демо-ИС.
+  const myProposals = system
+    ? visibleProposals.filter((p) => p.systemName === system.name)
+    : visibleProposals;
+
+  const characteristic = system?.characteristics.find((c) => c.key === charKey) ?? system?.characteristics[0];
+  const charTok = scoreTok(characteristic?.score ?? -1);
 
   const gaugeOption = useMemo(
     () => ({
@@ -57,25 +117,28 @@ const ManagerDashboard: React.FC = () => {
         pointer: { width: 4, length: '60%', itemStyle: { color: BRAND.ink } },
         axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
         anchor: { show: true, size: 8, itemStyle: { color: BRAND.ink } },
-        detail: { formatter: '{value}%', fontSize: 26, fontWeight: 700, color: charTok.color, offsetCenter: [0, '34%'] },
-        data: [{ value: characteristic.score }],
+        detail: {
+          formatter: (characteristic?.score ?? -1) < 0 ? 'н/д' : '{value}%',
+          fontSize: 26, fontWeight: 700, color: charTok.color, offsetCenter: [0, '34%'],
+        },
+        data: [{ value: Math.max(0, characteristic?.score ?? 0) }],
       }],
     }),
-    [characteristic.score, charTok.color],
+    [characteristic?.score, charTok.color],
   );
 
   const columns = [
     { title: 'Метрика', dataIndex: 'name', key: 'name', width: '46%' },
     {
       title: 'Расчётный %', dataIndex: 'score', key: 'score', width: '20%',
-      render: (v: number) => <Text strong style={{ color: ragToken(v).color }}>{v}%</Text>,
+      render: (v: number) => <Text strong style={{ color: scoreTok(v).color }}>{v < 0 ? 'н/д' : `${v}%`}</Text>,
       sorter: (a: ManagerMetric, b: ManagerMetric) => a.score - b.score,
     },
     {
       title: 'Уровень', key: 'level', width: '20%',
       render: (_: unknown, r: ManagerMetric) => {
-        const t = ragToken(r.score);
-        return <Tag color={t.color} style={{ color: '#fff', border: 'none' }}>{levelLabel(r.score)}</Tag>;
+        const t = scoreTok(r.score);
+        return <Tag color={t.color} style={{ color: '#fff', border: 'none' }}>{scoreLevel(r.score)}</Tag>;
       },
     },
     {
@@ -83,8 +146,9 @@ const ManagerDashboard: React.FC = () => {
       render: (_: unknown, r: ManagerMetric) => (
         <Button
           size="small" type="primary" icon={<EditOutlined />}
-          onClick={() => setTarget({
-            systemName: system.name, characteristic: characteristic.title, metricName: r.name, score: r.score,
+          disabled={!system}
+          onClick={() => system && characteristic && setTarget({
+            systemName: system.name, characteristic: characteristic.title, metricName: r.name, score: Math.max(0, r.score),
           })}
         >
           Суждение
@@ -93,14 +157,19 @@ const ManagerDashboard: React.FC = () => {
     },
   ];
 
+  const showData = !!system && !!characteristic;
+
   return (
     <div style={{ padding: 24, background: BRAND.canvas, minHeight: '100%' }}>
       <Row align="middle" justify="space-between" gutter={[16, 8]} wrap>
         <Col>
           <Title level={4} style={{ margin: 0, color: BRAND.ink }}>Менеджер по качеству</Title>
-          <Text type="secondary">{isLive ? 'Режим LLM · реальные данные' : `Оценка ИС: «${system.name}»`}</Text>
+          <Text type="secondary">
+            {isLive ? 'Режим LLM · реальные данные из БД' : 'Демо-данные'}
+            {showData ? ` · ИС: «${system!.name}»` : ''}
+          </Text>
         </Col>
-        {!isLive && (
+        {showData && (
           <Col>
             <Space>
               <Text type="secondary"><DatabaseOutlined /> Система:</Text>
@@ -110,37 +179,41 @@ const ManagerDashboard: React.FC = () => {
                 style={{ minWidth: 280 }}
                 showSearch
                 optionFilterProp="label"
-                options={MANAGER_MOCK_SYSTEMS.map((s) => ({ value: s.id, label: s.name }))}
+                options={activeSystems.map((s) => ({ value: s.id, label: s.name }))}
               />
             </Space>
           </Col>
         )}
       </Row>
 
-      {isLive ? (
-        <Alert
-          style={{ marginTop: 16 }}
-          type="info"
-          showIcon
-          message="Режим LLM: демо-системы скрыты"
-          description="Показаны только реальные данные. Для разбора метрик и постановки профессиональных суждений заполните оценки в разделе «Оценка ИС». Реальные меры — ниже."
-        />
-      ) : (
+      {isLive && liveLoading && <div style={{ marginTop: 24 }}><Spin /> <Text type="secondary">Загрузка реальных оценок…</Text></div>}
+      {isLive && liveError && (
+        <Alert style={{ marginTop: 16 }} type="warning" showIcon
+          message="Не удалось загрузить реальные данные" description={liveError} />
+      )}
+      {isLive && !liveLoading && !liveError && !system && (
+        <Alert style={{ marginTop: 16 }} type="info" showIcon
+          message="Реальных оценок пока нет"
+          description="Заполните и финализируйте оценку в разделе «Оценка ИС» — система появится здесь." />
+      )}
+
+      {showData && (
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
           <Col xs={24} md={10}>
             <Card style={{ borderColor: charTok.border, background: charTok.soft, height: '100%' }}>
               <Text type="secondary">Характеристика</Text>
               <Title level={5} style={{ margin: '2px 0 8px', color: BRAND.ink }}>
-                {characteristic.title}{' '}
-                <Tag color={charTok.color} style={{ color: '#fff', border: 'none' }}>{characteristic.score}%</Tag>
+                {characteristic!.title}{' '}
+                <Tag color={charTok.color} style={{ color: '#fff', border: 'none' }}>
+                  {characteristic!.score < 0 ? 'н/д' : `${characteristic!.score}%`}
+                </Tag>
               </Title>
-              {/* Визуал (gauge) — слева, перечисление характеристик — сбоку справа */}
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <div style={{ flex: '0 0 122px', height: 150 }}>
                   <ReactECharts option={gaugeOption} style={{ height: '100%', width: '100%' }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {system.characteristics.map((c) => {
+                  {system!.characteristics.map((c) => {
                     const activeC = c.key === charKey;
                     return (
                       <div
@@ -158,7 +231,9 @@ const ManagerDashboard: React.FC = () => {
                           color: BRAND.ink, overflow: 'hidden', textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap', fontWeight: activeC ? 500 : 400,
                         }}>{c.title}</span>
-                        <span style={{ color: ragToken(c.score).color, fontWeight: 500, flex: '0 0 auto' }}>{c.score}%</span>
+                        <span style={{ color: scoreTok(c.score).color, fontWeight: 500, flex: '0 0 auto' }}>
+                          {c.score < 0 ? 'н/д' : `${c.score}%`}
+                        </span>
                       </div>
                     );
                   })}
@@ -169,16 +244,17 @@ const ManagerDashboard: React.FC = () => {
 
           <Col xs={24} md={14}>
             <Card
-              title={<span style={{ color: BRAND.ink }}>Метрики характеристики «{characteristic.title}»</span>}
+              title={<span style={{ color: BRAND.ink }}>Метрики характеристики «{characteristic!.title}»</span>}
               style={{ borderColor: BRAND.divider, height: '100%' }}
               styles={{ body: { padding: 0 } }}
             >
               <Table<ManagerMetric>
-                dataSource={characteristic.metrics}
+                dataSource={characteristic!.metrics}
                 columns={columns}
                 rowKey="id"
                 size="small"
                 pagination={false}
+                locale={{ emptyText: <Empty description="Нет метрик" /> }}
               />
             </Card>
           </Col>
@@ -187,7 +263,7 @@ const ManagerDashboard: React.FC = () => {
 
       {/* Меры/намерения, поставленные менеджером (видны топ-менеджменту) */}
       <Card
-        title={<span style={{ color: BRAND.ink }}>Поставленные меры и намерения</span>}
+        title={<span style={{ color: BRAND.ink }}>Поставленные меры и намерения{showData ? ` — «${system!.name}»` : ''}</span>}
         style={{ marginTop: 16, borderColor: BRAND.divider }}
       >
         {myProposals.length === 0 ? (

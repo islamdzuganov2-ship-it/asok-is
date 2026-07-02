@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.constants.quality_model import CHARACTERISTICS, canonical_characteristic
 from app.core.database import get_db
 from app.models.assessment import AssessmentPeriod, AssessmentValue
 from app.models.matrices import DefectMatrix, QualityPlanMatrix, RiskMatrix
@@ -152,21 +153,29 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db)) -> Dashboa
 
     global_score = round((sum(measured) / len(measured)) * 100, 2)
     system_names = sorted({value.period.system.name for value in values})
-    characteristic_names = sorted({value.metric.characteristic for value in values})
-    system_index = {name: index for index, name in enumerate(system_names)}
-    characteristic_index = {name: index for index, name in enumerate(characteristic_names)}
 
     cells: dict[tuple[str, str], list[float]] = defaultdict(list)
     low_counts: dict[UUID, int] = defaultdict(int)
     systems_by_id: dict[UUID, System] = {}
+    present_chars: set[str] = set()
     for value in values:
         systems_by_id[value.period.system.id] = value.period.system
         if value.calculated_x is None:
             continue
+        # Нормализация имени характеристики к модели 25010 (DEF-02): теплокарта = 8 характеристик, как в моках.
+        canon = canonical_characteristic(value.metric.characteristic)
+        if canon is None:
+            continue
         score = float(value.calculated_x)
-        cells[(value.period.system.name, value.metric.characteristic)].append(score)
+        present_chars.add(canon)
+        cells[(value.period.system.name, canon)].append(score)
         if score < 0.41:
             low_counts[value.period.system.id] += 1
+
+    # Канонические характеристики в фиксированном порядке модели (только присутствующие).
+    characteristic_names = [c for c in CHARACTERISTICS if c in present_chars]
+    system_index = {name: index for index, name in enumerate(system_names)}
+    characteristic_index = {name: index for index, name in enumerate(characteristic_names)}
 
     heatmap = [
         [
