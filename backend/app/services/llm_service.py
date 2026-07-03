@@ -49,6 +49,9 @@ _PCT_RE = re.compile(r"(\d{1,3})\s*%")
 _llm = None
 _load_attempted = False
 _lock = threading.Lock()
+# llama.cpp НЕ потокобезопасен для параллельного инференса: сериализуем вызовы,
+# иначе одновременные запросы (дашборд + заключение) виснут/повреждают состояние.
+_infer_lock = threading.Lock()
 _cache: dict[int, str] = {}
 
 
@@ -114,15 +117,16 @@ def complete(prompt: str, system: str = SYSTEM_PROMPT,
     if llm is None:
         return None
     try:
-        resp = llm.create_chat_completion(
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=max_tokens or settings.LLM_MAX_TOKENS,
-            temperature=settings.LLM_TEMPERATURE if temperature is None else temperature,
-            top_p=settings.LLM_TOP_P,
-        )
+        with _infer_lock:
+            resp = llm.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=max_tokens or settings.LLM_MAX_TOKENS,
+                temperature=settings.LLM_TEMPERATURE if temperature is None else temperature,
+                top_p=settings.LLM_TOP_P,
+            )
         return resp["choices"][0]["message"]["content"].strip()
     except Exception as exc:  # noqa: BLE001
         logger.exception("Ошибка инференса LLM: %s", exc)
@@ -162,6 +166,90 @@ def _grounded_fallback(system_name: str, period_label: str, metrics_block: str) 
         "и закрепить меру в плане обеспечения качества. "
         "(Вывод сформирован строго по расчётным метрикам, без допущений.)"
     )
+
+
+CONCLUSION_SYSTEM_PROMPT = (
+    "Ты — менеджер по качеству и аналитик банка. На вход — профессиональные суждения по "
+    "подхарактеристикам качества ИС и связанные риски из базы рисков.\n"
+    "СТРОГИЕ ПРАВИЛА: опирайся ТОЛЬКО на переданные суждения и риски; не выдумывай факты и числа.\n"
+    "Сформируй краткое управленческое ЗАКЛЮЧЕНИЕ (деловой русский):\n"
+    "1) Общий вывод о качестве и СИСТЕМАТИЧЕСКИХ проблемах (какие характеристики просели по сути суждений).\n"
+    "2) Какие РИСКИ вероятны исходя из суждений (со ссылкой на базу рисков, если передана).\n"
+    "3) 1–2 конкретные рекомендации к решению на уровне топ-менеджмента."
+)
+
+
+def _judgment_fallback(system_name: str, period_label: str, judgments_block: str, risks_block: str) -> str:
+    if not judgments_block.strip():
+        return (
+            f"ИС «{system_name}», период {period_label}: профессиональные суждения ещё не внесены — "
+            "заключение не сформировано."
+        )
+    n = len([ln for ln in judgments_block.splitlines() if ln.strip()])
+    risks = ""
+    if risks_block.strip():
+        risks = f" Возможные риски (из базы): {risks_block.strip().splitlines()[0]}"
+    return (
+        f"ИС «{system_name}», период {period_label}: на основе {n} профессиональных суждений выявлены зоны "
+        f"внимания менеджера по качеству.{risks} Рекомендация: вынести систематически просевшие характеристики "
+        "на решение топ-менеджмента. (Заключение сформировано строго по внесённым суждениям.)"
+    )
+
+
+def generate_judgment_conclusion(system_name: str, period_label: str, judgments_block: str,
+                                 risks_block: str = "", history_block: str = "") -> str:
+    """Заключение LLM по профессиональным суждениям с маппингом на базу рисков.
+
+    «Самообучение» (практическое, без дообучения весов): корпус суждений растёт с каждым вводом,
+    а суждения/выводы прошлых периодов по этой ИС передаются как history_block — модель учитывает
+    преемственность и с каждым новым вводом даёт более полное заключение (RAG-контекст).
+    """
+    key = hash((system_name, period_label, judgments_block, risks_block, history_block))
+    if key in _cache:
+        return _cache[key]
+    prompt = (
+        f"ИС: {system_name}. Период: {period_label}.\n"
+        f"Профессиональные суждения по подхарактеристикам:\n{judgments_block}\n"
+        + (f"\nСвязанные риски (база рисков банка):\n{risks_block}\n" if risks_block.strip() else "")
+        + (f"\nСуждения/выводы прошлых периодов (для преемственности):\n{history_block}\n" if history_block.strip() else "")
+        + "Сформируй управленческое заключение по заданному формату."
+    )
+    text = complete(prompt, system=CONCLUSION_SYSTEM_PROMPT)
+    if text:
+        # Grounding: проценты в ответе обязаны присутствовать во входных данных.
+        if set(_PCT_RE.findall(text)) - _allowed_pcts(judgments_block, risks_block, history_block):
+            logger.warning("Заключение содержит проценты вне входных данных — честный fallback")
+            text = None
+    if not text:
+        text = _judgment_fallback(system_name, period_label, judgments_block, risks_block)
+    _cache[key] = text
+    return text
+
+
+def generate_measures_analytics(measures_block: str, risks_block: str = "") -> str:
+    """Аналитика LLM по данным о МЕРАХ (не карточки, а сводный вывод по характеристикам)."""
+    key = hash(("measures", measures_block, risks_block))
+    if key in _cache:
+        return _cache[key]
+    if not measures_block.strip():
+        return "Активных мер нет — аналитика по мерам не сформирована."
+    prompt = (
+        f"{measures_block}\n"
+        + (f"\nСвязанные риски (база рисков банка):\n{risks_block}\n" if risks_block.strip() else "")
+        + "Оформи эти аналитические факты как СВЯЗНЫЙ управленческий вывод для топ-менеджмента: "
+          "объясни, почему топ-зоны критичны, какие системные проблемы просматриваются, "
+          "какие риски вероятны и 1–2 приоритетные рекомендации. "
+          "НЕ перечисляй факты дословно и НЕ добавляй новых чисел — только осмысленная интерпретация."
+    )
+    text = complete(prompt, system=CONCLUSION_SYSTEM_PROMPT)
+    if text and (set(_PCT_RE.findall(text)) - _allowed_pcts(measures_block, risks_block)):
+        logger.warning("Аналитика по мерам содержит проценты вне входных данных — честный fallback")
+        text = None
+    if not text:
+        # Честный аналитический каркас (уже проранжированные приоритеты) — не перефразирование.
+        text = measures_block
+    _cache[key] = text
+    return text
 
 
 def generate_summary(system_name: str, period_label: str,

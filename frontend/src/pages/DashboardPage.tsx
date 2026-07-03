@@ -6,9 +6,9 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Card, Col, Row, Skeleton, Statistic, Table, Tag, Typography, Alert, Modal,
+  Card, Col, Row, Skeleton, Statistic, Table, Tag, Typography, Alert, Modal, Select,
 } from 'antd';
-import { RightOutlined } from '@ant-design/icons';
+import { RightOutlined, DatabaseOutlined } from '@ant-design/icons';
 import * as echarts from 'echarts';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -141,6 +141,28 @@ const DashboardPage: React.FC = () => {
     return m;
   }, [data]);
 
+  // Фильтр теплокарты по системе (как на дашборде менеджера по качеству).
+  const [heatSystem, setHeatSystem] = useState<string | undefined>(undefined);
+  const heat = useMemo(() => {
+    const details = data?.systemDetails ?? [];
+    const yLabels = data?.yAxisLabels ?? [];
+    const idx = heatSystem ? yLabels.indexOf(heatSystem) : -1;
+    if (heatSystem && idx >= 0) {
+      return {
+        yLabels: [yLabels[idx]],
+        matrix: [matrix[idx]],
+        cellScores: details[idx] ? [details[idx].chars.map((c) => c.score)] : undefined,
+        details: details[idx] ? [details[idx]] : [],
+      };
+    }
+    return {
+      yLabels,
+      matrix,
+      cellScores: details.length ? details.map((s) => s.chars.map((c) => c.score)) : undefined,
+      details,
+    };
+  }, [data, matrix, heatSystem]);
+
   if (error) {
     return <Alert type="error" showIcon message="Ошибка загрузки дашборда"
       description={`${error}. Проверьте подключение к backend.`} style={{ margin: 24 }} />;
@@ -177,7 +199,7 @@ const DashboardPage: React.FC = () => {
           {detail === 'global' && (
             <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
               Глобальный балл {healthPct}% — среднее по {data.totalMetrics} метрикам {data.yAxisLabels.length} ИС.
-              Ниже — распределение метрик по уровням качества (методика МК 8.1).
+              Ниже — распределение метрик по уровням качества.
             </Text>
           )}
           <Table
@@ -285,19 +307,33 @@ const DashboardPage: React.FC = () => {
                   <>
                     <LevelHeatmap
                       xLabels={data.xAxisLabels}
-                      yLabels={data.yAxisLabels}
-                      matrix={matrix}
+                      yLabels={heat.yLabels}
+                      matrix={heat.matrix}
                       charScores={data.characteristics?.map((c) => c.score)}
                       onCharClick={data.characteristics
                         ? (_c, i) => setCharDetail(data.characteristics![i] ?? null)
                         : undefined}
-                      cellScores={data.systemDetails?.map((s) => s.chars.map((c) => c.score))}
-                      onCellClick={data.systemDetails
+                      cellScores={heat.cellScores}
+                      onCellClick={heat.details.length
                         ? (y, x) => {
-                          const sd = data.systemDetails![y]?.chars[x];
-                          if (sd) setCharDetail({ ...sd, system: data.yAxisLabels[y] });
+                          const sd = heat.details[y]?.chars[x];
+                          if (sd) setCharDetail({ ...sd, system: heat.yLabels[y] });
                         }
                         : undefined}
+                      cornerContent={(
+                        <Select
+                          size="small"
+                          variant="borderless"
+                          value={heatSystem}
+                          onChange={setHeatSystem}
+                          allowClear
+                          showSearch
+                          optionFilterProp="label"
+                          placeholder={<span style={{ fontWeight: 500 }}><DatabaseOutlined /> Все системы</span>}
+                          style={{ width: '100%', minWidth: 180 }}
+                          options={data.yAxisLabels.map((s) => ({ value: s, label: s }))}
+                        />
+                      )}
                     />
                     <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
                       {LEVEL_ORDER.map((lvl) => (

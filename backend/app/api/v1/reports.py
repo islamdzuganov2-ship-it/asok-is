@@ -3,6 +3,7 @@ from collections import defaultdict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -30,6 +31,58 @@ router = APIRouter()
 async def get_llm_status() -> dict:
     """Статус встроенной LLM — для UI-переключателя «Моки ↔ LLM»."""
     return llm_service.model_info()
+
+
+class MeasuresAnalyticsItem(BaseModel):
+    characteristic: str
+    count: int
+    systems: int | None = None
+    avg_score: float | None = None
+
+
+@router.post("/measures-analytics")
+async def measures_analytics(
+    items: list[MeasuresAnalyticsItem],
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """LLM-аналитика по данным о МЕРАХ (сводка по характеристикам) + маппинг рисков.
+
+    Не карточки мер, а собранная по мерам аналитика: где систематика, что приоритизировать.
+    """
+    if not items:
+        return {"analytics": "Активных мер нет — аналитика не сформирована.",
+                "llm": llm_service.is_available(), "mapped_risks": []}
+    # Аналитика (не перечисление): ранжирование зон по критичности, доля от всех мер, системность.
+    ranked = sorted(items, key=lambda i: (-i.count, i.avg_score if i.avg_score is not None else 999))
+    total = sum(i.count for i in items) or 1
+    top = ranked[:3]
+    lines = []
+    for idx, i in enumerate(top, 1):
+        share = round(i.count / total * 100)
+        sev = "критично" if (i.avg_score is not None and i.avg_score < 41) else "умеренно"
+        avg = f"{round(i.avg_score)}%" if i.avg_score is not None else "—"
+        lines.append(
+            f"Приоритет {idx}: {i.characteristic} — {i.count} мер ({share}% всех), охват ИС: "
+            f"{i.systems or '—'}, ср.балл {avg} ({sev})."
+        )
+    systemic = [i.characteristic for i in items if i.count >= 2 and (i.avg_score is None or i.avg_score < 50)]
+    top_share = round(sum(i.count for i in top) / total * 100)
+    concl = f"Вывод: сосредоточить ресурсы на топ-{len(top)} зонах — на них приходится {top_share}% всех мер."
+    if systemic:
+        concl += f" Системные проблемы (повторяются на нескольких ИС): {', '.join(systemic[:4])}."
+    analysis_block = "Аналитические факты по мерам:\n" + "\n".join(lines) + "\n" + concl
+
+    chars = [i.characteristic for i in items]
+    risk_rows = list((await db.execute(
+        select(RiskBase).where(RiskBase.status == "active").where(RiskBase.characteristic.in_(chars)).limit(8)
+    )).scalars().all())
+    risks_block = "\n".join(f"- {r.title}: {r.mitigation or '—'}" for r in risk_rows)
+    analytics = await asyncio.to_thread(llm_service.generate_measures_analytics, analysis_block, risks_block)
+    return {
+        "analytics": analytics,
+        "llm": llm_service.is_available(),
+        "mapped_risks": [{"title": r.title, "characteristic": r.characteristic} for r in risk_rows],
+    }
 
 
 @router.get("/assessment-period/{period_id}/matrices", response_model=FullExcelMatricesOut)

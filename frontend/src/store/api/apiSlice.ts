@@ -84,6 +84,7 @@ export interface EditableMetric {
     val_a: number | null;
     val_b: number | null;
     expert_comment: string;
+    unmeasurable?: boolean;
     calculatedX?: number | null;
     qualityLevel?: string | null;
 }
@@ -96,6 +97,36 @@ export interface ValueAddDto {
     val_a: number | null;
     val_b: number | null;
     expert_comment?: string;
+    /** «Невозможно измерить»: нет возможности собрать данные (комментарий обязателен). */
+    unmeasurable?: boolean;
+    /** Подтверждающий артефакт (ссылка/файл/№ тикета). */
+    artifact_links?: string;
+}
+
+/** Профессиональное суждение по подхарактеристике (задача менеджера по качеству, НЕ мера). */
+export interface JudgmentItem {
+    id?: string;
+    characteristic: string;
+    subcharacteristic: string;
+    judgment_text: string;
+    author?: string;
+}
+
+export interface JudgmentsStatus {
+    period_id: string;
+    filled: number;
+    total: number;
+    complete: boolean;
+    items: JudgmentItem[];
+}
+
+export interface JudgmentConclusion {
+    period_id: string;
+    system_name: string;
+    judgments_count: number;
+    conclusion: string;
+    mapped_risks: Array<{ title: string; characteristic?: string; mitigation?: string }>;
+    llm: boolean;
 }
 
 /** Сводка по периоду оценки: полнота заполнения подхарактеристик модели. */
@@ -250,6 +281,21 @@ export const apiSlice = createApi({
             }),
             invalidatesTags: ['Assessment', 'Dashboard'],
         }),
+        getJudgments: builder.query<JudgmentsStatus, string>({
+            query: (id) => `/assessments/${id}/judgments`,
+            providesTags: ['Assessment'],
+        }),
+        saveJudgments: builder.mutation<JudgmentsStatus, { id: string; items: JudgmentItem[] }>({
+            query: ({ id, items }) => ({
+                url: `/assessments/${id}/judgments`,
+                method: 'PUT',
+                body: items,
+            }),
+            invalidatesTags: ['Assessment'],
+        }),
+        getJudgmentConclusion: builder.query<JudgmentConclusion, string>({
+            query: (id) => `/assessments/${id}/judgment-conclusion`,
+        }),
         importAssessmentExcel: builder.mutation<ExcelImportResult, { id: string; file: File }>({
             query: ({ id, file }) => {
                 const formData = new FormData();
@@ -285,6 +331,9 @@ export const {
     useCreateMetricMutation,
     useCreateSystemMutation,
     useFinalizeAssessmentMutation,
+    useGetJudgmentsQuery,
+    useSaveJudgmentsMutation,
+    useLazyGetJudgmentConclusionQuery,
     useGetAssessmentMetricsQuery,
     useGetCalculatedMetricsQuery,
     useGetPeriodSummariesQuery,

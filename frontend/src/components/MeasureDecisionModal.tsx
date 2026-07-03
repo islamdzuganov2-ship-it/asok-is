@@ -148,10 +148,7 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
             </Space>
           </>
         ) : (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            Согласование работ по мере (одобрить/отклонить) принимает только топ-менеджмент (роль ADMIN).
-            Мера ожидает решения ЛПР верхнего уровня.
-          </Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>Ожидается решение</Text>
         )
       ) : (
         <Field label={`Решение (${proposal.decidedBy || '—'})`}>

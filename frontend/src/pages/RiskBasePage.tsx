@@ -185,7 +185,7 @@ const RiskBasePage: React.FC = () => {
           <Form.Item name="title" label="Название" rules={[{ required: true }]}>
             <Input placeholder="Недостаточное покрытие автотестами" />
           </Form.Item>
-          <Form.Item name="characteristic" label="Характеристика (ISO 25010 / МК_8.1)">
+          <Form.Item name="characteristic" label="Характеристика">
             <Input placeholder="Сопровождаемость" />
           </Form.Item>
           <Form.Item name="description" label="Описание риска" rules={[{ required: true }]}>

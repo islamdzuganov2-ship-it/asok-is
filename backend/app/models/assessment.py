@@ -41,6 +41,26 @@ class AssessmentValue(Base, TimestampMixin):
     
     metric = relationship("MetricCatalog", lazy="select")
 
+class ProfessionalJudgment(Base, TimestampMixin):
+    """Профессиональное суждение менеджера по качеству по подхарактеристике (НЕ мера).
+
+    По одному на пару (характеристика, подхарактеристика) в периоде. Обязательно к заполнению
+    (задача QM). На основе суждений LLM формирует заключение и маппит их на базу рисков.
+    """
+    __tablename__ = "professional_judgments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id"), nullable=False, index=True)
+    characteristic = Column(String(255), nullable=False)
+    subcharacteristic = Column(String(255), nullable=False)
+    judgment_text = Column(Text, nullable=False)
+    author = Column(String(255), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("period_id", "characteristic", "subcharacteristic", name="uq_judgment_period_pair"),
+    )
+
+
 class ExpertJudgmentHistory(Base, TimestampMixin):
     __tablename__ = "expert_judgment_history"
     

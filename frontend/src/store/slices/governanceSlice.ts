@@ -43,6 +43,14 @@ export interface Proposal {
   executedAt?: string;
   /** Демо-мера (засеяна для презентации). В режиме LLM такие меры скрываются. */
   isDemo?: boolean;
+  /** План задач по повышению качества: */
+  suzLink?: string;       // ссылка на задачу в СУЗ (система управления знаниями/задачами)
+  topComment?: string;    // комментарий топ-менеджера к задаче (по клику)
+  escalated?: boolean;    // эскалирована менеджером по качеству (срыв срока / невыполнение)
+  escalationReason?: string;   // причина невыполнения/просрочки — пишет QM при эскалации
+  escalationDecision?: 'IGNORE' | 'REQUEST_MEASURES'; // решение топ-менеджмента по эскалации
+  escalationDecisionComment?: string;                  // указание/комментарий топ-менеджмента
+  escalationDecidedBy?: string;
 }
 
 export type ExecutionStatus = 'DONE' | 'NOT_DONE';
@@ -141,10 +149,54 @@ const governanceSlice = createSlice({
         persist(state.proposals);
       }
     },
+    // План задач по повышению качества: правки СУЗ-ссылки, комментария топ-менеджера, эскалации,
+    // ответственного/срока. Управляет менеджер по качеству; комментарий/эскалация — топ-менеджмент.
+    updateTask(state, action: PayloadAction<{
+      id: string; suzLink?: string; topComment?: string; escalated?: boolean; owner?: string; ownerRole?: string; dueDate?: string;
+    }>) {
+      const p = state.proposals.find((x) => x.id === action.payload.id);
+      if (p) {
+        const { id, ...rest } = action.payload;
+        (Object.keys(rest) as Array<keyof typeof rest>).forEach((k) => {
+          if (rest[k] !== undefined) (p as any)[k] = rest[k];
+        });
+        persist(state.proposals);
+      }
+    },
+    // Эскалацию инициирует ТОЛЬКО менеджер по качеству, обязательно с причиной невыполнения/просрочки.
+    escalateTask(state, action: PayloadAction<{ id: string; reason: string; by: string }>) {
+      const p = state.proposals.find((x) => x.id === action.payload.id);
+      if (p) {
+        p.escalated = true;
+        p.escalationReason = action.payload.reason;
+        p.escalationDecision = undefined;
+        p.escalationDecisionComment = undefined;
+        p.escalationDecidedBy = undefined;
+        persist(state.proposals);
+      }
+    },
+    // Решение по эскалации принимает ТОЛЬКО топ-менеджмент: игнорировать / запросить доп. меры.
+    decideEscalation(state, action: PayloadAction<{ id: string; decision: 'IGNORE' | 'REQUEST_MEASURES'; comment: string; by: string }>) {
+      const p = state.proposals.find((x) => x.id === action.payload.id);
+      if (p && p.escalated) {
+        p.escalationDecision = action.payload.decision;
+        p.escalationDecisionComment = action.payload.comment;
+        p.escalationDecidedBy = action.payload.by;
+        persist(state.proposals);
+      }
+    },
+    // «Отработано» менеджером по качеству — цикл эскалации закрыт (решение сохраняется в истории).
+    resolveEscalation(state, action: PayloadAction<{ id: string }>) {
+      const p = state.proposals.find((x) => x.id === action.payload.id);
+      if (p) { p.escalated = false; persist(state.proposals); }
+    },
   },
 });
 
-export const { addProposal, approveProposal, rejectProposal, updateProposalMeta, setExecution } = governanceSlice.actions;
+export const {
+  addProposal, approveProposal, rejectProposal, updateProposalMeta, setExecution, updateTask,
+  escalateTask, decideEscalation, resolveEscalation,
+} = governanceSlice.actions;
 export default governanceSlice.reducer;
 
 // --- Селекторы ---

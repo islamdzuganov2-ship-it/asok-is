@@ -146,6 +146,31 @@ class ValueAddIn(BaseModel):
     val_b: float | None = Field(None, ge=0)
     expert_comment: str | None = Field(None, max_length=2000)
     unmeasurable: bool = False
+    # Подтверждающий артефакт (ссылка/файл/№ тикета) для обоснования оценки подхарактеристики.
+    artifact_links: str | None = Field(None, max_length=1000)
+
+
+class JudgmentIn(BaseModel):
+    """Профессиональное суждение по подхарактеристике (задача менеджера по качеству)."""
+    characteristic: str = Field(..., min_length=1, max_length=255)
+    subcharacteristic: str = Field(..., min_length=1, max_length=255)
+    judgment_text: str = Field(..., min_length=1, max_length=4000)
+
+
+class JudgmentOut(BaseModel):
+    id: str
+    characteristic: str
+    subcharacteristic: str
+    judgment_text: str
+    author: str | None = None
+
+
+class JudgmentsStatusOut(BaseModel):
+    period_id: str
+    filled: int
+    total: int
+    complete: bool
+    items: list[JudgmentOut]
 
 
 class PeriodSummaryOut(BaseModel):

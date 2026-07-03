@@ -10,9 +10,10 @@ import {
   Tag, Tooltip, Typography, message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { SaveOutlined, SendOutlined } from '@ant-design/icons';
-import { useParams } from 'react-router-dom';
+import { SaveOutlined, ArrowLeftOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { useNavigate, useParams } from 'react-router-dom';
 import ExcelUploadBlock from '../components/ExcelUploadBlock';
+import { subDescription, subArtifacts } from '../constants/subDescriptions';
 
 const { Text, Title } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -20,6 +21,8 @@ const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api
 interface MetricRow {
   id: string;
   name: string;
+  characteristic?: string;
+  subcharacteristic?: string;
   description: string;
   val_a: number | null;
   val_b: number | null;
@@ -42,6 +45,7 @@ const LEVEL_TAG_COLOR: Record<string, string> = {
 
 const MetricsInputPage: React.FC = () => {
   const { id: periodId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [metrics, setMetrics] = useState<MetricRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -140,16 +144,26 @@ const MetricsInputPage: React.FC = () => {
       title: 'Метрика',
       dataIndex: 'name',
       ellipsis: true,
-      render: (name: string, rec: MetricRow) => (
-        <Tooltip title={rec.description}>
-          <Text style={{ fontSize: 12 }}>{name}</Text>
-        </Tooltip>
-      ),
+      render: (name: string, rec: MetricRow) => {
+        const sub = rec.subcharacteristic || name.split(' / ')[1];
+        return (
+          <Tooltip
+            title={(
+              <div style={{ maxWidth: 340 }}>
+                <div>{subDescription(rec.characteristic, sub)}</div>
+                <div style={{ marginTop: 6, opacity: 0.85 }}>{subArtifacts(sub)}</div>
+              </div>
+            )}
+          >
+            <Text style={{ fontSize: 12 }}>{name} <InfoCircleOutlined style={{ color: '#bbb' }} /></Text>
+          </Tooltip>
+        );
+      },
     },
     {
-      title: 'val_a (факт)',
+      title: <Tooltip title="A — фактически достигнутое значение показателя (числитель). Итог: прямая X=A/B, обратная X=1−A/B.">val_a (факт) <InfoCircleOutlined style={{ color: '#bbb' }} /></Tooltip>,
       dataIndex: 'val_a',
-      width: 110,
+      width: 120,
       render: (_: unknown, rec: MetricRow) => (
         <InputNumber
           size="small"
@@ -163,9 +177,9 @@ const MetricsInputPage: React.FC = () => {
       ),
     },
     {
-      title: 'val_b (план)',
+      title: <Tooltip title="B — базовое/плановое значение (знаменатель). Должно быть > 0; при B=0 отметьте «Невозможно измерить».">val_b (база) <InfoCircleOutlined style={{ color: '#bbb' }} /></Tooltip>,
       dataIndex: 'val_b',
-      width: 110,
+      width: 120,
       render: (_: unknown, rec: MetricRow) => {
         const isZero = rec.val_b === 0 && !rec.unmeasurable;
         return (
@@ -252,9 +266,12 @@ const MetricsInputPage: React.FC = () => {
     <div style={{ padding: 24 }}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-          <Title level={4} style={{ marginBottom: 0 }}>
-            Ввод метрик — период {periodId}
-          </Title>
+          <Space>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/assessments/new')}>
+              Назад к оценке
+            </Button>
+            <Title level={4} style={{ marginBottom: 0 }}>Табличный ввод оценки</Title>
+          </Space>
           <Space>
             <Button
               icon={<SaveOutlined />}
@@ -290,8 +307,9 @@ const MetricsInputPage: React.FC = () => {
               rowKey="id"
               size="small"
               bordered
-              scroll={{ x: 1040 }}
-              pagination={{ pageSize: 30, hideOnSinglePage: true }}
+              sticky
+              scroll={{ x: 1040, y: 'calc(100vh - 360px)' }}
+              pagination={false}
               rowClassName={(rec) =>
                 dirtyIds.has(rec.id) ? 'ant-table-row-selected' : ''
               }

@@ -17,8 +17,9 @@ version: 10.0
 ### A1. Ручной ввод данных — РАБОТАЕТ ✅
 - `frontend/src/pages/MetricsInputPage.tsx` — таблица `val_a/val_b`, валидация `val_b>0`,
   `Сохранить` → `PUT /assessments/{id}/metrics`, бэкенд пересчитывает X и уровень.
-- ⚠️ Дефект: используется ключ токена `asok_access_token` (строка 50) — расходится с
-  `authSlice` (`token`). Тот же баг был в дашборде (исправлен), здесь — остаётся.
+- ✅ Дефект устранён (ретест QA 2026-06-30): `MetricsInputPage.tsx:50` использует ключ
+  токена `'token'`, согласовано с `authSlice` и `apiSlice`. Рассогласования `asok_access_token`
+  в текущем коде нет (проверено grep по `frontend/src`).
 
 ### A2. Загрузка Excel — РАБОТАЕТ ✅
 - Синхронно: `ExcelUploadBlock.tsx` → `importAssessmentExcel` + `importWorkbook`

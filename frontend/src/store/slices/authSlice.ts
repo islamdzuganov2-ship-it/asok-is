@@ -35,6 +35,8 @@ const authSlice = createSlice({
             localStorage.setItem('token', action.payload.token);
             localStorage.setItem('role', action.payload.role);
             localStorage.setItem('full_name', action.payload.fullName);
+            // Сброс скрытых уведомлений при новом входе («очистить всё» действует до следующего входа).
+            localStorage.removeItem('asok_notif_dismissed');
         },
         logout: (state) => {
             state.token = null;

@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from typing import List
 from uuid import UUID
@@ -15,18 +16,23 @@ from app.constants.quality_model import (
     TOTAL_SUBS,
     canonical_characteristic,
 )
-from app.models.assessment import AssessmentPeriod, AssessmentValue
+from app.models.assessment import AssessmentPeriod, AssessmentValue, ProfessionalJudgment
 from app.models.metric_catalog import FormulaType, MetricCatalog
+from app.models.risk_base import RiskBase
 from app.models.system import System
 from app.schemas.assessment import (
     CalculatedMetricOut,
     EditableMetricIn,
     EditableMetricOut,
+    JudgmentIn,
+    JudgmentOut,
+    JudgmentsStatusOut,
     PeriodCreate,
     PeriodOut,
     PeriodSummaryOut,
     ValueAddIn,
 )
+from app.services import llm_service
 from app.services.calculation_engine import calculate_metric, map_to_level
 from app.services.excel_importer import ensure_period_values, get_or_create_metric
 
@@ -471,6 +477,8 @@ async def add_assessment_value(
 
     value.expert_comment = (payload.expert_comment or "").strip() or None
     value.unmeasurable = bool(payload.unmeasurable)
+    _artifact = (payload.artifact_links or "").strip()
+    value.artifact_links = [_artifact] if _artifact else None
     if value.unmeasurable:
         # «Невозможно измерить» (нет возможности собрать данные) → комментарий обязателен.
         if not value.expert_comment:
@@ -567,6 +575,199 @@ async def finalize_assessment(
         total=TOTAL_SUBS,
         complete=True,
     )
+
+
+@router.get("/{period_id}/judgments", response_model=JudgmentsStatusOut)
+async def get_judgments(period_id: UUID, db: AsyncSession = Depends(get_db)) -> JudgmentsStatusOut:
+    """Профессиональные суждения периода + полнота (обязательны по всем 31 подхарактеристике)."""
+    await _require_period(db, period_id)
+    rows = list((await db.execute(
+        select(ProfessionalJudgment).where(ProfessionalJudgment.period_id == period_id)
+    )).scalars().all())
+    filled = len({
+        (j.characteristic, j.subcharacteristic) for j in rows
+        if (j.characteristic, j.subcharacteristic) in QUALITY_PAIR_KEYS
+    })
+    return JudgmentsStatusOut(
+        period_id=str(period_id),
+        filled=filled,
+        total=TOTAL_SUBS,
+        complete=filled >= TOTAL_SUBS,
+        items=[
+            JudgmentOut(
+                id=str(j.id), characteristic=j.characteristic,
+                subcharacteristic=j.subcharacteristic, judgment_text=j.judgment_text, author=j.author,
+            )
+            for j in rows
+        ],
+    )
+
+
+@router.put("/{period_id}/judgments", response_model=JudgmentsStatusOut)
+async def save_judgments(
+    period_id: UUID,
+    payload: List[JudgmentIn],
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_role("QUALITY_MANAGER", "ADMIN")),
+) -> JudgmentsStatusOut:
+    """Внести/обновить профессиональные суждения (задача менеджера по качеству). Upsert по паре."""
+    await _require_period(db, period_id)
+    author = user.get("username")
+    for item in payload:
+        char = item.characteristic.strip()
+        sub = item.subcharacteristic.strip()
+        text = item.judgment_text.strip()
+        if not text:
+            continue
+        existing = (await db.execute(
+            select(ProfessionalJudgment).where(
+                ProfessionalJudgment.period_id == period_id,
+                ProfessionalJudgment.characteristic == char,
+                ProfessionalJudgment.subcharacteristic == sub,
+            )
+        )).scalar_one_or_none()
+        if existing is not None:
+            existing.judgment_text = text
+            existing.author = author
+        else:
+            db.add(ProfessionalJudgment(
+                period_id=period_id, characteristic=char, subcharacteristic=sub,
+                judgment_text=text, author=author,
+            ))
+    await db.commit()
+    return await get_judgments(period_id, db)
+
+
+@router.get("/{period_id}/judgment-conclusion")
+async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    """Заключение LLM по профессиональным суждениям + маппинг на базу рисков + преемственность.
+
+    Самообучение (практическое): корпус суждений растёт; суждения прошлых периодов той же ИС
+    передаются модели как контекст — каждый новый ввод обогащает заключение.
+    """
+    period = await _require_period(db, period_id)
+    system = await db.get(System, period.system_id)
+    system_name = system.name if system else str(period.system_id)
+
+    rows = list((await db.execute(
+        select(ProfessionalJudgment).where(ProfessionalJudgment.period_id == period_id)
+        .order_by(ProfessionalJudgment.characteristic)
+    )).scalars().all())
+    judgments_block = "\n".join(
+        f"{j.characteristic} / {j.subcharacteristic}: {j.judgment_text}" for j in rows
+    )
+
+    # Маппинг на базу рисков: активные риски по характеристикам, встречающимся в суждениях.
+    chars = sorted({j.characteristic for j in rows})
+    risk_rows = []
+    if chars:
+        risk_rows = list((await db.execute(
+            select(RiskBase)
+            .where(RiskBase.status == "active")
+            .where(RiskBase.characteristic.in_(chars))
+            .limit(8)
+        )).scalars().all())
+    risks_block = "\n".join(f"- {r.title}: {r.mitigation or '—'}" for r in risk_rows)
+
+    # Преемственность/самообучение: суждения прошлых периодов той же ИС.
+    history_block = ""
+    if system is not None:
+        past = list((await db.execute(
+            select(ProfessionalJudgment.characteristic, ProfessionalJudgment.subcharacteristic,
+                   ProfessionalJudgment.judgment_text, AssessmentPeriod.period)
+            .join(AssessmentPeriod, ProfessionalJudgment.period_id == AssessmentPeriod.id)
+            .where(AssessmentPeriod.system_id == system.id, ProfessionalJudgment.period_id != period_id)
+            .limit(10)
+        )).all())
+        history_block = "\n".join(
+            f"[{p}] {c} / {s}: {t}" for c, s, t, p in past
+        )
+
+    conclusion = await asyncio.to_thread(
+        llm_service.generate_judgment_conclusion,
+        system_name, period.period, judgments_block, risks_block, history_block,
+    )
+    return {
+        "period_id": str(period_id),
+        "system_name": system_name,
+        "judgments_count": len(rows),
+        "conclusion": conclusion,
+        "mapped_risks": [
+            {"title": r.title, "characteristic": r.characteristic, "mitigation": r.mitigation}
+            for r in risk_rows
+        ],
+        "llm": llm_service.is_available(),
+    }
+
+
+@router.get("/judgments-status")
+async def judgments_status(db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """Периоды с активной оценкой, где проф. суждения заполнены НЕ полностью.
+
+    Для уведомлений менеджера по качеству: на каких системах есть пустые проф. суждения.
+    """
+    period_rows = (await db.execute(
+        select(AssessmentPeriod, System)
+        .join(System, AssessmentPeriod.system_id == System.id)
+        .where(System.is_deleted.is_(False))
+    )).all()
+    if not period_rows:
+        return []
+    # Периоды, где реально идёт оценка (есть измеренные/«невозможно измерить» значения).
+    active = set((await db.execute(
+        select(AssessmentValue.period_id)
+        .where(or_(AssessmentValue.calculated_x.isnot(None), AssessmentValue.unmeasurable.is_(True)))
+        .distinct()
+    )).scalars().all())
+    judg = (await db.execute(
+        select(ProfessionalJudgment.period_id, ProfessionalJudgment.characteristic, ProfessionalJudgment.subcharacteristic)
+    )).all()
+    filled: dict = defaultdict(set)
+    for pid, c, s in judg:
+        if (c, s) in QUALITY_PAIR_KEYS:
+            filled[pid].add((c, s))
+    out = []
+    for period, system in period_rows:
+        if period.id not in active:
+            continue
+        n = len(filled.get(period.id, set()))
+        if n >= TOTAL_SUBS:
+            continue
+        out.append({
+            "period_id": str(period.id), "system_name": system.name,
+            "period": period.period, "filled": n, "total": TOTAL_SUBS,
+        })
+    out.sort(key=lambda x: x["filled"], reverse=True)
+    return out[:30]
+
+
+@router.get("/judgments-filled")
+async def judgments_filled(
+    system_name: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Заполненные профессиональные суждения (со связкой характеристика + система + период).
+
+    Для карточки на дашборде менеджера по качеству. Можно отфильтровать по имени ИС.
+    """
+    stmt = (
+        select(ProfessionalJudgment, AssessmentPeriod, System)
+        .join(AssessmentPeriod, ProfessionalJudgment.period_id == AssessmentPeriod.id)
+        .join(System, AssessmentPeriod.system_id == System.id)
+        .where(System.is_deleted.is_(False))
+        .order_by(System.name, ProfessionalJudgment.characteristic)
+    )
+    if system_name:
+        stmt = stmt.where(System.name == system_name)
+    rows = (await db.execute(stmt)).all()
+    return [
+        {
+            "system_name": s.name, "period": p.period,
+            "characteristic": j.characteristic, "subcharacteristic": j.subcharacteristic,
+            "judgment_text": j.judgment_text,
+        }
+        for j, p, s in rows
+    ]
 
 
 async def _require_period(db: AsyncSession, period_id: UUID) -> AssessmentPeriod:

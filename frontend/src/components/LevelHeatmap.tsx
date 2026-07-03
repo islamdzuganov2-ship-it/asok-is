@@ -37,6 +37,7 @@ interface Props {
   cellScores?: (number | null)[][]; // балл по каждой ячейке (система × характеристика), %
   onCellClick?: (y: number, x: number) => void;        // клик по конкретной ячейке
   maxHeight?: number;
+  cornerContent?: React.ReactNode;   // содержимое левого верхнего угла (напр., фильтр по системе)
 }
 
 const scoreColor = (p: number) =>
@@ -64,14 +65,14 @@ const thBase: React.CSSProperties = {
 };
 
 const LevelHeatmap: React.FC<Props> = ({
-  xLabels, yLabels, matrix, charScores, onCharClick, cellScores, onCellClick, maxHeight = 460,
+  xLabels, yLabels, matrix, charScores, onCharClick, cellScores, onCellClick, maxHeight = 460, cornerContent,
 }) => (
   <div style={{ maxHeight, overflow: 'auto', border: '1px solid #E8EAED', borderRadius: 8 }}>
     <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
       <thead>
         <tr>
-          <th style={{ ...thBase, left: 0, zIndex: 3, textAlign: 'left', minWidth: 180, paddingLeft: 12 }}>
-            Система \ характеристика
+          <th style={{ ...thBase, left: 0, zIndex: 3, textAlign: 'left', minWidth: 200, paddingLeft: 12 }}>
+            {cornerContent ?? 'Система \\ характеристика'}
           </th>
           {xLabels.map((c, i) => {
             const sc = charScores?.[i];

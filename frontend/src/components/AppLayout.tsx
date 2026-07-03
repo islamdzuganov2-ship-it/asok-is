@@ -12,6 +12,7 @@ import {
     WarningOutlined,
     RobotOutlined,
     LineChartOutlined,
+    ScheduleOutlined,
 } from '@ant-design/icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -19,6 +20,7 @@ import { RootState } from '../store';
 import { logout } from '../store/slices/authSlice';
 import { setDataMode } from '../store/slices/uiSlice';
 import { roleLabel } from '../constants/roles';
+import NotificationBell from './NotificationBell';
 
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
@@ -36,6 +38,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const dispatch = useDispatch();
     const { role, fullName } = useSelector((state: RootState) => state.auth);
     const dataMode = useSelector((state: RootState) => state.ui.dataMode);
+    const { execAnalytics, execDynamics, execTaskPlan } = useSelector((state: RootState) => state.ui);
     const userRole = role || 'GUEST';
 
     // Статус встроенной LLM (для индикатора рядом с переключателем)
@@ -58,14 +61,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const isExec = ['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN'].includes(userRole);
     const isManager = userRole === 'QUALITY_MANAGER';
 
+    // Топ-менеджер: всегда «Управленческий дашборд» + «Настройка»; остальные борды — по галочке в настройках.
     const execMenu = [
         { key: '/dashboard/executive', icon: <FundOutlined />, label: 'Управленческий дашборд' },
-        { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
+        ...(execAnalytics ? [{ key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' }] : []),
+        ...(execDynamics ? [{ key: '/dashboard/manager/dynamics', icon: <LineChartOutlined />, label: 'Динамика качества' }] : []),
+        ...(execTaskPlan ? [{ key: '/dashboard/taskplan', icon: <ScheduleOutlined />, label: 'План задач' }] : []),
         { key: '/admin/flags', icon: <SettingOutlined />, label: 'Настройка' },
     ];
     const managerMenu = [
         { key: '/dashboard/manager', icon: <AuditOutlined />, label: 'Менеджер по качеству' },
         { key: '/dashboard/manager/dynamics', icon: <LineChartOutlined />, label: 'Динамика качества' },
+        { key: '/dashboard/taskplan', icon: <ScheduleOutlined />, label: 'План задач' },
         { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
         { key: '/assessments/new', icon: <FormOutlined />, label: 'Оценка ИС' },
         { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
@@ -120,6 +127,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                                 <Text type="secondary" style={{ fontSize: 12 }}>LLM</Text>
                             </div>
                         </Tooltip>
+                        <NotificationBell />
                         <Dropdown menu={userMenu} placement="bottomRight">
                             <Button type="text" icon={<UserOutlined />}>
                                 {fullName || 'Пользователь'} · {roleLabel(userRole)}

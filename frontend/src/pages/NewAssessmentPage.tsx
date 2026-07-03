@@ -10,9 +10,9 @@
  *   4. Завершить оценку можно только когда заполнены все 31 подхарактеристика, иначе
  *      оценка не учитывается (бэкенд возвращает 409).
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-    Alert, Button, Card, Form, Input, InputNumber, Modal, Progress, Select, Space,
+    Alert, Button, Card, Checkbox, Form, Input, InputNumber, Modal, Progress, Select, Space,
     Table, Tag, Tooltip, Typography, message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -33,6 +33,8 @@ import {
 import {
     CHARACTERISTICS, QUALITY_PAIRS, TOTAL_SUBS, formulaFor, subsOf,
 } from '../constants/qualityModel';
+import { subArtifacts, subDescription } from '../constants/subDescriptions';
+import ProfessionalJudgmentsPanel from '../components/ProfessionalJudgmentsPanel';
 
 const { Title, Text } = Typography;
 
@@ -55,6 +57,8 @@ interface AddValueForm {
     val_a?: number;
     val_b?: number;
     expert_comment?: string;
+    unmeasurable?: boolean;
+    artifact_links?: string;
 }
 
 interface ResultRow {
@@ -79,11 +83,21 @@ export const NewAssessmentPage: React.FC = () => {
     const [createValue, { isLoading: addingValue }] = useCreateAssessmentValueMutation();
     const [finalize, { isLoading: finalizing }] = useFinalizeAssessmentMutation();
 
-    const [systemId, setSystemId] = useState<string | undefined>();
-    const [periodId, setPeriodId] = useState<string | undefined>();
+    // Контекст оценки сохраняется, чтобы «Назад» из табличного ввода возвращал к той же ИС/периоду
+    // (а не выходил полностью из оценки выбранной системы).
+    const [systemId, setSystemId] = useState<string | undefined>(() => localStorage.getItem('asok_last_system') || undefined);
+    const [periodId, setPeriodId] = useState<string | undefined>(() => localStorage.getItem('asok_last_period') || undefined);
     const [newPeriodLabel, setNewPeriodLabel] = useState<string | undefined>();
     const [systemModalOpen, setSystemModalOpen] = useState(false);
     const [valueModalOpen, setValueModalOpen] = useState(false);
+
+    useEffect(() => {
+        if (systemId) localStorage.setItem('asok_last_system', systemId);
+    }, [systemId]);
+    useEffect(() => {
+        if (periodId) localStorage.setItem('asok_last_period', periodId);
+        else localStorage.removeItem('asok_last_period');
+    }, [periodId]);
 
     const periodOptions = useMemo(() => {
         const year = new Date().getFullYear();
@@ -126,6 +140,8 @@ export const NewAssessmentPage: React.FC = () => {
 
     // Доступные для добавления характеристики/подхарактеристики (минус уже заполненные).
     const selectedChar = Form.useWatch('characteristic', valueForm);
+    const selectedSub = Form.useWatch('subcharacteristic', valueForm);
+    const unmeasurable = Form.useWatch('unmeasurable', valueForm);
     const availableCharacteristics = useMemo(
         () => CHARACTERISTICS.filter((c) => subsOf(c).some((s) => !filledSet.has(pairKey(c, s.name)))),
         [filledSet],
@@ -191,15 +207,18 @@ export const NewAssessmentPage: React.FC = () => {
         if (!periodId) return;
         try {
             const values = await valueForm.validateFields();
+            const isUnmeasurable = !!values.unmeasurable;
             await createValue({
                 id: periodId,
                 body: {
                     characteristic: values.characteristic!,
                     subcharacteristic: values.subcharacteristic!,
                     formula_type: formulaFor(values.characteristic!, values.subcharacteristic!),
-                    val_a: values.val_a ?? null,
-                    val_b: values.val_b ?? null,
+                    val_a: isUnmeasurable ? null : (values.val_a ?? null),
+                    val_b: isUnmeasurable ? null : (values.val_b ?? null),
                     expert_comment: values.expert_comment,
+                    unmeasurable: isUnmeasurable,
+                    artifact_links: values.artifact_links,
                 },
             }).unwrap();
             message.success('Оценка добавлена');
@@ -291,7 +310,7 @@ export const NewAssessmentPage: React.FC = () => {
                 <div>
                     <Title level={3} style={{ color: '#1F3864', marginBottom: 8 }}>Новая оценка ИС</Title>
                     <Text type="secondary">
-                        Оценка по модели качества ISO/IEC 25010: 8 характеристик и {TOTAL_SUBS} подхарактеристик.
+                        Оценка качества: 8 характеристик и {TOTAL_SUBS} подхарактеристик.
                         Оценка учитывается только при полном заполнении.
                     </Text>
                 </div>
@@ -432,8 +451,9 @@ export const NewAssessmentPage: React.FC = () => {
                                 rowKey="key"
                                 size="small"
                                 bordered
-                                pagination={{ pageSize: 12, hideOnSinglePage: true }}
-                                scroll={{ x: 900 }}
+                                sticky
+                                pagination={false}
+                                scroll={{ x: 900, y: 460 }}
                                 rowClassName={(rec) => (rec.x == null ? '' : 'ant-table-row-selected')}
                             />
                             <Text type="secondary" style={{ fontSize: 12 }}>
@@ -442,6 +462,10 @@ export const NewAssessmentPage: React.FC = () => {
                             </Text>
                         </Space>
                     </Card>
+                )}
+                {/* Профессиональные суждения по каждой подхарактеристике (задача QM) + напоминание */}
+                {periodId && (
+                    <ProfessionalJudgmentsPanel periodId={periodId} periodLabel={activeSummary?.period || ''} />
                 )}
             </Space>
 
@@ -530,30 +554,74 @@ export const NewAssessmentPage: React.FC = () => {
                             notFoundContent="Все подхарактеристики этой характеристики заполнены"
                         />
                     </Form.Item>
+                    {selectedSub && (
+                        <Alert
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message={selectedSub}
+                            description={subDescription(selectedChar, selectedSub)}
+                        />
+                    )}
+                    <Form.Item name="unmeasurable" valuePropName="checked" style={{ marginBottom: 8 }}>
+                        <Checkbox>
+                            Невозможно измерить&nbsp;
+                            <Tooltip title="Нет возможности собрать данные. A/B не заполняются, комментарий с причиной обязателен.">
+                                <Text type="secondary" style={{ fontSize: 12 }}>(нет данных — почему?)</Text>
+                            </Tooltip>
+                        </Checkbox>
+                    </Form.Item>
                     <Space size="middle" style={{ display: 'flex' }} align="start">
                         <Form.Item
                             name="val_a"
-                            label="Значение A (факт)"
+                            label={(
+                                <Tooltip title="A — фактически достигнутое значение (числитель): для прямых метрик «сколько выполнено/достигнуто», для обратных — «сколько проблем/дефектов/отказов».">
+                                    <span>Значение A (факт) ⓘ</span>
+                                </Tooltip>
+                            )}
                             style={{ flex: 1 }}
-                            rules={[{ required: true, message: 'Введите A' }]}
+                            extra="Числитель формулы"
+                            rules={unmeasurable ? [] : [{ required: true, message: 'Введите A' }]}
                         >
-                            <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="A" />
+                            <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="A" disabled={unmeasurable} />
                         </Form.Item>
                         <Form.Item
                             name="val_b"
-                            label="Значение B (база)"
+                            label={(
+                                <Tooltip title="B — база сравнения (знаменатель): план/цель или общий объём (число требований, проверок, инцидентов, часов). B > 0.">
+                                    <span>Значение B (база) ⓘ</span>
+                                </Tooltip>
+                            )}
                             style={{ flex: 1 }}
-                            rules={[{ required: true, message: 'Введите B' }]}
+                            extra="Знаменатель формулы"
+                            rules={unmeasurable ? [] : [{ required: true, message: 'Введите B' }]}
                         >
-                            <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="B" />
+                            <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="B" disabled={unmeasurable} />
                         </Form.Item>
                     </Space>
-                    <Form.Item name="expert_comment" label="Комментарий / экспертное мнение">
-                        <Input.TextArea rows={3} />
+                    <Form.Item
+                        name="expert_comment"
+                        label={unmeasurable ? 'Причина: почему нельзя измерить (обязательно)' : 'Комментарий / экспертное мнение'}
+                        rules={unmeasurable ? [{ required: true, message: 'Укажите причину, почему нет возможности собрать данные' }] : []}
+                    >
+                        <Input.TextArea rows={3} placeholder={unmeasurable ? 'Нет доступа к данным мониторинга / нет инструментов измерения …' : ''} />
                     </Form.Item>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                        Тип формулы берётся из модели. X = A/B (DIRECT) или 1 − A/B (INVERSE).
-                    </Text>
+                    <Form.Item
+                        name="artifact_links"
+                        label={(
+                            <Tooltip title="Подтверждающие артефакты: ссылка на отчёт/дашборд, файл выгрузки, протокол теста, тикет. Требуются для обоснования оценки подхарактеристики.">
+                                <span>Артефакты (файл / ссылка) ⓘ</span>
+                            </Tooltip>
+                        )}
+                        extra={subArtifacts(selectedSub)}
+                    >
+                        <Input placeholder="https://… или путь к файлу / № тикета" />
+                    </Form.Item>
+                    {!unmeasurable && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            Тип формулы берётся из модели. X = A/B (прямая) или 1 − A/B (обратная).
+                        </Text>
+                    )}
                 </Form>
             </Modal>
         </div>

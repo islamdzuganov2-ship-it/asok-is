@@ -11,6 +11,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const ExecutiveDashboard = lazy(() => import('./pages/dashboard/ExecutiveDashboard'));
 const ManagerDashboard = lazy(() => import('./pages/dashboard/ManagerDashboard'));
 const QualityDynamicsPage = lazy(() => import('./pages/dashboard/QualityDynamicsPage'));
+const TaskPlanDashboard = lazy(() => import('./pages/dashboard/TaskPlanDashboard'));
 const AssessmentWorkspacePage = lazy(() => import('./pages/AssessmentWorkspacePage'));
 const MetricsInputPage = lazy(() => import('./pages/MetricsInputPage'));
 const ExpertReviewPage = lazy(() => import('./pages/ExpertReviewPage'));
@@ -68,7 +69,8 @@ export const App: React.FC = () => {
                             <Route path="dashboard/analytics" element={<DashboardPage />} />
                             <Route path="dashboard/executive" element={<RequireRole allowedRoles={['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><ExecutiveDashboard /></RequireRole>} />
                             <Route path="dashboard/manager" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><ManagerDashboard /></RequireRole>} />
-                            <Route path="dashboard/manager/dynamics" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><QualityDynamicsPage /></RequireRole>} />
+                            <Route path="dashboard/manager/dynamics" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><QualityDynamicsPage /></RequireRole>} />
+                            <Route path="dashboard/taskplan" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><TaskPlanDashboard /></RequireRole>} />
                             <Route path="assessments/new" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><AssessmentWorkspacePage /></RequireRole>} />
                             <Route path="assessments/:id/input" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><MetricsInputPage /></RequireRole>} />
                             <Route path="assessments/:id/review" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><ExpertReviewPage /></RequireRole>} />

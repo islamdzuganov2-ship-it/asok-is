@@ -17,6 +17,7 @@ import { RAG, ragToken, levelLabel, BRAND, critTagStyle } from '../../theme/ragP
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
+import MeasuresAiAnalyticsCard from '../../components/MeasuresAiAnalyticsCard';
 import { TechDebtCard } from '../../components/TechDebtCard';
 import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 import { QUALITY_MODEL } from '../../constants/qualityModel';
@@ -263,7 +264,7 @@ const ExecutiveDashboard: React.FC = () => {
           <Space align="start">
             <RobotOutlined style={{ color: BRAND.ink, fontSize: 18, marginTop: 2 }} />
             <div>
-              <Text strong style={{ color: BRAND.ink }}>AI-резюме (встроенная LLM, без галлюцинаций)</Text>
+              <Text strong style={{ color: BRAND.ink }}>AI-резюме</Text>
               {liveLoading && <div style={{ marginTop: 8 }}><Spin size="small" /> <Text type="secondary">Генерация на локальной модели…</Text></div>}
               {liveError && (
                 <Alert
@@ -281,6 +282,9 @@ const ExecutiveDashboard: React.FC = () => {
           </Space>
         </Card>
       )}
+
+      {/* Топ проблемных ИС — AI-аналитика по мерам (предложения LLM, не карточки) */}
+      <MeasuresAiAnalyticsCard proposals={proposals} />
 
       {/* ТОП-3 проблемных ИС */}
       <Row align="middle" justify="space-between" style={{ marginBottom: 4 }}>

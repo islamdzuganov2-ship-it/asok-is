@@ -48,6 +48,10 @@ const QualityDynamicsPage: React.FC = () => {
     color: LINE_COLORS,
     series: dyn.chars.map((c) => ({
       name: c.name, type: 'line', smooth: true, symbolSize: 7, connectNulls: false,
+      // Кликабельна вся ЛИНИЯ, а не только точки квартала.
+      triggerLineEvent: true,
+      emphasis: { focus: 'series', lineStyle: { width: 4 } },
+      lineStyle: { width: 2 },
       data: c.series.map((v) => (v < 0 ? null : v)),
     })),
   }), [dyn]);
@@ -98,7 +102,7 @@ const QualityDynamicsPage: React.FC = () => {
       <Card
         title={<span style={{ color: BRAND.ink }}>Качество по характеристикам во времени</span>}
         style={{ marginTop: 16, borderColor: BRAND.divider }}
-        extra={<Text type="secondary" style={{ fontSize: 12 }}>клик по точке — причины изменения</Text>}
+        extra={<Text type="secondary" style={{ fontSize: 12 }}>клик по линии или точке — причины изменения</Text>}
       >
         <ReactECharts
           option={charChartOption}

@@ -20,6 +20,8 @@ import { MANAGER_SCALE_SYSTEMS as MANAGER_MOCK_SYSTEMS } from '../../data/mockSc
 import { RAG, ragToken, levelLabel, BRAND } from '../../theme/ragPalette';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
+import MeasureDevelopmentPanel from '../../components/MeasureDevelopmentPanel';
+import FilledJudgmentsCard from '../../components/FilledJudgmentsCard';
 import { ProposalStatus, selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 
 const { Title, Text } = Typography;
@@ -66,6 +68,7 @@ const ManagerDashboard: React.FC = () => {
   const [charKey, setCharKey] = useState<string>(MANAGER_MOCK_SYSTEMS[0].characteristics[0].key);
   const [target, setTarget] = useState<JudgmentTarget | null>(null);
   const [selectedMeasure, setSelectedMeasure] = useState<Proposal | null>(null);
+  const [showAllMeasures, setShowAllMeasures] = useState(false);
 
   // LLM-режим: тянем реальные оценки из БД.
   useEffect(() => {
@@ -103,6 +106,11 @@ const ManagerDashboard: React.FC = () => {
   const myProposals = system
     ? visibleProposals.filter((p) => p.systemName === system.name)
     : visibleProposals;
+  // Показываем 3 самых критичных (наименьший балл), остальное — по раскрытию.
+  const shownProposals = useMemo(() => {
+    const sorted = [...myProposals].sort((a, b) => a.calculatedScore - b.calculatedScore);
+    return showAllMeasures ? sorted : sorted.slice(0, 3);
+  }, [myProposals, showAllMeasures]);
 
   const characteristic = system?.characteristics.find((c) => c.key === charKey) ?? system?.characteristics[0];
   const charTok = scoreTok(characteristic?.score ?? -1);
@@ -261,6 +269,9 @@ const ManagerDashboard: React.FC = () => {
         </Row>
       )}
 
+      {/* Выработка мер по систематическим проблемам (фактура + рекомендация ИИ → топ-менеджмент) */}
+      {showData && <MeasureDevelopmentPanel systemName={system!.name} system={system} />}
+
       {/* Меры/намерения, поставленные менеджером (видны топ-менеджменту) */}
       <Card
         title={<span style={{ color: BRAND.ink }}>Поставленные меры и намерения{showData ? ` — «${system!.name}»` : ''}</span>}
@@ -273,7 +284,14 @@ const ManagerDashboard: React.FC = () => {
           </Text>
         ) : (
           <List
-            dataSource={myProposals}
+            dataSource={shownProposals}
+            footer={myProposals.length > 3 ? (
+              <div style={{ textAlign: 'center' }}>
+                <Button type="link" onClick={() => setShowAllMeasures(!showAllMeasures)}>
+                  {showAllMeasures ? 'Свернуть' : `Показать все (${myProposals.length})`}
+                </Button>
+              </div>
+            ) : undefined}
             renderItem={(p) => {
               const meta = STATUS_META[p.status];
               return (
@@ -311,6 +329,9 @@ const ManagerDashboard: React.FC = () => {
           />
         )}
       </Card>
+
+      {/* Заполненные профессиональные суждения по выбранной ИС (связь характеристика + система) */}
+      {showData && <FilledJudgmentsCard systemName={system!.name} />}
 
       <ProfessionalJudgmentModal open={!!target} target={target} onClose={() => setTarget(null)} />
       <MeasureDecisionModal
