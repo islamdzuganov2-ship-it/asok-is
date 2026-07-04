@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.main import app
-from app.db.base import Base
+from app.infrastructure.database import Base
 
 @pytest.fixture(scope="session")
 def anyio_backend():

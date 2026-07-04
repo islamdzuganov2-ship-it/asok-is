@@ -1,5 +1,5 @@
 """Юнит-тесты контроля безопасности конфигурации (дефолтные секреты)."""
-from app.core.config import Settings
+from app.infrastructure.config import Settings
 
 
 def test_flags_insecure_defaults():

@@ -4,8 +4,8 @@ from sqlalchemy import String, DateTime
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Column, String, Integer, ForeignKey
-from app.db.base import Base
-from app.models.base_mixin import TimestampMixin
+from app.infrastructure.database import Base
+from app.shared.db import TimestampMixin
 
 class ExpertJudgment(Base):
     __tablename__ = "expert_judgments"

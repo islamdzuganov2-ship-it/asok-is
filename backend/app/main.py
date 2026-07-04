@@ -6,11 +6,12 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import settings
 from app.api.v1.api import api_router
-from app.core.database import engine
-from app.db.base import Base
+from app.infrastructure.config import settings
+from app.infrastructure.database import Base, engine, import_models
 from app.scripts.seed_iso25010 import seed_iso25010_async
+
+import_models()  # реестр моделей: полная Base.metadata для стартового create_all (ТЗ v13)
 
 logger = logging.getLogger(__name__)
 

@@ -9,10 +9,10 @@ import sys
 # Добавляем путь к приложению для импортов
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.db.base import Base
-from app.models.system import System
-from app.models.metric_catalog import MetricCatalog
-from app.models.assessment import AssessmentPeriod, AssessmentValue, ExpertJudgmentHistory
+# Единый Base + реестр моделей (доменно-модульный монолит, ТЗ v13).
+from app.infrastructure.database import Base, import_models
+
+import_models()  # регистрирует модели всех модулей в Base.metadata (для autogenerate)
 
 # Alembic Config object
 config = context.config

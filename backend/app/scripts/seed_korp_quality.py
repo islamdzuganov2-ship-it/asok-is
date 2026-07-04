@@ -2,11 +2,10 @@ import asyncio
 
 from sqlalchemy import select
 
-from app.core.database import AsyncSessionLocal
-from app.models.assessment import AssessmentPeriod, AssessmentValue
-from app.models.metric_catalog import FormulaType, MetricCatalog
-from app.models.system import CriticalityClass, LifecycleStatus, System
-from app.services.calculation_engine import map_to_level
+from app.infrastructure.database import AsyncSessionLocal
+from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
+from app.modules.quality import FormulaType, MetricCatalog, map_to_level
+from app.modules.systems import CriticalityClass, LifecycleStatus, System
 
 
 PERIODS = ["3Q 2024", "4Q 2024", "1Q 2025", "2Q 2025", "3Q 2025", "4Q 2025"]

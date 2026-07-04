@@ -2,7 +2,7 @@
 import pytest
 from fastapi import HTTPException
 
-from app.api.v1 import excel_upload as ex
+from app.modules.dataio import router as ex
 
 
 def test_normalize_header():

@@ -2,7 +2,7 @@
 import pytest
 from jose import JWTError
 
-from app.core.security import (
+from app.modules.iam.security import (
     create_access_token,
     create_refresh_token,
     decode_token,

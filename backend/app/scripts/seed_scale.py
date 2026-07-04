@@ -17,12 +17,13 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from app.db.base import Base
-from app.models.system import System, CriticalityClass, LifecycleStatus
-from app.models.assessment import AssessmentPeriod, AssessmentValue
-from app.models.metric_catalog import MetricCatalog
-from app.services.calculation_engine import calculate_metric, map_to_level
+from app.infrastructure.database import Base, import_models
+from app.modules.systems import System, CriticalityClass, LifecycleStatus
+from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
+from app.modules.quality import MetricCatalog, calculate_metric, map_to_level
 from app.scripts.seed_metrics import METRICS_DATA
+
+import_models()  # полная Base.metadata для create_all
 
 PERIOD = "Q2-2026"
 

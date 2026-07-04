@@ -1,5 +1,5 @@
 """Юнит-тесты встроенной LLM: честный fallback и защита от галлюцинаций (grounding)."""
-import app.services.llm_service as llm
+import app.modules.llm.service as llm
 
 
 def setup_function():

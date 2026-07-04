@@ -1,5 +1,5 @@
 import pytest
-from app.services.calculation_engine import calculate_metric, map_to_level
+from app.modules.quality import calculate_metric, map_to_level
 
 def test_calculate_metric_direct():
     """Тестирование прямых метрик (чем больше, тем лучше)."""

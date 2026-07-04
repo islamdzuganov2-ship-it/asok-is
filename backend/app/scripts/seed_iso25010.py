@@ -12,9 +12,8 @@ import asyncio
 
 from sqlalchemy import select, text
 
-from app.constants.quality_model import QUALITY_MODEL
-from app.core.database import AsyncSessionLocal
-from app.models.metric_catalog import FormulaType, MetricCatalog
+from app.infrastructure.database import AsyncSessionLocal
+from app.modules.quality import QUALITY_MODEL, FormulaType, MetricCatalog
 
 
 async def seed_iso25010_async() -> dict[str, int]:

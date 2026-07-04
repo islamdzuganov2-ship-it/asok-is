@@ -12,8 +12,10 @@ from sqlalchemy import select
 # Добавляем корень проекта (backend/) в sys.path, чтобы работали импорты app.*
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from app.models.metric_catalog import MetricCatalog, FormulaType
-from app.db.base import Base
+from app.modules.quality.models import MetricCatalog, FormulaType
+from app.infrastructure.database import Base, import_models
+
+import_models()  # полная Base.metadata для create_all
 
 METRICS_DATA = [
     {

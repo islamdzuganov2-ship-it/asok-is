@@ -75,9 +75,27 @@ cmake -B build && cmake --build build --config Release -j
 Grounding-контроль (temperature 0.1 + пост-проверка процентов) сохраняется на всех уровнях —
 дообучение меняет стиль, но не отменяет запрет на выдуманные числа.
 
-## Файлы
-- `backend/app/scripts/export_llm_dataset.py` — экспорт корпуса.
-- `backend/llm/train_lora.py` — QLoRA-дообучение.
-- `backend/llm/Modelfile` — сборка через Ollama.
-- `backend/app/services/llm_service.py` — инференс, grounding, `generate_judgment_conclusion` (RAG-самообучение).
-- Связано: `docs/LLM_SETUP.md`, `docs/ТЗ_LLM_MVP_v10.md`.
+## 9. Многоаспектное рассуждение (Дао Тойота) — обновление знаний обучения (BL‑005)
+
+Чтобы LLM мыслила **не однобоко** и выносила заключение руководителю только после разбора,
+принципы Дао Тойота переложены на IT и встроены в обучение (не противоречат ISO 25010 / 38500).
+Полная методология — манифест в базе знаний Obsidian: `AI/АСОК_ИС/09_Манифест_LLM_Дао-Тойота.md`.
+
+Как это меняет **обучение** (в дополнение к уровням A/B/C выше):
+- **A (промпт):** системный промпт задаёт конвейер Генти-Генбуцу → 5 Почему → Немаваси (ролевые
+  линзы) → Дзидока (grounding) → Хансей → заключение ЛПР; few-shot содержит пример с трассой.
+- **B (RAG):** `history_block` дополняется активированными рисками и прошлыми линзами (преемственность).
+- **C (LoRA):** обучающий пример теперь содержит **трассу рассуждения** (первопричина + линзы +
+  саморефлексия), а не только `output`. Реализовано: `export_llm_dataset` пишет поле `reasoning`
+  (детерминированная трасса `run_reasoning(use_llm=False).as_training_block()`).
+
+Guardrails (grounding, temperature 0.1, пост-проверка чисел) сохраняются на всех этапах.
+
+## Файлы (модульный монолит, ТЗ v13; shim-слои удалены задачей #18)
+- `backend/app/modules/llm/service.py` — инференс, grounding, `generate_judgment_conclusion` (RAG-самообучение).
+- `backend/app/modules/llm/prompts.py` — системные промпты + ролевые промпты конвейера (REASONING_*).
+- `backend/app/modules/llm/dataset.py` — экспорт корпуса (запуск прежний: `python -m app.scripts.export_llm_dataset`).
+- `backend/app/modules/llm/reasoning.py` — ✅ конвейер многоаспектного рассуждения (BL‑005): Э0–Э7,
+  4 линзы, Дзидока-фильтры (grounding/плейсхолдеры/вырождение), fallback без модели; тесты `tests/test_reasoning.py`.
+- `backend/llm/train_lora.py` — QLoRA-дообучение; `backend/llm/Modelfile` — сборка через Ollama.
+- Связано: `docs/LLM_SETUP.md`, `docs/ТЗ_LLM_MVP_v10.md`, `docs/ТЗ_Модульный_Монолит_v13.md`.

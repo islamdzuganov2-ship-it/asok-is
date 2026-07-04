@@ -1,11 +1,11 @@
 import asyncio
-from app.core.database import engine, Base
-# Импортируем все модели для их регистрации в Base
-from app.models.user import User
-from app.models.system import System
-from app.models.assessment import AssessmentPeriod, AssessmentValue
-from app.models.metric_catalog import MetricCatalog, MetricCharacteristic, MetricAttribute
-from app.models.audit import ExpertJudgment
+
+from app.infrastructure.database import Base, engine, import_models
+
+# Реестр моделей всех модулей (ТЗ v13) + легаси-модели аудита вне реестра.
+import_models()
+from app.models.audit import AuditLog, ExpertJudgment  # noqa: F401, E402
+
 
 async def init_tables():
     async with engine.begin() as conn:

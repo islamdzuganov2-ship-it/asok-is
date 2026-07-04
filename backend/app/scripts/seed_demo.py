@@ -4,13 +4,11 @@ import uuid
 
 from sqlalchemy import select
 
-from app.core.database import AsyncSessionLocal
-from app.core.security import get_password_hash
-from app.models.assessment import AssessmentPeriod, AssessmentValue
-from app.models.metric_catalog import MetricCatalog
-from app.models.system import CriticalityClass, System
-from app.models.user import User
-from app.services.calculation_engine import calculate_metric, map_to_level
+from app.infrastructure.database import AsyncSessionLocal
+from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
+from app.modules.iam import User, get_password_hash
+from app.modules.quality import MetricCatalog, calculate_metric, map_to_level
+from app.modules.systems import CriticalityClass, System
 
 
 async def seed_data() -> None:

@@ -1,14 +1,19 @@
 from fastapi import APIRouter
 
-from app.api.v1 import excel_upload, reports, risk_base
-from app.api.v1.endpoints import assessments, auth, metrics, systems
+from app.modules.assessment.router import router as assessments_router  # домен assessment мигрирован (ТЗ v13)
+from app.modules.dataio.router import router as excel_router  # домен dataio мигрирован (ТЗ v13)
+from app.modules.iam.router import router as auth_router  # домен iam мигрирован (ТЗ v13)
+from app.modules.quality.router import router as metrics_router  # домен quality мигрирован (ТЗ v13)
+from app.modules.reporting.router import router as reporting_router  # домен reporting мигрирован (ТЗ v13)
+from app.modules.risk.router import router as risk_router  # домен risk мигрирован (ТЗ v13)
+from app.modules.systems.router import router as systems_router  # домен systems мигрирован (ТЗ v13)
 
 api_router = APIRouter()
 
-api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
-api_router.include_router(systems.router, prefix="/systems", tags=["systems"])
-api_router.include_router(assessments.router, prefix="/assessments", tags=["assessments"])
-api_router.include_router(metrics.router, prefix="/metrics", tags=["metrics"])
-api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
-api_router.include_router(excel_upload.router, prefix="/excel", tags=["excel"])
-api_router.include_router(risk_base.router, prefix="/risks", tags=["risks"])
+api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
+api_router.include_router(systems_router, prefix="/systems", tags=["systems"])
+api_router.include_router(assessments_router, prefix="/assessments", tags=["assessments"])
+api_router.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
+api_router.include_router(reporting_router, prefix="/reports", tags=["reports"])
+api_router.include_router(excel_router, prefix="/excel", tags=["excel"])
+api_router.include_router(risk_router, prefix="/risks", tags=["risks"])

@@ -1,15 +1,10 @@
 import asyncio
 
-from app.core.database import engine
-from app.db.base import Base
+from app.infrastructure.database import Base, engine, import_models
 
-# Import models so Base.metadata contains the complete schema.
-from app.models.assessment import AssessmentPeriod, AssessmentValue, ExpertJudgmentHistory  # noqa: F401
-from app.models.audit import AuditLog  # noqa: F401
-from app.models.matrices import DefectMatrix, QualityPlanMatrix, RiskMatrix  # noqa: F401
-from app.models.metric_catalog import MetricAttribute, MetricCatalog, MetricCharacteristic  # noqa: F401
-from app.models.system import System  # noqa: F401
-from app.models.user import User  # noqa: F401
+# Регистрируем модели всех модулей, чтобы Base.metadata содержал полную схему.
+import_models()
+from app.models.audit import AuditLog  # noqa: F401, E402  (легаси-модель вне реестра)
 
 
 async def init_tables() -> None:

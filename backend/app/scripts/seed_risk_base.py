@@ -12,8 +12,10 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from app.db.base import Base
-from app.models.risk_base import RiskBase
+from app.infrastructure.database import Base, import_models
+from app.modules.risk.models import RiskBase
+
+import_models()  # полная Base.metadata для create_all
 
 RISKS = [
     {

@@ -3,7 +3,7 @@
 Гарантируют, что замусоренные/легаси имена из Excel-импорта приводятся к 8 каноническим
 характеристикам — иначе дашборды/теплокарты двоятся (как было до правки).
 """
-from app.constants.quality_model import ABBR, CHARACTERISTICS, canonical_characteristic
+from app.modules.quality import ABBR, CHARACTERISTICS, canonical_characteristic
 
 
 def test_canonical_exact_and_case():

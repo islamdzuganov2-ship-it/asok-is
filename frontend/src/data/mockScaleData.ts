@@ -56,10 +56,25 @@ const SYSTEM_NAMES = [
 
 const CRITICALITY: ExecSystemInsight['criticality'][] = ['MISSION CRITICAL', 'BUSINESS CRITICAL', 'BUSINESS OPERATIONAL'];
 
-const RESP_FIO = 'Иванов И.И.';
-const RESP_ROLE = 'Руководитель ИТ-блока';
-const RESPONSIBLE = `${RESP_ROLE} (${RESP_FIO})`;
-const ESCALATE = 'CTO';
+// Ролевой подход к данным: ответственный зависит от характеристики (кто реально чинит),
+// адресат эскалации — от критичности ИС (кому докладывать: CIO/CTO/руководитель ИТ-блока).
+const OWNER_BY_CHAR: Record<string, { fio: string; role: string }> = {
+  'Функциональная пригодность': { fio: 'Петрова А.С.', role: 'Руководитель разработки' },
+  'Производительность':         { fio: 'Сидоров К.М.', role: 'Руководитель эксплуатации' },
+  'Совместимость':              { fio: 'Николаев Д.А.', role: 'Архитектор решений' },
+  'Удобство использования':     { fio: 'Петрова А.С.', role: 'Руководитель разработки' },
+  'Надёжность':                 { fio: 'Сидоров К.М.', role: 'Руководитель эксплуатации' },
+  'Защищённость':               { fio: 'Смирнов В.П.', role: 'Руководитель ИБ' },
+  'Сопровождаемость':           { fio: 'Козлова Е.В.', role: 'Руководитель тестирования' },
+  'Переносимость':              { fio: 'Николаев Д.А.', role: 'Архитектор решений' },
+};
+const FALLBACK_OWNER = { fio: 'Иванов И.И.', role: 'Руководитель ИТ-блока' };
+const ownerOf = (char: string) => OWNER_BY_CHAR[char] ?? FALLBACK_OWNER;
+const ESCALATE_BY_CRIT: Record<ExecSystemInsight['criticality'], string> = {
+  'MISSION CRITICAL': 'CIO',
+  'BUSINESS CRITICAL': 'CTO',
+  'BUSINESS OPERATIONAL': 'Руководитель ИТ-блока',
+};
 
 // Рекомендации/обоснования по характеристике (для AI-резюме и реестра мер).
 const REC: Record<string, { rationale: string; action: string; risk: string; actions: string[] }> = {
@@ -165,6 +180,7 @@ const formulaStr = (m: GenMetric) =>
 // --- EXECUTIVE_SCALE ---
 const execSystems: ExecSystemInsight[] = SORTED.map((sys) => {
   const rec = REC[sys.weakest.def.title];
+  const own = ownerOf(sys.weakest.def.title);
   return {
     id: `sys-${hashStr(sys.name)}`,
     name: sys.name,
@@ -174,8 +190,8 @@ const execSystems: ExecSystemInsight[] = SORTED.map((sys) => {
     aiSummary: `Интегральная оценка качества — ${pct(sys.score)}% (${levelLabel(pct(sys.score)).toLowerCase()}). `
       + `Наиболее просевшая характеристика — ${sys.weakest.def.title} (${pct(sys.weakest.score)}%). ${rec.rationale}`,
     recommendation: rec.action,
-    owner: RESPONSIBLE,
-    escalateTo: ESCALATE,
+    owner: `${own.role} (${own.fio})`,
+    escalateTo: ESCALATE_BY_CRIT[sys.criticality],
     actions: rec.actions,
   };
 });
@@ -230,6 +246,8 @@ function buildProposals(): Proposal[] {
 
     for (const t of targets) {
       const rec = REC[t.char];
+      const own = ownerOf(t.char);
+      const escalateTo = ESCALATE_BY_CRIT[sys.criticality];
       const unmeasurable = t.m.x < 0;
       const score = unmeasurable ? 0 : pct(t.m.x);
       const level = unmeasurable ? 'Невозможно измерить' : levelLabel(score);
@@ -240,6 +258,10 @@ function buildProposals(): Proposal[] {
       const bucket = i % 10;
       const status: Proposal['status'] =
         bucket < 7 ? 'PENDING_APPROVAL' : bucket < 9 ? 'APPROVED' : 'REJECTED';
+      const approved = status === 'APPROVED';
+      // Контроль выполнения: часть одобренных выполнена, часть сорвана (→ эскалация), часть в работе.
+      const execDone = approved && i % 3 === 0;
+      const execFailed = approved && i % 3 === 1;
       items.push({
         id: `scale-${hashStr(sys.name)}-${i}`,
         systemName: sys.name,
@@ -251,24 +273,34 @@ function buildProposals(): Proposal[] {
         rationale: `${rec.rationale} ${metricInfo}`,
         createRisk: true,
         riskTitle: `${rec.risk}: ${t.char}`,
-        owner: RESP_FIO,
-        ownerRole: RESP_ROLE,
+        owner: own.fio,
+        ownerRole: own.role,
         dueDate: DUE_DATES[i % DUE_DATES.length],
-        expectation: `Прошу одобрить меру: ${rec.action} Ответственный — ${RESPONSIBLE}.`,
+        expectation: `Прошу одобрить меру: ${rec.action} Ответственный — ${own.role} (${own.fio}). `
+          + `Критичность ИС: ${sys.criticality}; при срыве срока эскалация на уровень ${escalateTo}.`,
         createdBy: 'Менеджер по качеству',
         createdAt: new Date(2026, 5, 1 + (i % 25)).toISOString(),
         status,
         ...(status !== 'PENDING_APPROVAL'
-          ? { decidedBy: ESCALATE, decidedAt: new Date(2026, 5, 10).toISOString(),
-              decisionComment: status === 'APPROVED' ? 'Согласовано, включить в план квартала.' : 'Отклонено: пересмотреть приоритет и срок.' }
+          ? { decidedBy: escalateTo, decidedAt: new Date(2026, 5, 10).toISOString(),
+              decisionComment: approved ? 'Согласовано, включить в план квартала.' : 'Отклонено: пересмотреть приоритет и срок.' }
           : {}),
-        // Контроль выполнения: часть одобренных — выполнены, часть — нет, часть ждут выполнения.
-        ...(status === 'APPROVED' && i % 3 === 0
+        ...(execDone
           ? { execution: 'DONE' as const, executionComment: 'Выполнено: ресурс выделен, мера закрыта.',
-              executedBy: 'Менеджер по качеству', executedAt: new Date(2026, 5, 18).toISOString() }
-          : status === 'APPROVED' && i % 3 === 1
+              executedBy: 'Менеджер по качеству', executedAt: new Date(2026, 5, 18).toISOString(),
+              suzLink: `SUZ-2026-${1000 + i}` }
+          : execFailed
           ? { execution: 'NOT_DONE' as const, executionComment: 'Не выполнено: не выделен бюджет, перенос на следующий квартал.',
-              executedBy: 'Менеджер по качеству', executedAt: new Date(2026, 5, 18).toISOString() }
+              executedBy: 'Менеджер по качеству', executedAt: new Date(2026, 5, 18).toISOString(),
+              suzLink: `SUZ-2026-${1000 + i}`,
+              // Срыв выполнения по критичной ИС МК эскалирует наверх; часть эскалаций уже решена.
+              escalated: true,
+              escalationReason: 'Мера не выполнена в срок: бюджет не выделен, ответственный перегружен. Требуется решение по приоритету.',
+              ...(i % 6 === 1
+                ? { escalationDecision: 'REQUEST_MEASURES' as const,
+                    escalationDecisionComment: `Выделить бюджет из резерва блока, срок — следующий квартал. Контроль — ${escalateTo}.`,
+                    escalationDecidedBy: escalateTo }
+                : {}) }
           : {}),
       });
       i++;
@@ -377,19 +409,94 @@ function makeSeries(seed: string, current: number): number[] {
 }
 
 export interface DynSeries { key: string; name: string; char: string; series: number[] }
-export interface SystemDynamics { name: string; chars: DynSeries[]; subs: DynSeries[] }
+export interface SystemDynamics { name: string; system: DynSeries; chars: DynSeries[]; subs: DynSeries[] }
+
+/** Порог аномалии: изменение к предыдущему кварталу на ≥ 12 п.п. — рост или просадка. */
+export const ANOMALY_THRESHOLD = 12;
+
+/** Индексы кварталов с аномальным изменением (|Δ| ≥ порога) относительно предыдущей оценки. */
+export function detectAnomalies(series: number[], threshold = ANOMALY_THRESHOLD): number[] {
+  const out: number[] = [];
+  for (let i = 1; i < series.length; i += 1) {
+    if (series[i] >= 0 && series[i - 1] >= 0 && Math.abs(series[i] - series[i - 1]) >= threshold) out.push(i);
+  }
+  return out;
+}
+
+// Сценарные аномалии по характеристикам (система, характеристика, квартал, сдвиг в п.п.).
+// У части задана причина — она «заполнена менеджером по качеству»; у остальных причины НЕТ,
+// и МК получает уведомление о необходимости заполнить её (см. NotificationBell).
+const CHAR_ANOMALIES: { sys: string; char: string; q: number; shift: number; reason?: string }[] = [
+  { sys: 'АБС «Ядро»', char: 'Надёжность', q: 3, shift: -24,
+    reason: 'Инцидент P1: деградация СУБД после релиза 2.14, выполнен откат. RCA закрыт, введён обязательный нагрузочный прогон перед релизом.' },
+  { sys: 'АБС «Ядро»', char: 'Производительность', q: 4, shift: 18,
+    reason: 'Плановая мера Q4-2025: оптимизация топ-5 запросов и кэширование справочников — время отклика в пиковые окна снижено на 40%.' },
+  { sys: 'ДБО Розница', char: 'Защищённость', q: 2, shift: -20 },                 // причина не заполнена
+  { sys: 'ДБО Розница', char: 'Надёжность', q: 4, shift: 15,
+    reason: 'Программа стабилизации: MTTR сокращён с 4 ч до 40 мин (runbook + выделенные дежурные смены).' },
+  { sys: 'Процессинг карт', char: 'Производительность', q: 3, shift: -18 },       // причина не заполнена
+  { sys: 'CRM ОПК', char: 'Функциональная пригодность', q: 2, shift: -16,
+    reason: 'Выпуск MVP-модуля без полного приёмочного цикла: выросла доля непокрытых требований. План доработок утверждён.' },
+  { sys: 'Мобильный банк', char: 'Удобство использования', q: 4, shift: 16 },     // причина не заполнена
+  { sys: 'Кредитный конвейер', char: 'Сопровождаемость', q: 3, shift: -15,
+    reason: 'Слияние веток legacy-модуля повысило связность кода; рефакторинг запланирован на Q1-2026.' },
+];
+
+// Системные аномалии: сдвиг всех характеристик ИС в квартале (массовый инцидент / крупный релиз) —
+// аномалия видна и на интегральном ряде «Качество информационной системы».
+const SYSTEM_ANOMALIES: { sys: string; q: number; shift: number; reason?: string }[] = [
+  { sys: 'СЭД', q: 3, shift: -14,
+    reason: 'Мажорное обновление платформы: массовые регрессии по всем характеристикам; стабилизационный релиз вышел в Q1-2026.' },
+  { sys: 'Антифрод-платформа', q: 2, shift: 13 },                                  // причина не заполнена
+];
+
+const shiftVal = (v: number, shift: number) =>
+  v < 0 ? v : Math.round(clamp((v + shift) / 100, 0.02, 0.99) * 100);
 
 export const DYNAMICS: Record<string, SystemDynamics> = {};
 SYSTEMS.forEach((sys) => {
+  const chars: DynSeries[] = sys.chars.map((c) => ({
+    key: `char:${c.def.abbr}`, name: c.def.title, char: c.def.title,
+    series: makeSeries(`${sys.name}|c|${c.def.title}`, c.score < 0 ? -1 : pct(c.score)),
+  }));
+  // сценарные сдвиги: по характеристике и по всей системе (кроме последнего квартала — он «текущий»)
+  for (const a of CHAR_ANOMALIES.filter((x) => x.sys === sys.name)) {
+    const cs = chars.find((c) => c.name === a.char);
+    if (cs) cs.series[a.q] = shiftVal(cs.series[a.q], a.shift);
+  }
+  for (const a of SYSTEM_ANOMALIES.filter((x) => x.sys === sys.name)) {
+    chars.forEach((c) => { c.series[a.q] = shiftVal(c.series[a.q], a.shift); });
+  }
+  // интегральный ряд системы = среднее измеримых характеристик в каждом квартале
+  const sysSeries = QUARTERS.map((_, q) => {
+    const vals = chars.map((c) => c.series[q]).filter((v) => v >= 0);
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : -1;
+  });
   DYNAMICS[sys.name] = {
     name: sys.name,
-    chars: sys.chars.map((c) => ({
-      key: `char:${c.def.abbr}`, name: c.def.title, char: c.def.title,
-      series: makeSeries(`${sys.name}|c|${c.def.title}`, c.score < 0 ? -1 : pct(c.score)),
-    })),
+    system: { key: 'system', name: 'Качество информационной системы', char: 'Интегральный показатель', series: sysSeries },
+    chars,
     subs: sys.chars.flatMap((c) => c.metrics.map((m) => ({
       key: `sub:${m.name}`, name: m.name, char: c.def.title,
       series: makeSeries(`${sys.name}|s|${m.name}`, m.x < 0 ? -1 : pct(m.x)),
     }))),
   };
 });
+
+// Предзаполненные причины аномалий (ключ = dynamicsSlice.reasonKey: `система|ключРяда|квартал`).
+// Причина проливается и на интегральный ряд системы — сквозная согласованность уровней.
+export const DYNAMICS_REASONS: Record<string, string> = {};
+const ABBR_OF: Record<string, string> = Object.fromEntries(ISO25010.map((c) => [c.title, c.abbr]));
+for (const a of CHAR_ANOMALIES) {
+  if (!a.reason) continue;
+  DYNAMICS_REASONS[`${a.sys}|char:${ABBR_OF[a.char]}|${QUARTERS[a.q]}`] = a.reason;
+  const sysSer = DYNAMICS[a.sys]?.system.series ?? [];
+  if (detectAnomalies(sysSer).includes(a.q)) DYNAMICS_REASONS[`${a.sys}|system|${QUARTERS[a.q]}`] = a.reason;
+}
+for (const a of SYSTEM_ANOMALIES) {
+  if (!a.reason) continue;
+  DYNAMICS_REASONS[`${a.sys}|system|${QUARTERS[a.q]}`] = a.reason;
+  DYNAMICS[a.sys]?.chars.forEach((c) => {
+    if (detectAnomalies(c.series).includes(a.q)) DYNAMICS_REASONS[`${a.sys}|${c.key}|${QUARTERS[a.q]}`] = a.reason;
+  });
+}
