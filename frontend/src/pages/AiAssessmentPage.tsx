@@ -34,7 +34,7 @@ interface AiValue {
   unmeasurable: boolean; expert_comment: string | null; is_ai_specific: boolean;
 }
 interface AiPeriod { id: string; system_id: string; system_name?: string; period: string; status: string }
-interface CalcOut { q: number | null; level: string; characteristics: Array<{ title: string; score: number }> }
+interface CalcOut { q: number | null; level: string; characteristics: Array<{ title: string; score: number }>; weighted?: boolean }
 interface ConfRow {
   characteristic: string; subcharacteristic: string; metric_kind: string;
   raw_value: number | null; baseline: number | null; tol_low: number | null; tol_high: number | null;
@@ -46,10 +46,29 @@ interface SystemLite { id: string; name: string; code?: string; system_kind?: st
 
 const INPUT_LABEL: Record<string, string> = {
   A: 'A (факт)', B: 'B (база)', TP: 'TP', TN: 'TN', FP: 'FP', FN: 'FN', score: 'Оценка 0–100',
+  y: 'y — фактические значения (CSV)', y_hat: 'ŷ — предсказания (CSV)',
+  rel: 'Релевантности по порядку выдачи (CSV)', curve: 'Точки кривой: x,y; x,y; …',
+  I: 'I — эталонное изображение (пиксели CSV)', I_hat: 'Î — реконструкция (пиксели CSV)',
+  max_i: 'MAX (динамический диапазон, напр. 255)',
 };
+// Поля-массивы вводятся текстом (CSV) и парсятся перед отправкой; curve — парами «x,y; x,y».
+const ARRAY_FIELDS = new Set(['y', 'y_hat', 'rel', 'I', 'I_hat']);
+const CURVE_FIELDS = new Set(['curve']);
+const parseCsv = (s: string): number[] => s.replace(/;/g, ',').split(',').map((p) => p.trim()).filter(Boolean).map(Number);
+const parseCurve = (s: string): number[][] => s.split(';').map((pair) => pair.trim()).filter(Boolean)
+  .map((pair) => pair.split(',').map((p) => Number(p.trim())));
 const VERDICT_TAG: Record<string, string> = {
   'В допуске': 'green', 'Вне допуска': 'red', 'Эталон не задан': 'default',
   'Невозможно измерить': 'default', 'Не рассчитано': 'orange',
+};
+
+// Зеркало METRIC_KINDS бэкенда (modules/quality/ai_quality_model.py) для переопределения вида метрики.
+const KIND_SCHEMAS: Record<string, string[]> = {
+  RATIO_DIRECT: ['A', 'B'], RATIO_INVERSE: ['A', 'B'],
+  ACCURACY: ['TP', 'TN', 'FP', 'FN'], PRECISION: ['TP', 'FP'], RECALL: ['TP', 'FN'],
+  SPECIFICITY: ['TN', 'FP'], F1: ['TP', 'FP', 'FN'], EXPERT_SCALE: ['score'],
+  MSE: ['y', 'y_hat'], MAE: ['y', 'y_hat'], AUC_ROC: ['curve'], AUC_PRC: ['curve'],
+  NDCG: ['rel'], PSNR: ['I', 'I_hat', 'max_i'], SSIM: ['I', 'I_hat'],
 };
 
 const AiAssessmentPage: React.FC = () => {
@@ -71,6 +90,49 @@ const AiAssessmentPage: React.FC = () => {
   const [addOpen, setAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
+  // E2: редактор весов характеристик (Σ=1) для взвешенной свёртки Q (формулы 3–8).
+  const [weightsOpen, setWeightsOpen] = useState(false);
+  const [charWeights, setCharWeights] = useState<Record<string, number | null>>({});
+  const allCharacteristics = useMemo(
+    () => model.flatMap((g) => g.characteristics.map((c) => c.title)), [model],
+  );
+  const weightSum = useMemo(
+    () => Object.values(charWeights).reduce((s: number, w) => s + (w ?? 0), 0), [charWeights],
+  );
+
+  const openWeights = async () => {
+    if (!periodId) return;
+    try {
+      const r = await fetch(`${VITE_API}/ai-assessments/${periodId}/weights`, { headers });
+      const d = r.ok ? await r.json() : { characteristics: {} };
+      const next: Record<string, number | null> = {};
+      allCharacteristics.forEach((c) => { next[c] = d.characteristics?.[c] ?? null; });
+      setCharWeights(next);
+      setWeightsOpen(true);
+    } catch { message.error('Не удалось загрузить веса'); }
+  };
+
+  const saveWeights = async (reset = false) => {
+    if (!periodId) return;
+    const filled = Object.fromEntries(
+      Object.entries(charWeights).filter(([, w]) => w != null && w > 0),
+    ) as Record<string, number>;
+    if (!reset && Object.keys(filled).length > 0 && Math.abs(weightSum - 1) > 0.001) {
+      message.error(`Σ весов = ${weightSum.toFixed(3)} — требуется ровно 1.0 (ГОСТ 59898, ф. 3–8)`);
+      return;
+    }
+    const r = await fetch(`${VITE_API}/ai-assessments/${periodId}/weights`, {
+      method: 'PUT', headers,
+      body: JSON.stringify({ characteristics: reset ? {} : filled }),
+    });
+    if (r.ok) {
+      message.success(reset ? 'Веса сброшены — свёртка с равными весами' : 'Веса сохранены');
+      setWeightsOpen(false); setCalc(null);
+    } else {
+      const e = await r.json().catch(() => ({}));
+      message.error(e.detail || 'Не удалось сохранить веса');
+    }
+  };
 
   const periodOptions = useMemo(() => {
     const year = new Date().getFullYear();
@@ -116,22 +178,33 @@ const AiAssessmentPage: React.FC = () => {
   const selChar: string | undefined = Form.useWatch('characteristic', form);
   const selSub: string | undefined = Form.useWatch('subcharacteristic', form);
   const unmeasurable: boolean = Form.useWatch('unmeasurable', form) || false;
+  const kindOverride: string | undefined = Form.useWatch('metric_kind', form);
 
   const charsOf = (g?: string) => model.find((x) => x.group === g)?.characteristics ?? [];
   const subsOf = (g?: string, c?: string) => charsOf(g).find((x) => x.title === c)?.subs ?? [];
   const subMeta = subsOf(selGroup, selChar).find((s) => s.name === selSub);
+  // Действующий вид метрики: переопределение (E2) или назначенный каталогом.
+  const effectiveKind = kindOverride || subMeta?.metric_kind;
+  const effectiveSchema = effectiveKind ? (KIND_SCHEMAS[effectiveKind] ?? subMeta?.inputs_schema ?? []) : [];
 
   const saveValue = async () => {
     if (!periodId) return;
     try {
       const f = await form.validateFields();
-      const inputs: Record<string, number> = {};
-      (subMeta?.inputs_schema || []).forEach((k) => { if (f[`in_${k}`] != null) inputs[k] = f[`in_${k}`]; });
+      const inputs: Record<string, unknown> = {};
+      effectiveSchema.forEach((k) => {
+        const raw = f[`in_${k}`];
+        if (raw == null || raw === '') return;
+        if (ARRAY_FIELDS.has(k)) inputs[k] = parseCsv(String(raw));
+        else if (CURVE_FIELDS.has(k)) inputs[k] = parseCurve(String(raw));
+        else inputs[k] = raw;
+      });
       setSaving(true);
       const r = await fetch(`${VITE_API}/ai-assessments/${periodId}/values`, {
         method: 'PUT', headers,
         body: JSON.stringify([{
           characteristic: f.characteristic, subcharacteristic: f.subcharacteristic,
+          metric_kind: effectiveKind,
           inputs: f.unmeasurable ? null : inputs,
           baseline: f.unmeasurable ? null : (f.baseline ?? null),
           tol_low: f.unmeasurable ? null : (f.tol_low ?? null),
@@ -260,6 +333,9 @@ const AiAssessmentPage: React.FC = () => {
           extra={(
             <Space>
               <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setAddOpen(true); }}>Добавить оценку</Button>
+              <Tooltip title="Весовые коэффициенты характеристик uₖ (Σ=1) — взвешенный Q по формулам 3–8">
+                <Button onClick={openWeights}>Веса</Button>
+              </Tooltip>
               <Button icon={<RobotOutlined />} onClick={runCalculate} disabled={values.length === 0}>Рассчитать Q</Button>
               <Button icon={<FileDoneOutlined />} onClick={openReport} disabled={values.length === 0}>Отчёт соответствия</Button>
               <Tooltip title="Доступно, когда каждая внесённая строка рассчитана или помечена «невозможно измерить»">
@@ -276,6 +352,7 @@ const AiAssessmentPage: React.FC = () => {
               message={<Space size="large">
                 <Text strong>Интегральный показатель Q = {calc.q != null ? calc.q.toFixed(3) : '—'} ({qPct ?? '—'}%)</Text>
                 <Tag color={qPct != null ? ragToken(qPct).color : 'default'} style={{ color: '#fff', border: 'none' }}>{calc.level}</Tag>
+                <Tag>{calc.weighted ? 'взвешенная свёртка (ф. 3–8)' : 'равные веса'}</Tag>
               </Space>}
               description={(
                 <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 6 }}>
@@ -327,8 +404,21 @@ const AiAssessmentPage: React.FC = () => {
 
           {subMeta && (
             <Alert type="info" showIcon style={{ marginBottom: 12 }}
-              message={<span>Метрика: <Tag>{subMeta.metric_kind}</Tag>{subMeta.is_ai_specific && <Tag color="purple">ИИ-специфичная</Tag>}</span>}
+              message={<span>Метрика каталога: <Tag>{subMeta.metric_kind}</Tag>{subMeta.is_ai_specific && <Tag color="purple">ИИ-специфичная</Tag>}</span>}
               description={subMeta.hint} />
+          )}
+
+          {subMeta && !unmeasurable && (
+            <Form.Item
+              name="metric_kind"
+              label={<Tooltip title="Номенклатура метрик настраиваемая (ГОСТ 59898, разд. 8 — рекомендательный): можно заменить вид метрики, например на MSE/AUC/NDCG (E2)">Вид метрики (переопределить)</Tooltip>}
+            >
+              <Select
+                allowClear
+                placeholder={`По каталогу: ${subMeta.metric_kind}`}
+                options={Object.keys(KIND_SCHEMAS).map((k) => ({ value: k, label: k }))}
+              />
+            </Form.Item>
           )}
 
           <Form.Item name="unmeasurable" valuePropName="checked" style={{ marginBottom: 8 }}>
@@ -337,12 +427,21 @@ const AiAssessmentPage: React.FC = () => {
 
           {!unmeasurable && subMeta && (
             <>
-              <Space wrap size="middle">
-                {subMeta.inputs_schema.map((k) => (
-                  <Form.Item key={k} name={`in_${k}`} label={INPUT_LABEL[k] ?? k}
-                    rules={[{ required: true, message: 'Обязательное поле' }]}>
-                    <InputNumber min={0} style={{ width: 130 }} />
-                  </Form.Item>
+              <Space wrap size="middle" style={{ width: '100%' }}>
+                {effectiveSchema.map((k) => (
+                  ARRAY_FIELDS.has(k) || CURVE_FIELDS.has(k) ? (
+                    <Form.Item key={`${effectiveKind}-${k}`} name={`in_${k}`} label={INPUT_LABEL[k] ?? k}
+                      style={{ minWidth: 300, flex: 1 }}
+                      rules={[{ required: true, message: 'Обязательное поле' }]}>
+                      <Input.TextArea rows={2}
+                        placeholder={CURVE_FIELDS.has(k) ? '0,0; 0.2,0.7; 1,1' : '1.2, 3.4, 5.6, …'} />
+                    </Form.Item>
+                  ) : (
+                    <Form.Item key={`${effectiveKind}-${k}`} name={`in_${k}`} label={INPUT_LABEL[k] ?? k}
+                      rules={k === 'max_i' ? [] : [{ required: true, message: 'Обязательное поле' }]}>
+                      <InputNumber min={0} style={{ width: 150 }} placeholder={k === 'max_i' ? '255' : undefined} />
+                    </Form.Item>
+                  )
                 ))}
               </Space>
               <Space wrap size="middle">
@@ -370,6 +469,37 @@ const AiAssessmentPage: React.FC = () => {
               placeholder={unmeasurable ? 'Причина: почему невозможно измерить (обязательно)' : 'Источник данных, артефакты (необязательно)'} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Веса характеристик (E2): Σ=1, взвешенный Q по формулам 3–8 */}
+      <Modal
+        title="Весовые коэффициенты характеристик (uₖ, Σ = 1)"
+        open={weightsOpen} onCancel={() => setWeightsOpen(false)}
+        footer={[
+          <Button key="reset" onClick={() => saveWeights(true)}>Сбросить (равные веса)</Button>,
+          <Button key="save" type="primary" onClick={() => saveWeights(false)}>Сохранить</Button>,
+        ]}
+        width={560}
+      >
+        <Alert
+          type={Math.abs(weightSum - 1) <= 0.001 || weightSum === 0 ? 'info' : 'warning'}
+          showIcon style={{ marginBottom: 12 }}
+          message={<span>Σ весов = <b>{weightSum.toFixed(3)}</b> {weightSum === 0 ? '(пусто — свёртка с равными весами)' : Math.abs(weightSum - 1) <= 0.001 ? '✓' : '— требуется 1.0'}</span>}
+          description="Вес отражает значимость характеристики для конкретной СИИ (представительный набор, п. 7.1.4). Пустые поля не участвуют."
+        />
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          {allCharacteristics.map((c) => (
+            <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Text style={{ flex: 1, fontSize: 13 }} ellipsis title={c}>{c}</Text>
+              <InputNumber
+                min={0} max={1} step={0.05} style={{ width: 120 }}
+                value={charWeights[c] ?? undefined}
+                placeholder="—"
+                onChange={(v) => setCharWeights((prev) => ({ ...prev, [c]: v ?? null }))}
+              />
+            </div>
+          ))}
+        </Space>
       </Modal>
 
       {/* Отчёт соответствия (критерий приёмки 7) */}

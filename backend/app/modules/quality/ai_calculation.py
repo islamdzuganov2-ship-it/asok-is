@@ -1,19 +1,23 @@
-"""Расчётный движок контура СИИ по ГОСТ Р 59898-2021 (BL-001, E1).
+"""Расчётный движок контура СИИ по ГОСТ Р 59898-2021 (BL-001, E1+E2).
 
-1) compute_metric(metric_kind, inputs) → сырое значение метрики в [0,1] или None
+1) compute_metric(metric_kind, inputs) → сырое значение метрики или None
    («невозможно вычислить»: нет входов / нулевой знаменатель).
+   E1: A/B, ACCURACY/PRECISION/RECALL/SPECIFICITY/F1, EXPERT_SCALE — значения в [0,1].
+   E2: MSE/MAE (массивы y/ŷ), AUC_ROC/AUC_PRC (трапеции по точкам кривой), NDCG (DCG/IDCG),
+   PSNR (дБ), SSIM — MSE/MAE/PSNR вне [0,1], приводятся к X нормировкой к baseline.
 2) normalize_to_baseline(value, baseline, tol_low, tol_high) → (X∈[0,1], conformant):
    • критерий соответствия (п. 7.1.3.3):  m_l − ε⁻ ≤ m_f ≤ m_l + ε⁺;
    • нормирование (п. 7.2.2.3): X = 1 при совпадении с базовым значением, линейно
-     убывает до 0 на границе допуска и дальше; без baseline X = само значение (E1-fallback).
-3) aggregate(rows) → свёртка снизу вверх с РАВНЫМИ весами (E1):
-   субхарактеристика = среднее её метрик → характеристика → интегральный Q ∈ [0,1]
-   (формулы 3–8 стандарта с u=v=w=1/N; настраиваемые веса — этап E2).
+     убывает до 0 на границе допуска и дальше; без baseline X = clip(value, 0, 1).
+3) aggregate(rows, char_weights, sub_weights) → свёртка снизу вверх по формулам 3–8:
+   c = Σ vⱼmⱼ → K = Σ wᵢcᵢ → Q = Σ uₖKₖ; веса задаются на период (Σ=1, E2),
+   при отсутствии — равные (E1-поведение). Частичные веса ренормируются по внесённым узлам.
 
 Уровень для Q переиспользует шкалу ISO-контура (map_to_level).
 """
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from typing import Any
 
@@ -70,7 +74,78 @@ def compute_metric(metric_kind: str, inputs: dict[str, Any] | None) -> float | N
     if metric_kind == "EXPERT_SCALE":
         score = _num(inputs, "score")
         return None if score is None else max(0.0, min(1.0, score / 100.0))
-    return None  # виды E2 (MSE/AUC/NDCG/PSNR/SSIM…) — не поддержаны в E1
+
+    # --- E2: регрессия, ранжирование, кривые, изображения ---
+    if metric_kind in ("MSE", "MAE"):
+        y = _arr(inputs, "y")
+        y_hat = _arr(inputs, "y_hat")
+        if y is None or y_hat is None or len(y) != len(y_hat) or not y:
+            return None
+        if metric_kind == "MSE":
+            return round(sum((a - b) ** 2 for a, b in zip(y, y_hat)) / len(y), 4)
+        return round(sum(abs(a - b) for a, b in zip(y, y_hat)) / len(y), 4)
+    if metric_kind in ("AUC_ROC", "AUC_PRC"):
+        curve = _curve(inputs, "curve")
+        if curve is None or len(curve) < 2:
+            return None
+        pts = sorted(curve)
+        area = sum((x2 - x1) * (y1 + y2) / 2 for (x1, y1), (x2, y2) in zip(pts, pts[1:]))
+        return round(max(0.0, min(1.0, area)), 4)
+    if metric_kind == "NDCG":
+        rel = _arr(inputs, "rel")
+        if rel is None or not rel:
+            return None
+        dcg = sum(r / math.log2(i + 2) for i, r in enumerate(rel))
+        idcg = sum(r / math.log2(i + 2) for i, r in enumerate(sorted(rel, reverse=True)))
+        return 0.0 if idcg == 0 else round(max(0.0, min(1.0, dcg / idcg)), 4)
+    if metric_kind == "PSNR":
+        i1, i2 = _arr(inputs, "I"), _arr(inputs, "I_hat")
+        if i1 is None or i2 is None or len(i1) != len(i2) or not i1:
+            return None
+        max_i = _num(inputs, "max_i") or 255.0
+        mse = sum((a - b) ** 2 for a, b in zip(i1, i2)) / len(i1)
+        if mse == 0:
+            return 100.0  # идеальная реконструкция: ограничиваем сверху (∞ дБ)
+        return round(min(100.0, 10.0 * math.log10((max_i ** 2) / mse)), 4)
+    if metric_kind == "SSIM":
+        i1, i2 = _arr(inputs, "I"), _arr(inputs, "I_hat")
+        if i1 is None or i2 is None or len(i1) != len(i2) or not i1:
+            return None
+        length = _num(inputs, "max_i") or 255.0
+        n = len(i1)
+        mu_x, mu_y = sum(i1) / n, sum(i2) / n
+        var_x = sum((a - mu_x) ** 2 for a in i1) / n
+        var_y = sum((b - mu_y) ** 2 for b in i2) / n
+        cov = sum((a - mu_x) * (b - mu_y) for a, b in zip(i1, i2)) / n
+        c1, c2 = (0.01 * length) ** 2, (0.03 * length) ** 2
+        ssim = ((2 * mu_x * mu_y + c1) * (2 * cov + c2)) / ((mu_x ** 2 + mu_y ** 2 + c1) * (var_x + var_y + c2))
+        return round(max(0.0, min(1.0, ssim)), 4)
+    return None  # неизвестный вид
+
+
+def _arr(inputs: dict[str, Any], key: str) -> list[float] | None:
+    """Числовой массив из входов (list | строка CSV) или None."""
+    value = (inputs or {}).get(key)
+    if isinstance(value, str):
+        value = [p for p in value.replace(";", ",").split(",") if p.strip()]
+    if not isinstance(value, list):
+        return None
+    try:
+        return [float(v) for v in value]
+    except (TypeError, ValueError):
+        return None
+
+
+def _curve(inputs: dict[str, Any], key: str) -> list[tuple[float, float]] | None:
+    """Кривая как список точек [[x,y],…] для AUC; None при некорректном формате."""
+    value = (inputs or {}).get(key)
+    if not isinstance(value, list):
+        return None
+    try:
+        pts = [(float(p[0]), float(p[1])) for p in value]
+    except (TypeError, ValueError, IndexError):
+        return None
+    return pts
 
 
 def normalize_to_baseline(
@@ -101,11 +176,32 @@ def normalize_to_baseline(
     return round(max(0.0, min(1.0, x)), 4), conformant
 
 
-def aggregate(rows: list[dict]) -> dict:
-    """Свёртка E1 (равные веса): строки {characteristic, subcharacteristic, normalized_x}.
+def _weighted_mean(scores: dict[str, float], weights: dict[str, float] | None) -> float:
+    """Σ wᵢ·xᵢ по заданным весам с ренормировкой на присутствующие узлы; без весов — среднее.
 
-    Строки с normalized_x=None (невозможно измерить/не рассчитано) в свёртку не входят.
-    Возврат: {"q": float|None, "level": str, "characteristics": [{title, score, subs_measured}]}.
+    ГОСТ требует Σ весов = 1 по выбранному набору (валидируется при сохранении весов);
+    если часть узлов набора ещё не измерена, веса присутствующих ренормируются.
+    """
+    if not scores:
+        return 0.0
+    if weights:
+        present = {k: w for k, w in weights.items() if k in scores and w > 0}
+        total = sum(present.values())
+        if total > 0:
+            return sum(scores[k] * (w / total) for k, w in present.items())
+    return sum(scores.values()) / len(scores)
+
+
+def aggregate(
+    rows: list[dict],
+    char_weights: dict[str, float] | None = None,
+    sub_weights: dict[str, dict[str, float]] | None = None,
+) -> dict:
+    """Свёртка по формулам 3–8: c = Σ vⱼmⱼ → K = Σ wᵢcᵢ → Q = Σ uₖKₖ.
+
+    rows: {characteristic, subcharacteristic, normalized_x}; None-строки не входят в свёртку.
+    char_weights: {характеристика: uₖ}; sub_weights: {характеристика: {субхар.: wᵢ}}.
+    Без весов — равные (E1-поведение). Возврат: {"q", "level", "characteristics", "weighted"}.
     """
     by_char: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
@@ -115,9 +211,12 @@ def aggregate(rows: list[dict]) -> dict:
         by_char[row["characteristic"]][row["subcharacteristic"]].append(float(x))
 
     characteristics = []
+    char_scores: dict[str, float] = {}
     for char_title, subs in by_char.items():
-        sub_scores = [sum(vals) / len(vals) for vals in subs.values()]  # c_j = Σ v·m (v=1/L)
-        k = sum(sub_scores) / len(sub_scores)                           # K_i = Σ w·c (w=1/N)
+        # c_j = Σ v·m: метрики внутри субхарактеристики — среднее (E1/E2: одна метрика на субхар.)
+        sub_scores = {sub: sum(vals) / len(vals) for sub, vals in subs.items()}
+        k = _weighted_mean(sub_scores, (sub_weights or {}).get(char_title))  # K_i = Σ w·c
+        char_scores[char_title] = k
         characteristics.append({
             "title": char_title,
             "score": round(k, 4),
@@ -125,7 +224,8 @@ def aggregate(rows: list[dict]) -> dict:
         })
 
     if not characteristics:
-        return {"q": None, "level": "Невозможно измерить", "characteristics": []}
+        return {"q": None, "level": "Невозможно измерить", "characteristics": [], "weighted": False}
 
-    q = sum(c["score"] for c in characteristics) / len(characteristics)  # Q = Σ u·K (u=1/M)
-    return {"q": round(q, 4), "level": map_to_level(q), "characteristics": characteristics}
+    q = _weighted_mean(char_scores, char_weights)  # Q = Σ u·K
+    weighted = bool(char_weights) or bool(sub_weights)
+    return {"q": round(q, 4), "level": map_to_level(q), "characteristics": characteristics, "weighted": weighted}

@@ -21,7 +21,7 @@ from app.modules.quality import (
     ai_model_tree,
     ai_normalize_to_baseline,
 )
-from app.modules.assessment.models import AiAssessmentValue, AssessmentPeriod
+from app.modules.assessment.models import AiAssessmentValue, AiWeight, AssessmentPeriod
 from app.modules.assessment.ai_schemas import (
     AiCalculationOut,
     AiConformanceReport,
@@ -207,13 +207,84 @@ async def save_ai_values(
     return [_value_out(v) for v in saved]
 
 
+async def _load_weights(db: AsyncSession, period_id: UUID) -> tuple[dict, dict]:
+    """Веса периода: ({характеристика: uₖ}, {характеристика: {субхар.: wᵢ}})."""
+    rows = (await db.execute(
+        select(AiWeight).where(AiWeight.period_id == period_id)
+    )).scalars().all()
+    char_weights: dict[str, float] = {}
+    sub_weights: dict[str, dict[str, float]] = {}
+    for w in rows:
+        if w.scope == "CHARACTERISTIC":
+            char_weights[w.name] = float(w.weight)
+        elif w.scope.startswith("SUB:"):
+            sub_weights.setdefault(w.scope[4:], {})[w.name] = float(w.weight)
+    return char_weights, sub_weights
+
+
+@router.get("/{period_id}/weights")
+async def get_ai_weights(period_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    await _require_ai_period(db, period_id)
+    char_weights, sub_weights = await _load_weights(db, period_id)
+    return {"period_id": str(period_id), "characteristics": char_weights, "subs": sub_weights}
+
+
+@router.put("/{period_id}/weights")
+async def save_ai_weights(
+    period_id: UUID,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_role(*_EDIT_ROLES)),
+) -> dict:
+    """Сохранить веса свёртки (формулы 3–8). Валидация: Σ весов = 1 в каждом scope (±0.001).
+
+    Формат: {"characteristics": {хар.: u}, "subs": {хар.: {субхар.: w}}}. Пустой словарь
+    очищает веса соответствующего уровня (возврат к равным весам E1).
+    """
+    await _require_ai_period(db, period_id)
+    char_weights: dict = payload.get("characteristics") or {}
+    sub_weights: dict = payload.get("subs") or {}
+
+    def check_sum(weights: dict, scope_label: str) -> None:
+        if not weights:
+            return
+        total = sum(float(w) for w in weights.values())
+        if abs(total - 1.0) > 0.001:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Σ весов в «{scope_label}» = {round(total, 4)}, требуется 1.0 (ГОСТ 59898, ф. 3–8)",
+            )
+        if any(float(w) < 0 for w in weights.values()):
+            raise HTTPException(status_code=422, detail=f"Отрицательный вес в «{scope_label}»")
+
+    check_sum(char_weights, "характеристики")
+    for char_title, subs in sub_weights.items():
+        check_sum(subs, char_title)
+
+    # Полная замена весов периода (идемпотентный PUT).
+    for w in (await db.execute(select(AiWeight).where(AiWeight.period_id == period_id))).scalars().all():
+        await db.delete(w)
+    for name, weight in char_weights.items():
+        db.add(AiWeight(period_id=period_id, scope="CHARACTERISTIC", name=name, weight=float(weight)))
+    for char_title, subs in sub_weights.items():
+        for name, weight in subs.items():
+            db.add(AiWeight(period_id=period_id, scope=f"SUB:{char_title}", name=name, weight=float(weight)))
+    await db.commit()
+    return {"status": "ok", "characteristics": len(char_weights),
+            "subs": sum(len(s) for s in sub_weights.values())}
+
+
 @router.post("/{period_id}/calculate", response_model=AiCalculationOut)
 async def calculate_ai_period(period_id: UUID, db: AsyncSession = Depends(get_db)) -> AiCalculationOut:
-    """Свёртка снизу вверх (E1: равные веса) → интегральный Q ∈ [0,1] + K по характеристикам."""
+    """Свёртка снизу вверх → интегральный Q ∈ [0,1] + K по характеристикам.
+
+    E2: если на период заданы веса (Σ=1) — взвешенная свёртка по формулам 3–8, иначе равные веса.
+    """
     await _require_ai_period(db, period_id)
     rows = (await db.execute(
         select(AiAssessmentValue).where(AiAssessmentValue.period_id == period_id)
     )).scalars().all()
+    char_weights, sub_weights = await _load_weights(db, period_id)
     agg = ai_aggregate([
         {
             "characteristic": v.characteristic,
@@ -221,7 +292,7 @@ async def calculate_ai_period(period_id: UUID, db: AsyncSession = Depends(get_db
             "normalized_x": float(v.normalized_x) if v.normalized_x is not None else None,
         }
         for v in rows
-    ])
+    ], char_weights or None, sub_weights or None)
     return AiCalculationOut(
         period_id=str(period_id),
         q=agg["q"],
@@ -297,11 +368,12 @@ async def ai_conformance_report(period_id: UUID, db: AsyncSession = Depends(get_
         )
         for v in rows
     ]
+    char_weights, sub_weights = await _load_weights(db, period_id)
     agg = ai_aggregate([
         {"characteristic": v.characteristic, "subcharacteristic": v.subcharacteristic,
          "normalized_x": float(v.normalized_x) if v.normalized_x is not None else None}
         for v in rows
-    ])
+    ], char_weights or None, sub_weights or None)
     return AiConformanceReport(
         period_id=str(period_id),
         system_name=system.name if system else str(period.system_id),

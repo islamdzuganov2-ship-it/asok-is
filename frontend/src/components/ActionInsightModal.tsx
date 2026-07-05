@@ -105,10 +105,10 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
           style={{ margin: '8px 0' }}
         />
       ) : (
-        <List
+        <List<Proposal>
           style={{ marginTop: 8 }}
           dataSource={pending}
-          renderItem={(p) => (
+          renderItem={(p: Proposal) => (
             <List.Item
               onClick={() => setDecisionProposal(p)}
               style={{ display: 'block', cursor: 'pointer', background: tok.soft, borderRadius: 8, padding: 12, marginBottom: 8, border: `1px solid ${tok.border}` }}

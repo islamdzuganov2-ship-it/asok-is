@@ -330,8 +330,9 @@ const ManagerDashboard: React.FC = () => {
         )}
       </Card>
 
-      {/* Заполненные профессиональные суждения по выбранной ИС (связь характеристика + система) */}
-      {showData && <FilledJudgmentsCard systemName={system!.name} />}
+      {/* Заполненные профессиональные суждения по выбранной ИС — чёткая связь с выбранной
+          характеристикой (та же, что в карточке «Метрики характеристики "X"») */}
+      {showData && <FilledJudgmentsCard systemName={system!.name} characteristic={characteristic!.title} />}
 
       <ProfessionalJudgmentModal open={!!target} target={target} onClose={() => setTarget(null)} />
       <MeasureDecisionModal

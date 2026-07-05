@@ -150,7 +150,7 @@ const NotificationBell: React.FC = () => {
       });
     }
     return out;
-  }, [isQM, isExec, proposals, judg]);
+  }, [isQM, isExec, proposals, judg, dataMode, reasons]);
 
   const visibleNotes = useMemo(() => notes.filter((n) => !dismissed.has(n.key)), [notes, dismissed]);
   const clearAll = () => {

@@ -233,8 +233,8 @@ export const apiSlice = createApi({
         }),
         getAssessmentPeriods: builder.query<PeriodDto[], PeriodListParams | void>({
             query: (params) => {
-                const query = params?.system_id ? `?system_id=${params.system_id}` : '';
-                return `/assessments/periods${query}`;
+                const sid = (params as PeriodListParams | undefined)?.system_id;
+                return `/assessments/periods${sid ? `?system_id=${sid}` : ''}`;
             },
             providesTags: ['Assessment'],
         }),
@@ -264,8 +264,8 @@ export const apiSlice = createApi({
         }),
         getPeriodSummaries: builder.query<PeriodSummary[], { system_id?: string } | void>({
             query: (params) => {
-                const query = params?.system_id ? `?system_id=${params.system_id}` : '';
-                return `/assessments/periods/summary${query}`;
+                const sid = (params as { system_id?: string } | undefined)?.system_id;
+                return `/assessments/periods/summary${sid ? `?system_id=${sid}` : ''}`;
             },
             providesTags: ['Assessment'],
         }),

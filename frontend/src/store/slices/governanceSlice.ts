@@ -43,6 +43,8 @@ export interface Proposal {
   executedAt?: string;
   /** Демо-мера (засеяна для презентации). В режиме LLM такие меры скрываются. */
   isDemo?: boolean;
+  /** История правок меры (аудит): кто, когда, какое поле, старое → новое значение. */
+  history?: ProposalChange[];
   /** План задач по повышению качества: */
   suzLink?: string;       // ссылка на задачу в СУЗ (система управления знаниями/задачами)
   topComment?: string;    // комментарий топ-менеджера к задаче (по клику)
@@ -55,10 +57,28 @@ export interface Proposal {
 
 export type ExecutionStatus = 'DONE' | 'NOT_DONE';
 
-const STORAGE_KEY = 'asok_governance';
+/** Запись аудита правок меры. */
+export interface ProposalChange {
+  at: string;      // ISO-время правки
+  by: string;      // кто внёс правку (ФИО/роль)
+  field: string;   // ключ поля Proposal
+  from?: string;   // старое значение
+  to?: string;     // новое значение
+}
+
+/** Поля меры, доступные для правки топ-менеджером (пишутся в аудит). */
+export type EditableProposalFields = Pick<
+  Proposal, 'riskTitle' | 'rationale' | 'expectation' | 'owner' | 'ownerRole' | 'dueDate' | 'topComment'
+>;
+
+// v2: пересеяны демо-данные с ролевым подходом (ответственные по характеристикам,
+// эскалации по критичности); старый ключ удаляется, чтобы не тянуть прежние моки.
+const STORAGE_KEY = 'asok_governance_v2';
+const OLD_KEYS = ['asok_governance'];
 
 function loadProposals(): Proposal[] {
   try {
+    OLD_KEYS.forEach((k) => localStorage.removeItem(k));
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw) as Proposal[];
   } catch {
@@ -130,6 +150,26 @@ const governanceSlice = createSlice({
         persist(state.proposals);
       }
     },
+    // Правка меры топ-менеджером: каждое изменённое поле пишется в историю правок (аудит).
+    editProposal(state, action: PayloadAction<{ id: string; by: string; patch: Partial<EditableProposalFields> }>) {
+      const p = state.proposals.find((x) => x.id === action.payload.id);
+      if (!p) return;
+      const { by, patch } = action.payload;
+      const at = new Date().toISOString();
+      const changes: ProposalChange[] = [];
+      (Object.keys(patch) as Array<keyof EditableProposalFields>).forEach((field) => {
+        const next = patch[field];
+        if (next === undefined) return;
+        const prev = (p[field] ?? '') as string;
+        if (String(next) === String(prev)) return;
+        changes.push({ at, by, field, from: prev || undefined, to: String(next) || undefined });
+        (p as any)[field] = next;
+      });
+      if (changes.length) {
+        p.history = [...(p.history ?? []), ...changes];
+        persist(state.proposals);
+      }
+    },
     updateProposalMeta(state, action: PayloadAction<{ id: string; owner?: string; ownerRole?: string; dueDate?: string }>) {
       const p = state.proposals.find((x) => x.id === action.payload.id);
       if (p && p.status === 'PENDING_APPROVAL') {
@@ -194,7 +234,7 @@ const governanceSlice = createSlice({
 });
 
 export const {
-  addProposal, approveProposal, rejectProposal, updateProposalMeta, setExecution, updateTask,
+  addProposal, approveProposal, rejectProposal, editProposal, updateProposalMeta, setExecution, updateTask,
   escalateTask, decideEscalation, resolveEscalation,
 } = governanceSlice.actions;
 export default governanceSlice.reducer;

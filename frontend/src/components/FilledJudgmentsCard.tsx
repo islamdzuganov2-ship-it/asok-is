@@ -2,9 +2,13 @@
  * FilledJudgmentsCard.tsx — заполненные профессиональные суждения по выбранной ИС.
  * Дополнительная карточка на дашборде менеджера по качеству (внизу): суждения связаны
  * с характеристикой, подхарактеристикой и системой (периодом).
+ *
+ * Чёткая связь с выбранной характеристикой (как у карточки «Метрики характеристики "X"»):
+ * при передаче prop `characteristic` карточка по умолчанию показывает суждения ТОЛЬКО по ней
+ * (заголовок и тег повторяют выбор), с переключателем «все характеристики».
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, List, Tag, Typography, Space, Empty, Button, Input } from 'antd';
+import { Card, List, Tag, Typography, Space, Empty, Button, Input, Switch } from 'antd';
 import { FormOutlined } from '@ant-design/icons';
 
 const { Text, Paragraph } = Typography;
@@ -12,10 +16,17 @@ const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api
 
 interface Item { system_name: string; period: string; characteristic: string; subcharacteristic: string; judgment_text: string }
 
-const FilledJudgmentsCard: React.FC<{ systemName?: string }> = ({ systemName }) => {
+// Нормализация названий характеристик (ё/е, регистр, пробелы) — как в теплокарте.
+const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
+
+interface Props { systemName?: string; characteristic?: string }
+
+const FilledJudgmentsCard: React.FC<Props> = ({ systemName, characteristic }) => {
   const [items, setItems] = useState<Item[]>([]);
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState(false);
+  // Связь с выбранной характеристикой включена по умолчанию (паритет с карточкой метрик).
+  const [onlyChar, setOnlyChar] = useState(true);
 
   useEffect(() => {
     if (!systemName) { setItems([]); return; }
@@ -30,21 +41,52 @@ const FilledJudgmentsCard: React.FC<{ systemName?: string }> = ({ systemName }) 
     return () => { alive = false; };
   }, [systemName]);
 
+  const charFiltered = useMemo(() => (
+    characteristic && onlyChar
+      ? items.filter((i) => norm(i.characteristic) === norm(characteristic))
+      : items
+  ), [items, characteristic, onlyChar]);
+
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return s ? items.filter((i) => `${i.characteristic} ${i.subcharacteristic} ${i.judgment_text}`.toLowerCase().includes(s)) : items;
-  }, [items, q]);
+    return s ? charFiltered.filter((i) => `${i.characteristic} ${i.subcharacteristic} ${i.judgment_text}`.toLowerCase().includes(s)) : charFiltered;
+  }, [charFiltered, q]);
   const shown = expanded ? filtered : filtered.slice(0, 5);
+
+  const linked = characteristic && onlyChar;
 
   return (
     <Card
-      title={<span><FormOutlined /> Заполненные профессиональные суждения{systemName ? ` — «${systemName}»` : ''}</span>}
+      title={
+        <Space wrap size={6}>
+          <FormOutlined />
+          <span>
+            Заполненные профессиональные суждения{systemName ? ` — «${systemName}»` : ''}
+          </span>
+          {linked && <Tag color="blue">характеристика «{characteristic}»</Tag>}
+        </Space>
+      }
       style={{ marginTop: 16 }}
       styles={{ body: { paddingTop: 12 } }}
-      extra={items.length > 0 && <Input.Search placeholder="поиск" allowClear size="small" style={{ width: 180 }} onChange={(e) => setQ(e.target.value)} />}
+      extra={
+        <Space size={12}>
+          {characteristic && (
+            <Space size={6}>
+              <Switch size="small" checked={onlyChar} onChange={setOnlyChar} />
+              <Text type="secondary" style={{ fontSize: 12 }}>только выбранная характеристика</Text>
+            </Space>
+          )}
+          {items.length > 0 && <Input.Search placeholder="поиск" allowClear size="small" style={{ width: 180 }} onChange={(e) => setQ(e.target.value)} />}
+        </Space>
+      }
     >
       {filtered.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="По этой ИС профессиональные суждения ещё не заполнены" />
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={linked
+            ? `По характеристике «${characteristic}» этой ИС профессиональные суждения ещё не заполнены`
+            : 'По этой ИС профессиональные суждения ещё не заполнены'}
+        />
       ) : (
         <>
           <List

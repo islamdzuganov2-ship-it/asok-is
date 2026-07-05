@@ -70,7 +70,7 @@ def test_classification_requires_all_inputs():
 def test_expert_scale_and_unknown_kind():
     assert compute_metric("EXPERT_SCALE", {"score": 75}) == 0.75
     assert compute_metric("EXPERT_SCALE", {"score": 150}) == 1.0          # клип
-    assert compute_metric("MSE", {"y": [1], "y_hat": [1]}) is None        # E2 — не в E1
+    assert compute_metric("UNKNOWN_KIND", {"A": 1}) is None               # неизвестный вид
 
 
 # --- Baseline + допуски (критерий 4) ---
@@ -122,3 +122,69 @@ def test_aggregate_equal_weights():
 def test_aggregate_empty():
     out = aggregate([{"characteristic": "X", "subcharacteristic": "Y", "normalized_x": None}])
     assert out["q"] is None and out["level"] == "Невозможно измерить"
+
+
+# --- E2: расширенные метрики (MSE/MAE/AUC/NDCG/PSNR/SSIM) ---
+
+def test_mse_mae():
+    inputs = {"y": [1, 2, 3], "y_hat": [1, 2, 5]}
+    assert compute_metric("MSE", inputs) == pytest.approx(4 / 3, abs=1e-3)
+    assert compute_metric("MAE", inputs) == pytest.approx(2 / 3, abs=1e-3)
+    # CSV-строки тоже принимаются (ввод с фронта)
+    assert compute_metric("MAE", {"y": "1,2,3", "y_hat": "1,2,5"}) == pytest.approx(2 / 3, abs=1e-3)
+    assert compute_metric("MSE", {"y": [1], "y_hat": [1, 2]}) is None  # разная длина
+
+
+def test_auc_trapezoid():
+    # Идеальный классификатор: ROC (0,0)→(0,1)→(1,1) → AUC = 1
+    assert compute_metric("AUC_ROC", {"curve": [[0, 0], [0, 1], [1, 1]]}) == 1.0
+    # Случайный: диагональ → 0.5
+    assert compute_metric("AUC_ROC", {"curve": [[0, 0], [1, 1]]}) == 0.5
+    assert compute_metric("AUC_ROC", {"curve": [[0, 0]]}) is None  # < 2 точек
+
+
+def test_ndcg():
+    # Идеальный порядок → 1.0; перестановка ухудшает
+    assert compute_metric("NDCG", {"rel": [3, 2, 1]}) == 1.0
+    worse = compute_metric("NDCG", {"rel": [1, 2, 3]})
+    assert worse is not None and worse < 1.0
+    assert compute_metric("NDCG", {"rel": [0, 0, 0]}) == 0.0  # IDCG = 0
+
+
+def test_psnr():
+    # Идентичные изображения → капается на 100 дБ
+    assert compute_metric("PSNR", {"I": [10, 20], "I_hat": [10, 20]}) == 100.0
+    v = compute_metric("PSNR", {"I": [0, 0, 0, 0], "I_hat": [10, 10, 10, 10], "max_i": 255})
+    assert v == pytest.approx(10 * __import__("math").log10(255 ** 2 / 100), abs=1e-3)
+
+
+def test_ssim():
+    assert compute_metric("SSIM", {"I": [10, 200, 30, 44], "I_hat": [10, 200, 30, 44]}) == 1.0
+    v = compute_metric("SSIM", {"I": [0, 50, 100, 150], "I_hat": [150, 100, 50, 0]})
+    assert v is not None and v < 0.5  # антикоррелированные — низкое сходство
+
+
+# --- E2: взвешенная свёртка (формулы 3–8) ---
+
+def test_aggregate_weighted_characteristics():
+    rows = [
+        {"characteristic": "Надёжность", "subcharacteristic": "Робастность (robustness)", "normalized_x": 0.4},
+        {"characteristic": "Защищённость", "subcharacteristic": "Приватность (privacy)", "normalized_x": 1.0},
+    ]
+    # Равные веса → 0.7; вес 0.9/0.1 → 0.4·0.9 + 1.0·0.1 = 0.46
+    assert aggregate(rows)["q"] == pytest.approx(0.7)
+    out = aggregate(rows, char_weights={"Надёжность": 0.9, "Защищённость": 0.1})
+    assert out["q"] == pytest.approx(0.46) and out["weighted"] is True
+
+
+def test_aggregate_weighted_subs_and_renormalization():
+    rows = [
+        {"characteristic": "Надёжность", "subcharacteristic": "A", "normalized_x": 1.0},
+        {"characteristic": "Надёжность", "subcharacteristic": "B", "normalized_x": 0.0},
+    ]
+    # Вес субхарактеристик 0.8/0.2 → K = 0.8
+    out = aggregate(rows, sub_weights={"Надёжность": {"A": 0.8, "B": 0.2}})
+    assert out["characteristics"][0]["score"] == pytest.approx(0.8)
+    # Частичные веса (нет веса для B из набора; вес есть только у A) → ренормировка на присутствующие
+    out2 = aggregate(rows, sub_weights={"Надёжность": {"A": 0.5, "C": 0.5}})
+    assert out2["characteristics"][0]["score"] == pytest.approx(1.0)  # только A с весом → 1.0

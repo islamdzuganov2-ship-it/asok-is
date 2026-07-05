@@ -24,13 +24,13 @@ METRIC_KINDS: dict[str, list[str]] = {
     "SPECIFICITY": ["TN", "FP"],
     "F1": ["TP", "FP", "FN"],
     "EXPERT_SCALE": ["score"],           # экспертная оценка 0–100 (%)
-    # E2 (задел, движком пока не считаются):
+    # E2 (считаются движком; массивы вводятся списком/CSV):
     "MSE": ["y", "y_hat"],
     "MAE": ["y", "y_hat"],
     "AUC_ROC": ["curve"],
     "AUC_PRC": ["curve"],
     "NDCG": ["rel"],
-    "PSNR": ["I", "I_hat"],
+    "PSNR": ["I", "I_hat", "max_i"],
     "SSIM": ["I", "I_hat"],
 }
 

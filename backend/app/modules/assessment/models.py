@@ -71,7 +71,7 @@ class AiAssessmentValue(Base, TimestampMixin):
     tol_low = Column(Numeric(12, 4), nullable=True)    # допуск ε⁻
     tol_high = Column(Numeric(12, 4), nullable=True)   # допуск ε⁺
 
-    raw_value = Column(Numeric(6, 4), nullable=True)     # значение метрики до нормировки
+    raw_value = Column(Numeric(12, 4), nullable=True)    # значение метрики до нормировки (MSE/PSNR — вне [0,1])
     normalized_x = Column(Numeric(6, 4), nullable=True)  # X ∈ [0,1] к baseline
     conformant = Column(Boolean, nullable=True)          # в допуске / вне; NULL — эталон не задан
 
@@ -80,6 +80,26 @@ class AiAssessmentValue(Base, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint("period_id", "characteristic", "subcharacteristic", name="uq_ai_value_period_pair"),
+    )
+
+
+class AiWeight(Base, TimestampMixin):
+    """Весовые коэффициенты свёртки контура СИИ (ГОСТ 59898, формулы 3–8; BL-001 E2).
+
+    scope = 'CHARACTERISTIC'      → name = характеристика, weight = uₖ (вес в Q);
+    scope = 'SUB:<характеристика>' → name = субхарактеристика, weight = wᵢ (вес в характеристике).
+    Валидация Σ = 1 в пределах scope — на API (PUT /ai-assessments/{id}/weights).
+    """
+    __tablename__ = "ai_weights"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id"), nullable=False, index=True)
+    scope = Column(String(280), nullable=False)
+    name = Column(String(255), nullable=False)
+    weight = Column(Numeric(6, 4), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("period_id", "scope", "name", name="uq_ai_weight_scope_name"),
     )
 
 
