@@ -49,6 +49,40 @@ class AssessmentValue(Base, TimestampMixin):
     metric = relationship("MetricCatalog", lazy="select")
 
 
+class AiAssessmentValue(Base, TimestampMixin):
+    """Значение метрики контура СИИ (ГОСТ Р 59898-2021, BL-001 E1).
+
+    Отдельная таблица (не смешивается с ISO-контуром в дашбордах — требование ТЗ, часть G).
+    Периоды переиспользуются (AssessmentPeriod). Строка = субхарактеристика модели 59898:
+    ML-входы (inputs), baseline ± допуски (m_l, ε⁻, ε⁺), сырое значение, нормировка X∈[0,1]
+    и вердикт соответствия (п. 7.1.3.3 / 7.2.2.3).
+    """
+    __tablename__ = "ai_assessment_values"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id"), nullable=False, index=True)
+    group_name = Column(String(100), nullable=False)
+    characteristic = Column(String(255), nullable=False)
+    subcharacteristic = Column(String(255), nullable=False)
+
+    metric_kind = Column(String(20), nullable=False)
+    inputs = Column(JSONB, nullable=True)              # TP/TN/FP/FN, A/B, score…
+    baseline = Column(Numeric(12, 4), nullable=True)   # базовое значение m_l
+    tol_low = Column(Numeric(12, 4), nullable=True)    # допуск ε⁻
+    tol_high = Column(Numeric(12, 4), nullable=True)   # допуск ε⁺
+
+    raw_value = Column(Numeric(6, 4), nullable=True)     # значение метрики до нормировки
+    normalized_x = Column(Numeric(6, 4), nullable=True)  # X ∈ [0,1] к baseline
+    conformant = Column(Boolean, nullable=True)          # в допуске / вне; NULL — эталон не задан
+
+    unmeasurable = Column(Boolean, nullable=False, default=False, server_default="false")
+    expert_comment = Column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("period_id", "characteristic", "subcharacteristic", name="uq_ai_value_period_pair"),
+    )
+
+
 class ProfessionalJudgment(Base, TimestampMixin):
     """Профессиональное суждение менеджера по качеству по подхарактеристике (НЕ мера).
 

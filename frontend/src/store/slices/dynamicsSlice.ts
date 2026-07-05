@@ -6,15 +6,20 @@
  */
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '../index';
+import { DYNAMICS_REASONS } from '../../data/mockScaleData';
 
-const STORAGE_KEY = 'asok_dynamics_reasons';
+const STORAGE_KEY = 'asok_dynamics_reasons_v2';
+const OLD_KEYS = ['asok_dynamics_reasons'];
 
 function load(): Record<string, string> {
   try {
+    OLD_KEYS.forEach((k) => localStorage.removeItem(k)); // чистим устаревшие демо-данные
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    const saved = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    // Сценарные причины от МК подмешиваются под сохранённые (правки пользователя приоритетнее).
+    return { ...DYNAMICS_REASONS, ...saved };
   } catch {
-    return {};
+    return { ...DYNAMICS_REASONS };
   }
 }
 function persist(reasons: Record<string, string>) {

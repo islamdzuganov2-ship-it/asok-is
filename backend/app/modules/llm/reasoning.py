@@ -214,7 +214,26 @@ def _degenerate(text: str) -> bool:
     return len(words) > 30 and len(set(words)) / len(words) < 0.35
 
 
-def _llm_pass(prompt: str, inp: ReasoningInput, max_tokens: int = 400) -> str | None:
+def _input_anchors(inp: ReasoningInput) -> set[str]:
+    """Содержательные токены входа (≥6 символов) — словарь фактов для проверки якорения."""
+    text = " ".join((inp.judgments_block, inp.risks_block, inp.measures_block,
+                     inp.metrics_block, inp.system_name)).lower()
+    return {w for w in re.findall(r"\w{6,}", text)}
+
+
+def _anchored(text: str, inp: ReasoningInput) -> bool:
+    """Генти Генбуцу для вывода: текст обязан разделять хотя бы один содержательный токен
+    со входными фактами. Отсекает родовой «менеджерский» трёп мелкой модели, никак не
+    привязанный к переданным данным (числового grounding для этого недостаточно)."""
+    anchors = _input_anchors(inp)
+    if not anchors:
+        return True  # входы пустые — проверка неприменима
+    used = set(re.findall(r"\w{6,}", (text or "").lower()))
+    return bool(anchors & used)
+
+
+def _llm_pass(prompt: str, inp: ReasoningInput, max_tokens: int = 400,
+              require_anchor: bool = False) -> str | None:
     """LLM-проход с Дзидока-контролем: недостоверный или выродившийся вывод отбраковывается."""
     text = service.complete(prompt, system=REASONING_SYSTEM_PROMPT, max_tokens=max_tokens)
     if not text:
@@ -224,6 +243,9 @@ def _llm_pass(prompt: str, inp: ReasoningInput, max_tokens: int = 400) -> str | 
         return None
     if _degenerate(text):
         logger.warning("Дзидока (андон): вырожденный вывод (зацикленные повторы) — отбраковано")
+        return None
+    if require_anchor and not _anchored(text, inp):
+        logger.warning("Дзидока (андон): вывод не привязан к входным фактам (нет якорей) — отбраковано")
         return None
     return text
 
@@ -313,9 +335,11 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
     trace.stages.append(StageResult("E0", _STAGE_TITLES["E0"], facts))
 
     # Э1+Э2 — проблема и первопричина (LLM-проход 1, секции ПРОБЛЕМА/ПЕРВОПРИЧИНА).
+    # require_anchor: проблема/первопричина обязаны ссылаться на факты входа (Генти Генбуцу),
+    # иначе E7 унаследует «менеджерский» трёп, не привязанный к данным.
     analysis = _llm_pass(
         REASONING_PASS_ANALYSIS.format(system_name=inp.system_name, period_label=inp.period_label, facts=facts),
-        inp, max_tokens=200,
+        inp, max_tokens=200, require_anchor=True,
     ) if use_llm else None
     analysis_sections = _split_sections(analysis or "", {
         "problem": ["ПРОБЛЕМА"], "root": ["ПЕРВОПРИЧИНА"],

@@ -482,7 +482,7 @@ export const NewAssessmentPage: React.FC = () => {
                 <Form
                     form={systemForm}
                     layout="vertical"
-                    initialValues={{ status_lc: 'ОЭ', criticality_class: 'BUSINESS_OPERATIONAL', is_active: true }}
+                    initialValues={{ status_lc: 'ОЭ', criticality_class: 'BUSINESS_OPERATIONAL', system_kind: 'CLASSIC', is_active: true }}
                 >
                     <Form.Item name="name" label="Название" rules={[{ required: true, message: 'Введите название системы' }]}>
                         <Input />
@@ -505,6 +505,18 @@ export const NewAssessmentPage: React.FC = () => {
                                 { value: 'MISSION CRITICAL', label: 'MISSION CRITICAL' },
                                 { value: 'BUSINESS CRITICAL', label: 'BUSINESS CRITICAL' },
                                 { value: 'BUSINESS OPERATIONAL', label: 'BUSINESS OPERATIONAL' },
+                            ]}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="system_kind"
+                        label="Тип системы"
+                        tooltip="Классическая ИС оценивается по ISO 25010; система ИИ — по ГОСТ Р 59898-2021 (раздел «Оценка СИИ»)"
+                    >
+                        <Select
+                            options={[
+                                { value: 'CLASSIC', label: 'Классическая ИС (ISO 25010)' },
+                                { value: 'AI', label: 'Система ИИ — СИИ (ГОСТ Р 59898-2021)' },
                             ]}
                         />
                     </Form.Item>

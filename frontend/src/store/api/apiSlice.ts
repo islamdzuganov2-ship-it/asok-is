@@ -29,6 +29,8 @@ export interface SystemItem {
     code?: string;
     status_lc: string;
     criticality_class: string;
+    /** CLASSIC → контур ISO 25010; AI → контур ГОСТ Р 59898-2021 (BL-001). */
+    system_kind?: 'CLASSIC' | 'AI';
     is_active: boolean;
 }
 
@@ -37,6 +39,7 @@ export interface SystemCreateDto {
     code?: string;
     status_lc: string;
     criticality_class: string;
+    system_kind?: 'CLASSIC' | 'AI';
     owner?: string;
     is_active: boolean;
 }

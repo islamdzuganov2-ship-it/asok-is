@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.modules.assessment.ai_router import router as ai_assessments_router  # контур СИИ ГОСТ 59898 (BL-001)
 from app.modules.assessment.router import router as assessments_router  # домен assessment мигрирован (ТЗ v13)
 from app.modules.dataio.router import router as excel_router  # домен dataio мигрирован (ТЗ v13)
 from app.modules.iam.router import router as auth_router  # домен iam мигрирован (ТЗ v13)
@@ -13,6 +14,7 @@ api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 api_router.include_router(systems_router, prefix="/systems", tags=["systems"])
 api_router.include_router(assessments_router, prefix="/assessments", tags=["assessments"])
+api_router.include_router(ai_assessments_router, prefix="/ai-assessments", tags=["ai-assessments"])
 api_router.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 api_router.include_router(reporting_router, prefix="/reports", tags=["reports"])
 api_router.include_router(excel_router, prefix="/excel", tags=["excel"])

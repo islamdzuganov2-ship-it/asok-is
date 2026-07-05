@@ -13,6 +13,8 @@ class SystemResponse(BaseModel):
     code: Optional[str] = None
     status_lc: str
     criticality_class: str
+    # CLASSIC → контур ISO 25010; AI → контур ГОСТ Р 59898-2021 (BL-001).
+    system_kind: str = "CLASSIC"
     is_active: bool
 
 
@@ -28,5 +30,6 @@ class SystemCreate(BaseModel):
     code: str | None = Field(None, max_length=50)
     status_lc: str = "ОЭ"
     criticality_class: str
+    system_kind: str = Field("CLASSIC", pattern="^(CLASSIC|AI)$")
     owner: str | None = Field(None, max_length=255)
     is_active: bool = True

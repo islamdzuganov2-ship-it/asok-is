@@ -13,6 +13,7 @@ import {
     RobotOutlined,
     LineChartOutlined,
     ScheduleOutlined,
+    ExperimentOutlined,
 } from '@ant-design/icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -75,11 +76,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         { key: '/dashboard/taskplan', icon: <ScheduleOutlined />, label: 'План задач' },
         { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
         { key: '/assessments/new', icon: <FormOutlined />, label: 'Оценка ИС' },
+        { key: '/ai-assessments', icon: <ExperimentOutlined />, label: 'Оценка СИИ' },
         { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
     ];
     const analystMenu = [
         { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
         { key: '/assessments/new', icon: <FormOutlined />, label: 'Оценка ИС' },
+        { key: '/ai-assessments', icon: <ExperimentOutlined />, label: 'Оценка СИИ' },
         { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
     ];
 

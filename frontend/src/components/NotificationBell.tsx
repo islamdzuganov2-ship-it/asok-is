@@ -17,6 +17,8 @@ import { useSelector, shallowEqual } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { RootState } from '../store';
 import { selectVisibleProposals } from '../store/slices/governanceSlice';
+import { reasonKey, selectReasons } from '../store/slices/dynamicsSlice';
+import { DYNAMICS, QUARTERS, detectAnomalies } from '../data/mockScaleData';
 
 const { Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -42,6 +44,8 @@ const NotificationBell: React.FC = () => {
   const navigate = useNavigate();
   const role = useSelector((s: RootState) => s.auth.role) || '';
   const proposals = useSelector(selectVisibleProposals, shallowEqual);
+  const dataMode = useSelector((s: RootState) => s.ui.dataMode);
+  const reasons = useSelector(selectReasons);
   const isQM = role === 'QUALITY_MANAGER';
   const isExec = ['ADMIN', 'CTO', 'CEO', 'CIO', 'EXECUTIVE'].includes(role);
 
@@ -82,6 +86,40 @@ const NotificationBell: React.FC = () => {
 
     // Менеджер по качеству.
     if (isQM) {
+      // Аномальные изменения качества без причины (демо-режим): МК обязан заполнить причину
+      // роста/просадки на вкладке «Динамика качества». Одно уведомление на систему.
+      if (dataMode === 'mock') {
+        const bySystem = Object.values(DYNAMICS)
+          .map((dyn) => {
+            let missing = 0;
+            let sample = '';
+            [dyn.system, ...dyn.chars].forEach((s) => {
+              detectAnomalies(s.series).forEach((i) => {
+                if (!reasons[reasonKey(dyn.name, s.key, QUARTERS[i])]) {
+                  missing += 1;
+                  if (!sample) sample = `${s.name} · ${QUARTERS[i]}`;
+                }
+              });
+            });
+            return { name: dyn.name, missing, sample };
+          })
+          .filter((x) => x.missing > 0)
+          .sort((a, b) => b.missing - a.missing);
+        bySystem.slice(0, 6).forEach((x) => {
+          out.push({
+            key: `anom-${x.name}`, icon: <WarningOutlined />, color: '#C06B5A',
+            text: `Заполните причину аномального изменения качества: «${x.name}» — точек без причины: ${x.missing} (напр. ${x.sample})`,
+            to: '/dashboard/manager/dynamics',
+          });
+        });
+        if (bySystem.length > 6) {
+          out.push({
+            key: 'anom-more', icon: <WarningOutlined />, color: '#C06B5A',
+            text: `…и ещё систем с аномалиями без причины: ${bySystem.length - 6}. Откройте «Динамика качества».`,
+            to: '/dashboard/manager/dynamics',
+          });
+        }
+      }
       // Незаполненные профессиональные суждения — на каких системах пусто.
       judg.forEach((j) => {
         out.push({

@@ -31,6 +31,8 @@ class System(Base, TimestampMixin):
     code = Column(String(50), unique=True, index=True)
     status_lc = Column(SQLEnum(LifecycleStatus), nullable=False, default=LifecycleStatus.OE)
     criticality_class = Column(SQLEnum(CriticalityClass), nullable=False)
+    # Тип системы: CLASSIC → контур ISO 25010; AI → контур ГОСТ Р 59898-2021 (BL-001).
+    system_kind = Column(String(10), nullable=False, default="CLASSIC", server_default="CLASSIC")
     owner = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_deleted = Column(Boolean, default=False, nullable=False)

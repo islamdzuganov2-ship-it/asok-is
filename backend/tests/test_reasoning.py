@@ -133,6 +133,25 @@ def test_measures_not_synthesized_without_sources(monkeypatch):
     assert trace.stage("E7").used_llm
 
 
+def test_unanchored_generic_text_rejected(monkeypatch):
+    # Родовой «менеджерский» трёп без привязки к фактам входа — не первопричина (Генти Генбуцу).
+    generic = ("ПРОБЛЕМА: Для улучшения бизнеса нужно работать лучше.\n"
+               "ПЕРВОПРИЧИНА: Необходимо повысить общую производительность процессов компании.")
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: generic)
+    trace = run_reasoning(_inp())
+    assert trace.stage("E1").fell_back and trace.stage("E2").fell_back
+    assert "повысить общую производительность" not in trace.conclusion
+
+
+def test_anchored_analysis_is_kept(monkeypatch):
+    # Вывод, ссылающийся на факты входа (тестируемость из суждений), проходит якорную проверку.
+    anchored = ("ПРОБЛЕМА: просела тестируемость, регресс выполняется вручную.\n"
+                "ПЕРВОПРИЧИНА: не выделен ресурс на автотесты; данных для следующего «почему» нет.")
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: anchored)
+    trace = run_reasoning(_inp())
+    assert trace.stage("E1").used_llm and trace.stage("E2").used_llm
+
+
 def test_degenerate_repetition_rejected(monkeypatch):
     # Зацикленный повтор («данных отсутствия данных отсутствия…») — андон, а не заключение.
     loop = "ЗАКЛЮЧЕНИЕ: " + "данных отсутствия " * 40
