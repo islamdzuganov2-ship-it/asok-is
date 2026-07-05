@@ -405,8 +405,11 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
 
     # Э6 — Хансей: саморефлексия (детерминированно: полнота данных + fallback-этапы).
     fell_back_now = [s.code for s in trace.stages if s.fell_back]
+    # Уверенность: высокая — все источники и все этапы от LLM; средняя — есть хотя бы один
+    # первичный источник контура (суждения ИЛИ карточки мер); иначе низкая.
+    has_primary = bool(inp.judgments_block.strip() or inp.measures_block.strip())
     trace.confidence = ("высокая" if not absent and not fell_back_now
-                        else "средняя" if inp.judgments_block.strip() else "низкая")
+                        else "средняя" if has_primary else "низкая")
     hansei = (
         (f"Не переданы: {', '.join(absent)} — выводы по этим аспектам ограничены. " if absent else
          "Все источники входных данных переданы. ")

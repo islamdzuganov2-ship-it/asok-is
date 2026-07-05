@@ -26,6 +26,7 @@ from app.modules.reporting.schemas import (
     QualityPlanMatrixRow,
     RiskMatrixRow,
 )
+from app.modules.llm import reasoning as llm_reasoning
 from app.modules.llm import service as llm_service
 from app.modules.risk import RiskBase, risks_for_characteristics
 from app.modules.systems import System
@@ -46,32 +47,82 @@ class MeasuresAnalyticsItem(BaseModel):
     avg_score: float | None = None
 
 
-@router.post("/measures-analytics")
-async def measures_analytics(
-    items: list[MeasuresAnalyticsItem],
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """LLM-аналитика по данным о МЕРАХ (сводка по характеристикам) + маппинг рисков.
+class MeasureCardIn(BaseModel):
+    """Карточка меры из governance-контура (MeasureDecisionModal) — первичный факт для конвейера."""
+    system: str
+    characteristic: str
+    title: str
+    rationale: str | None = None      # обоснование (профсуждение в карточке)
+    expectation: str | None = None    # что ожидается от ЛПР
+    owner: str | None = None
+    due: str | None = None
+    score: float | None = None
 
-    Не карточки мер, а собранная по мерам аналитика: где систематика, что приоритизировать.
-    """
-    if not items:
-        return {"analytics": "Активных мер нет — аналитика не сформирована.",
-                "llm": llm_service.is_available(), "mapped_risks": []}
-    block = "\n".join(
+
+class MeasuresReasoningIn(BaseModel):
+    """Новый формат запроса: агрегаты + сами карточки мер (Генти Генбуцу — иди к первичным данным)."""
+    items: list[MeasuresAnalyticsItem] = []
+    cards: list[MeasureCardIn] = []
+
+
+def _measures_blocks(items: list[MeasuresAnalyticsItem], cards: list[MeasureCardIn]) -> str:
+    """Блок фактов о мерах: сводка по характеристикам + карточки мер (обоснование/ответственный/срок)."""
+    lines = [
         f"{i.characteristic} | мер: {i.count}"
         + (f", ИС: {i.systems}" if i.systems else "")
         + (f", ср.балл: {round(i.avg_score)}%" if i.avg_score is not None else "")
         for i in sorted(items, key=lambda x: x.count, reverse=True)
-    )
-    chars = [i.characteristic for i in items]
+    ]
+    for c in cards[:12]:
+        detail = f"{c.system} | {c.characteristic} | {c.title}"
+        if c.rationale:
+            detail += f": {c.rationale}"
+        extras = [x for x in (
+            f"балл {round(c.score)}%" if c.score is not None and c.score >= 0 else None,
+            f"ответственный {c.owner}" if c.owner else None,
+            f"срок {c.due}" if c.due else None,
+        ) if x]
+        if extras:
+            detail += f" ({', '.join(extras)})"
+        lines.append(detail)
+    return "\n".join(lines)
+
+
+@router.post("/measures-analytics")
+async def measures_analytics(
+    payload: MeasuresReasoningIn | list[MeasuresAnalyticsItem],
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Аналитика по МЕРАМ через конвейер многоаспектного рассуждения (BL-005, Дао Тойота).
+
+    Принимает новый формат {items, cards} (карточки мер — первичный источник) и легаси-массив
+    агрегатов (обратная совместимость). Ответ сохраняет прежние поля (analytics/llm/mapped_risks)
+    и дополняется аудируемой трассой (reasoning) и уверенностью (confidence).
+    """
+    items = payload if isinstance(payload, list) else payload.items
+    cards = [] if isinstance(payload, list) else payload.cards
+    if not items and not cards:
+        return {"analytics": "Активных мер нет — аналитика не сформирована.",
+                "llm": llm_service.is_available(), "mapped_risks": [],
+                "reasoning": None, "confidence": "низкая"}
+
+    measures_block = _measures_blocks(items, cards)
+    chars = sorted({i.characteristic for i in items} | {c.characteristic for c in cards})
     risk_rows = await risks_for_characteristics(db, chars, limit=8)
     risks_block = "\n".join(f"- {r.title}: {r.mitigation or '—'}" for r in risk_rows)
-    analytics = await asyncio.to_thread(llm_service.generate_measures_analytics, block, risks_block)
+
+    result = await asyncio.to_thread(
+        llm_reasoning.generate_reasoned_conclusion,
+        "ИТ-ландшафт банка", "текущий период",
+        "",             # профсуждения в этом потоке не передаются (их поток — judgment-conclusion)
+        risks_block, "", measures_block, "",
+    )
     return {
-        "analytics": analytics,
+        "analytics": result["conclusion"],
         "llm": llm_service.is_available(),
         "mapped_risks": [{"title": r.title, "characteristic": r.characteristic} for r in risk_rows],
+        "reasoning": result["trace"],
+        "confidence": result["confidence"],
     }
 
 

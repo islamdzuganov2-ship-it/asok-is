@@ -158,6 +158,28 @@ def test_confidence_derived_from_data_completeness():
     assert ok.confidence in ("средняя", "высокая")
 
 
+def test_measures_driven_reasoning_without_judgments():
+    # Поток /reports/measures-analytics: карточки мер — первичный источник, суждений нет.
+    cards_block = (
+        "Сопровождаемость | мер: 2, ИС: 1, ср.балл: 25%\n"
+        "ЕХД | Сопровождаемость | Низкое покрытие автотестами: регресс вручную "
+        "(балл 25%, ответственный Иванов, срок 01.08.2026)"
+    )
+    trace = run_reasoning(
+        ReasoningInput("ИТ-ландшафт банка", "текущий период",
+                       judgments_block="", risks_block=RISKS, measures_block=cards_block),
+        use_llm=False,
+    )
+    # Генти Генбуцу честно фиксирует: суждений нет, меры есть
+    assert "Профессиональные суждения: данные отсутствуют" in trace.stage("E0").content
+    assert "Карточки мер:" in trace.stage("E0").content
+    # Кайдзен синтезирует меры из карточек (источник есть — fallback не «отсутствуют»)
+    assert "из карточек мер" in trace.stage("E5").content
+    # меры — первичный источник → уверенность не «низкая»
+    assert trace.confidence == "средняя"
+    assert trace.conclusion.strip()
+
+
 # ─── Высокоуровневый вход и датасет ──────────────────────────────────────────────────
 
 def test_generate_reasoned_conclusion_shape_and_cache(monkeypatch):

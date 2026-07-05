@@ -6,7 +6,7 @@
  * Клиент агрегирует меры по характеристикам и запрашивает POST /reports/measures-analytics.
  */
 import React, { useMemo, useState } from 'react';
-import { Card, Button, Table, Tag, Typography, Alert, Spin, Space } from 'antd';
+import { Card, Button, Table, Tag, Typography, Alert, Spin, Space, Collapse } from 'antd';
 import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { ragToken } from '../theme/ragPalette';
 import type { Proposal } from '../store/slices/governanceSlice';
@@ -15,7 +15,21 @@ const { Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
 interface AggItem { characteristic: string; count: number; systems: number; avg_score: number | null }
-interface AnalyticsResp { analytics: string; llm: boolean; mapped_risks: Array<{ title: string; characteristic: string }> }
+/** Карточка меры для конвейера рассуждения (Генти Генбуцу — первичные данные, BL-005). */
+interface MeasureCardOut {
+  system: string; characteristic: string; title: string;
+  rationale?: string; expectation?: string; owner?: string; due?: string; score?: number | null;
+}
+interface ReasoningStage { code: string; title: string; content: string; used_llm: boolean; fell_back: boolean }
+interface ReasoningTraceResp { stages: ReasoningStage[]; lenses: Array<{ title: string; view: string }>; confidence: string }
+interface AnalyticsResp {
+  analytics: string; llm: boolean;
+  mapped_risks: Array<{ title: string; characteristic: string }>;
+  reasoning?: ReasoningTraceResp | null;
+  confidence?: string;
+}
+
+const CONFIDENCE_COLOR: Record<string, string> = { высокая: 'green', средняя: 'gold', низкая: 'red' };
 
 const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposals }) => {
   const [data, setData] = useState<AnalyticsResp | null>(null);
@@ -41,6 +55,21 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
       .sort((a, b) => b.count - a.count);
   }, [proposals]);
 
+  // Сами карточки мер — первичный источник для конвейера рассуждения (а не только агрегаты).
+  const cards: MeasureCardOut[] = useMemo(() =>
+    proposals
+      .filter((p) => p.status === 'PENDING_APPROVAL' || p.status === 'APPROVED')
+      .map((p) => ({
+        system: p.systemName,
+        characteristic: p.characteristic,
+        title: p.riskTitle || p.metricName,
+        rationale: p.rationale || undefined,
+        expectation: p.expectation || undefined,
+        owner: p.owner || undefined,
+        due: p.dueDate || undefined,
+        score: p.calculatedScore >= 0 ? p.calculatedScore : null,
+      })), [proposals]);
+
   const run = async () => {
     setLoading(true); setErr(null);
     try {
@@ -48,7 +77,7 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
       const r = await fetch(`${VITE_API}/reports/measures-analytics`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify(agg),
+        body: JSON.stringify({ items: agg, cards }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setData(await r.json());
@@ -88,7 +117,16 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
               type="info"
               showIcon
               icon={<RobotOutlined />}
-              message="Предложения LLM по мерам"
+              message={
+                <Space>
+                  Заключение LLM по мерам (конвейер Дао Тойота)
+                  {data.confidence && (
+                    <Tag color={CONFIDENCE_COLOR[data.confidence] || 'default'}>
+                      уверенность: {data.confidence}
+                    </Tag>
+                  )}
+                </Space>
+              }
               description={
                 <>
                   <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: data.mapped_risks?.length ? 8 : 0 }}>{data.analytics}</Paragraph>
@@ -97,6 +135,34 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
                       Риски: {data.mapped_risks.map((r) => r.title).join('; ')}
                     </Text>
                   )}
+                  {data.reasoning?.stages?.length ? (
+                    <Collapse
+                      ghost
+                      size="small"
+                      style={{ marginTop: 8 }}
+                      items={[{
+                        key: 'trace',
+                        label: <Text type="secondary" style={{ fontSize: 12 }}>Ход рассуждения (Э0–Э7, аудируемая трасса)</Text>,
+                        children: (
+                          <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                            {data.reasoning.stages.map((s) => (
+                              <div key={s.code}>
+                                <Text strong style={{ fontSize: 12 }}>
+                                  {s.code} · {s.title}{' '}
+                                  {s.used_llm
+                                    ? <Tag color="blue" style={{ fontSize: 10 }}>LLM</Tag>
+                                    : <Tag style={{ fontSize: 10 }}>детерм.</Tag>}
+                                </Text>
+                                <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap', fontSize: 12, marginBottom: 0 }}>
+                                  {s.content}
+                                </Paragraph>
+                              </div>
+                            ))}
+                          </Space>
+                        ),
+                      }]}
+                    />
+                  ) : null}
                 </>
               }
             />
