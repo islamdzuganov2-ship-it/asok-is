@@ -30,6 +30,7 @@ from app.modules.llm import reasoning as llm_reasoning
 from app.modules.llm import service as llm_service
 from app.modules.risk import RiskBase, risks_for_characteristics
 from app.modules.systems import System
+from app.shared.periods import period_sort_key
 
 router = APIRouter()
 
@@ -232,7 +233,14 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db)) -> Dashboa
         .join(System, AssessmentPeriod.system_id == System.id)
         .where(System.is_deleted.is_(False), System.is_active.is_(True))
     )
-    values = list(result.scalars().all())
+    all_values = list(result.scalars().all())
+
+    # Сквозная консистентность (DEF-12): управленческий дашборд считает ТОЛЬКО последний период
+    # каждой ИС — как /assessments/dashboard. Хронология периодов — по (год, квартал) (DEF-13).
+    latest_period_per_system: dict[UUID, UUID] = {}
+    for value in sorted(all_values, key=lambda v: period_sort_key(v.period.period), reverse=True):
+        latest_period_per_system.setdefault(value.period.system_id, value.period_id)
+    values = [v for v in all_values if latest_period_per_system.get(v.period.system_id) == v.period_id]
 
     measured = [float(value.calculated_x) for value in values if value.calculated_x is not None]
     if not measured:

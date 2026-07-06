@@ -43,6 +43,7 @@ from app.modules.assessment.schemas import (
 )
 from app.modules.risk import RiskBase
 from app.modules.systems import System
+from app.shared.periods import period_sort_key
 from app.modules.dataio.importer import ensure_period_values, get_or_create_metric
 from app.modules.llm import reasoning as llm_reasoning
 from app.modules.llm import service as llm_service
@@ -124,7 +125,9 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     if not rows:
         return _empty_dashboard()
 
-    # Последний период по каждой ИС.
+    # Последний период по каждой ИС — хронологически по (год, квартал), а не по created_at
+    # (сиды пишут периоды одной транзакцией) и не по строке («Q4-2025» > «Q2-2026») — DEF-13.
+    rows = sorted(rows, key=lambda r: period_sort_key(r[1].period), reverse=True)
     latest_period_per_system: dict[str, str] = {}
     for _, period, system, _ in rows:
         latest_period_per_system.setdefault(str(system.id), str(period.id))
@@ -754,10 +757,20 @@ async def judgments_status(db: AsyncSession = Depends(get_db)) -> list[dict]:
     for pid, c, s in judg:
         if (c, s) in QUALITY_PAIR_KEYS:
             filled[pid].add((c, s))
-    out = []
+    # Только ПОСЛЕДНИЙ активный период каждой ИС: исторические кварталы суждениями не дозаполняют,
+    # уведомления МК не должны шуметь по архиву (DEF-14).
+    latest: dict[str, AssessmentPeriod] = {}
+    latest_system: dict[str, System] = {}
     for period, system in period_rows:
         if period.id not in active:
             continue
+        key = str(system.id)
+        if key not in latest or period_sort_key(period.period) > period_sort_key(latest[key].period):
+            latest[key] = period
+            latest_system[key] = system
+    out = []
+    for key, period in latest.items():
+        system = latest_system[key]
         n = len(filled.get(period.id, set()))
         if n >= TOTAL_SUBS:
             continue

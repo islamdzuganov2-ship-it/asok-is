@@ -399,13 +399,15 @@ EXECUTIVE_SCALE.techDebt.note = `мер одобрено: ${approved} из ${SCA
 export const QUARTERS = ['Q1-2025', 'Q2-2025', 'Q3-2025', 'Q4-2025', 'Q1-2026', 'Q2-2026'];
 
 // Ряд значений по кварталам: последний квартал = текущее значение, ранние — с дрейфом.
+// Дрейф умеренный (±8 п.п.), чтобы АНОМАЛИЯМИ считались в основном сценарные сдвиги
+// (CHAR_ANOMALIES / SYSTEM_ANOMALIES), а уведомления МК не тонули в шуме.
 function makeSeries(seed: string, current: number): number[] {
   if (current < 0) return QUARTERS.map(() => -1);   // невозможно измерить — нет ряда
   const r = rngOf(seed);
   return QUARTERS.map((_, q) =>
     q === QUARTERS.length - 1
       ? current
-      : Math.round(clamp((current + (r() - 0.5) * 30) / 100, 0.05, 0.99) * 100));
+      : Math.round(clamp((current + (r() - 0.5) * 16) / 100, 0.05, 0.99) * 100));
 }
 
 export interface DynSeries { key: string; name: string; char: string; series: number[] }

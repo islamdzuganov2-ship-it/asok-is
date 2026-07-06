@@ -39,6 +39,8 @@ from app.modules.assessment.models import (
 )
 from app.modules.iam import User, get_password_hash
 from app.modules.quality import MetricCatalog, calculate_metric, map_to_level
+from app.modules.quality.ai_calculation import compute_metric, normalize_to_baseline
+from app.modules.quality.ai_quality_model import AI_QUALITY_MODEL
 from app.modules.systems import CriticalityClass, System
 
 QUARTERS = ["Q1-2025", "Q2-2025", "Q3-2025", "Q4-2025", "Q1-2026", "Q2-2026"]
@@ -189,21 +191,40 @@ async def seed_data() -> None:
                     )
                 )
 
-        # --- Системы ---
+        # --- Мягкое удаление мусорных систем прошлых сессий ---
+        junk = (await db.execute(select(System).where(System.name.in_(JUNK_SYSTEM_NAMES)))).scalars().all()
+        for s in junk:
+            s.is_deleted = True
+            s.is_active = False
+
+        # --- Системы (сценарные) ---
         systems_data = [
             {"name": "АБС Core", "code": "ABS_CORE", "criticality_class": CriticalityClass.MISSION_CRITICAL},
             {"name": "CRM ОПК", "code": "CRM_OPK", "criticality_class": CriticalityClass.BUSINESS_CRITICAL},
             {"name": "HR Portal", "code": "HR_PORTAL", "criticality_class": CriticalityClass.BUSINESS_OPERATIONAL},
+            {"name": "АОКИС", "code": "AOKIS", "criticality_class": CriticalityClass.BUSINESS_CRITICAL},
         ]
-        systems: list[System] = []
+        # (ключ сценария, система) — ключом служит код из systems_data, даже если в БД другой code.
+        systems: list[tuple[str, System]] = []
         for item in systems_data:
-            result = await db.execute(select(System).where(System.code == item["code"]))
-            system = result.scalar_one_or_none()
+            result = await db.execute(
+                select(System).where((System.code == item["code"]) | (System.name == item["name"]))
+            )
+            found = list(result.scalars().all())
+            system = next((s for s in found if s.code == item["code"]), found[0] if found else None)
             if system is None:
                 system = System(**item)
                 db.add(system)
                 await db.flush()
-            systems.append(system)
+            else:
+                system.is_deleted = False
+                system.is_active = True
+            # Дубли по имени (мок-сев прошлых сессий) — мягко удаляем, чтобы не задваивать дашборды.
+            for dup in found:
+                if dup.id != system.id:
+                    dup.is_deleted = True
+                    dup.is_active = False
+            systems.append((item["code"], system))
 
         metrics = list((await db.execute(select(MetricCatalog).where(MetricCatalog.is_active.is_(True)))).scalars().all())
         if not metrics:
@@ -217,9 +238,8 @@ async def seed_data() -> None:
         await db.execute(delete(AssessmentValue))
         await db.execute(delete(AssessmentPeriod))
 
-        # --- Сценарные оценки: 3 ИС × 6 кварталов × все метрики каталога ---
-        for system in systems:
-            code = system.code
+        # --- Сценарные оценки: 4 ИС × 6 кварталов × все метрики каталога ---
+        for code, system in systems:
             for q_idx, quarter in enumerate(QUARTERS):
                 period = AssessmentPeriod(system_id=system.id, period=quarter, status="CALCULATED")
                 db.add(period)
@@ -273,7 +293,72 @@ async def seed_data() -> None:
                         author="Менеджер по качеству",
                     ))
 
+        # --- Контур СИИ (ГОСТ 59898): «Скоринг-ML (СИИ)», представительный набор Q2-2026 ---
+        await seed_ai_contour(db)
+
         await db.commit()
+
+
+def _ai_inputs(kind: str, x: float) -> dict:
+    """Реалистичные входы метрики СИИ под целевое значение x (матрица ошибок 1000 примеров)."""
+    if kind in ("ACCURACY", "PRECISION", "RECALL", "SPECIFICITY", "F1"):
+        tp = round(500 * x)
+        tn = round(500 * min(0.99, x + 0.03))
+        return {"TP": tp, "FN": 500 - tp, "TN": tn, "FP": 500 - tn}
+    if kind == "RATIO_DIRECT":
+        return {"A": round(80 * x), "B": 80}
+    if kind == "RATIO_INVERSE":
+        return {"A": round(80 * (1 - x)), "B": 80}
+    if kind == "EXPERT_SCALE":
+        return {"score": round(x * 100)}
+    return {}
+
+
+async def seed_ai_contour(db) -> None:
+    """Пересев данных модуля качества СИИ: система, период Q2-2026, значения по набору."""
+    result = await db.execute(select(System).where(System.name == "Скоринг-ML (СИИ)"))
+    ai_system = result.scalars().first()
+    if ai_system is None:
+        ai_system = System(
+            name="Скоринг-ML (СИИ)", code="SCORING_ML_AI",
+            criticality_class=CriticalityClass.BUSINESS_CRITICAL,
+        )
+        db.add(ai_system)
+        await db.flush()
+    ai_system.system_kind = "AI"
+    ai_system.is_deleted = False
+    ai_system.is_active = True
+
+    period = AssessmentPeriod(system_id=ai_system.id, period="Q2-2026", status="COMPLETE")
+    db.add(period)
+    await db.flush()
+
+    # Представительный набор: до 2 субхарактеристик на характеристику (E1-виды).
+    e1_kinds = {"RATIO_DIRECT", "RATIO_INVERSE", "ACCURACY", "PRECISION", "RECALL", "SPECIFICITY", "F1", "EXPERT_SCALE"}
+    for group_name, chars in AI_QUALITY_MODEL:
+        for char_name, subs in chars:
+            taken = 0
+            for sub_name, kind, _is_ai, _hint in subs:
+                if kind not in e1_kinds or taken >= 2:
+                    continue
+                x = _clamp(0.86 + _jitter(f"AI|{sub_name}", 0.10), 0.55, 0.98)
+                inputs = _ai_inputs(kind, x)
+                raw = compute_metric(kind, inputs)
+                if raw is None:
+                    continue
+                # Классификационные метрики сверяются с эталоном 0.88 (±0.10) —
+                # часть строк осознанно вне допуска (кейс для отчёта соответствия).
+                baseline = 0.88 if kind not in ("EXPERT_SCALE",) else None
+                tol_low, tol_high = (0.10, 0.10) if baseline is not None else (None, None)
+                normalized, conformant = normalize_to_baseline(raw, baseline, tol_low, tol_high)
+                db.add(AiAssessmentValue(
+                    id=uuid.uuid4(), period_id=period.id,
+                    group_name=group_name, characteristic=char_name, subcharacteristic=sub_name,
+                    metric_kind=kind, inputs=inputs,
+                    baseline=baseline, tol_low=tol_low, tol_high=tol_high,
+                    raw_value=raw, normalized_x=normalized, conformant=conformant,
+                ))
+                taken += 1
 
 
 if __name__ == "__main__":
