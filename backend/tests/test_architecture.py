@@ -25,6 +25,7 @@ LEGACY_MODULES = [
     "app.models.matrices",
     "app.models.risk_base",
     "app.models.base_mixin",
+    "app.models.audit",  # T-19: AuditLog перенесён в modules/iam, папка models/ устранена
     "app.schemas.auth",
     "app.schemas.assessment",
     "app.schemas.metric",

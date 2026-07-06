@@ -1,5 +1,5 @@
 """
-Общие ORM-миксины (ТЗ v13). Каноническое место; app.models.base_mixin — shim отсюда.
+Общие ORM-миксины (ТЗ v13) — каноническое и единственное место (shim-слои сняты).
 Зависит только от SQLAlchemy, не от домена и не от app.infrastructure.
 """
 from datetime import datetime, timezone

@@ -6,3 +6,12 @@ node_modules/
 dist/
 
 .env
+
+# LLM-модели — большие GGUF-бинарники, в git не хранятся (см. docs/LLM_SETUP.md)
+models/llm/*.gguf
+
+# Windows-артефакт ошибочного перенаправления вывода (> nul)
+nul
+
+# Вложенный git-репозиторий-пустышка
+MK/
