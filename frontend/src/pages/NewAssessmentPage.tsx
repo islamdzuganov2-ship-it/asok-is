@@ -508,6 +508,10 @@ export const NewAssessmentPage: React.FC = () => {
                             ]}
                         />
                     </Form.Item>
+                    {/* ПОД РАЗВИТИЕ: выбор «Тип системы» (Классическая ИС / Система ИИ по ГОСТ Р
+                        59898-2021) убран из UI вместе с разделом «Оценка СИИ». Все системы создаются
+                        как классические (system_kind='CLASSIC', см. initialValues). Когда контур СИИ
+                        понадобится — вернуть этот Form.Item с опциями CLASSIC/AI.
                     <Form.Item
                         name="system_kind"
                         label="Тип системы"
@@ -519,7 +523,7 @@ export const NewAssessmentPage: React.FC = () => {
                                 { value: 'AI', label: 'Система ИИ — СИИ (ГОСТ Р 59898-2021)' },
                             ]}
                         />
-                    </Form.Item>
+                    </Form.Item> */}
                     <Form.Item name="owner" label="Владелец">
                         <Input />
                     </Form.Item>

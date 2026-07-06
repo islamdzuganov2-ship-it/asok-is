@@ -15,7 +15,7 @@ const { Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
 interface AggItem { characteristic: string; count: number; systems: number; avg_score: number | null }
-/** Карточка меры для конвейера рассуждения (Генти Генбуцу — первичные данные, BL-005). */
+/** Карточка меры для конвейера рассуждения (первичные данные, BL-005). */
 interface MeasureCardOut {
   system: string; characteristic: string; title: string;
   rationale?: string; expectation?: string; owner?: string; due?: string; score?: number | null;
@@ -119,7 +119,7 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
               icon={<RobotOutlined />}
               message={
                 <Space>
-                  Заключение LLM по мерам (конвейер Дао Тойота)
+                  Заключение LLM по мерам
                   {data.confidence && (
                     <Tag color={CONFIDENCE_COLOR[data.confidence] || 'default'}>
                       уверенность: {data.confidence}
@@ -142,7 +142,7 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
                       style={{ marginTop: 8 }}
                       items={[{
                         key: 'trace',
-                        label: <Text type="secondary" style={{ fontSize: 12 }}>Ход рассуждения (Э0–Э7, аудируемая трасса)</Text>,
+                        label: <Text type="secondary" style={{ fontSize: 12 }}>Ход рассуждения (аудируемая трасса)</Text>,
                         children: (
                           <Space direction="vertical" size={6} style={{ width: '100%' }}>
                             {data.reasoning.stages.map((s) => (

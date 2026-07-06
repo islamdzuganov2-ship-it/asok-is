@@ -1,21 +1,24 @@
 """
-reasoning.py — конвейер многоаспектного рассуждения LLM (BL-005, ТЗ v13, домен llm).
+reasoning.py — конвейер многоаспектного аналитического рассуждения LLM (BL-005, ТЗ v13, домен llm).
 
-Реализация манифеста «Дао Тойота × IT × ISO» (Obsidian: AI/АСОК_ИС/09_Манифест_LLM_Дао-Тойота.md):
-прежде чем вынести заключение руководителю (ЛПР), модель проходит этапы
+Прежде чем вынести заключение руководителю (ЛПР), модель проходит этапы:
 
-    Э0 Генти Генбуцу  — инвентаризация фактов входа (только переданное; чего нет — «отсутствует»)
-    Э1 Проблема       — что именно просело
-    Э2 5 Почему       — первопричина, а не симптом
-    Э3 Немаваси       — ролевые линзы (≥3 точек зрения: CIO, качество, риски, ИБ)
-    Э4 Дзидока        — встроенное качество: grounding-проверка чисел каждого этапа (андон)
-    Э5 Кайдзен        — синтез мер (мера → закрываемый риск), только из переданных мер/минимизаций
-    Э6 Хансей         — саморефлексия: чего не хватает, где fallback, уверенность
-    Э7 Заключение ЛПР — контракт из 6 блоков, ТОЛЬКО после Э0–Э6
+    Э0 Факты входа        — инвентаризация фактов входа (только переданное; чего нет — «отсутствует»)
+    Э1 Проблема           — что именно просело
+    Э2 Первопричина       — корневая причина, а не симптом
+    Э3 Ролевые точки зрения — экспертные линзы (≥3 точек зрения: CIO, качество, риски, ИБ)
+    Э4 Контроль этапов    — встроенное качество: grounding-проверка чисел каждого этапа
+    Э5 Синтез мер         — мера → закрываемый риск, только из переданных мер/минимизаций
+    Э6 Саморефлексия      — чего не хватает, где fallback, уверенность
+    Э7 Заключение ЛПР     — контракт из 6 блоков, ТОЛЬКО после Э0–Э6
 
-Инженерные принципы (сохранены из service.py):
+Методология этапов — внутренний «скелет» рассуждения; в текст, видимый пользователю,
+названия методологических школ и их термины НЕ выводятся: LLM наполняет скелет содержанием
+из переданных данных и доменного глоссария (knowledge.py).
+
+Инженерные принципы:
   • grounding: проценты в выводе каждого этапа обязаны присутствовать во входе, иначе этап
-    заменяется детерминированным fallback (Дзидока = «остановись и почини», а не «пропусти дефект»);
+    заменяется детерминированным fallback (контроль качества = «остановись и почини»);
   • деградация: без модели/при ошибке конвейер полностью детерминирован и всегда даёт трассу
     и заключение (честное, без выдумок);
   • экономия CPU: 3 LLM-прохода (Э1+Э2, Э3, Э5+Э7) с секционными маркерами вместо 8.
@@ -27,6 +30,7 @@ import re
 from dataclasses import dataclass, field
 
 from app.modules.llm import service
+from app.modules.llm.knowledge import relevant_terms
 from app.modules.llm.prompts import (
     REASONING_LENSES,
     REASONING_PASS_ANALYSIS,
@@ -40,14 +44,14 @@ logger = logging.getLogger(__name__)
 
 # Порядок и названия этапов конвейера (код, заголовок).
 STAGES: list[tuple[str, str]] = [
-    ("E0", "Генти Генбуцу — факты входа"),
+    ("E0", "Факты входа"),
     ("E1", "Постановка проблемы"),
-    ("E2", "5 Почему — первопричина"),
-    ("E3", "Немаваси — ролевые линзы"),
-    ("E4", "Дзидока — контроль качества этапов"),
-    ("E5", "Кайдзен — синтез мер"),
-    ("E6", "Хансей — саморефлексия"),
-    ("E7", "Заключение ЛПР"),
+    ("E2", "Первопричина"),
+    ("E3", "Ролевые точки зрения"),
+    ("E4", "Контроль достоверности этапов"),
+    ("E5", "Синтез мер"),
+    ("E6", "Саморефлексия и оговорки"),
+    ("E7", "Заключение для руководителя (ЛПР)"),
 ]
 
 _STAGE_TITLES = dict(STAGES)
@@ -81,7 +85,7 @@ class StageResult:
     title: str
     content: str
     used_llm: bool = False
-    grounded: bool = True       # True: прошёл Дзидока-проверку ИЛИ детерминирован по построению
+    grounded: bool = True       # True: прошёл grounding-проверку ИЛИ детерминирован по построению
     fell_back: bool = False     # True: LLM-вывод отбракован/недоступен → детерминированный текст
 
 
@@ -172,7 +176,7 @@ def _split_sections(text: str, headers: dict[str, list[str]]) -> dict[str, str]:
 
 
 def _grounded(text: str, inp: ReasoningInput) -> bool:
-    """Дзидока: все проценты вывода обязаны присутствовать во входных данных."""
+    """Grounding-контроль: все проценты вывода обязаны присутствовать во входных данных."""
     used = set(service._PCT_RE.findall(text or ""))
     allowed = service._allowed_pcts(
         inp.judgments_block, inp.risks_block, inp.measures_block,
@@ -222,8 +226,8 @@ def _input_anchors(inp: ReasoningInput) -> set[str]:
 
 
 def _anchored(text: str, inp: ReasoningInput) -> bool:
-    """Генти Генбуцу для вывода: текст обязан разделять хотя бы один содержательный токен
-    со входными фактами. Отсекает родовой «менеджерский» трёп мелкой модели, никак не
+    """Проверка привязки вывода к фактам: текст обязан разделять хотя бы один содержательный
+    токен со входными фактами. Отсекает родовой «менеджерский» трёп мелкой модели, никак не
     привязанный к переданным данным (числового grounding для этого недостаточно)."""
     anchors = _input_anchors(inp)
     if not anchors:
@@ -234,18 +238,18 @@ def _anchored(text: str, inp: ReasoningInput) -> bool:
 
 def _llm_pass(prompt: str, inp: ReasoningInput, max_tokens: int = 400,
               require_anchor: bool = False) -> str | None:
-    """LLM-проход с Дзидока-контролем: недостоверный или выродившийся вывод отбраковывается."""
+    """LLM-проход с grounding-контролем: недостоверный или выродившийся вывод отбраковывается."""
     text = service.complete(prompt, system=REASONING_SYSTEM_PROMPT, max_tokens=max_tokens)
     if not text:
         return None
     if not _grounded(text, inp):
-        logger.warning("Дзидока (андон): проход содержит числа вне входных данных — отбраковано")
+        logger.warning("Контроль достоверности: проход содержит числа вне входных данных — отбраковано")
         return None
     if _degenerate(text):
-        logger.warning("Дзидока (андон): вырожденный вывод (зацикленные повторы) — отбраковано")
+        logger.warning("Контроль достоверности: вырожденный вывод (зацикленные повторы) — отбраковано")
         return None
     if require_anchor and not _anchored(text, inp):
-        logger.warning("Дзидока (андон): вывод не привязан к входным фактам (нет якорей) — отбраковано")
+        logger.warning("Контроль достоверности: вывод не привязан к входным фактам (нет якорей) — отбраковано")
         return None
     return text
 
@@ -322,23 +326,32 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
                   lens_codes: tuple[str, ...] = ("CIO", "QUALITY", "RISK", "SECURITY")) -> ReasoningTrace:
     """Прогон конвейера Э0–Э7. Всегда возвращает полную трассу (с LLM или детерминированно)."""
     if len(lens_codes) < 3:
-        raise ValueError("Немаваси требует минимум 3 ролевые линзы (манифест, часть III)")
+        raise ValueError("Многоаспектный анализ требует минимум 3 ролевые точки зрения")
     trace = ReasoningTrace(input=inp)
     facts = _facts_text(inp)
+    # Обогащение промптов доменными знаниями: определения просевших характеристик из
+    # глоссария ISO 25010 (knowledge.py). Идёт ТОЛЬКО в промпты LLM (чтобы «мясо» рассуждения
+    # было содержательным при скудных данных), но НЕ в отображаемый блок фактов E0 —
+    # там остаётся чистая инвентаризация переданного. Чисел глоссарий не добавляет.
+    glossary = relevant_terms(
+        inp.judgments_block, inp.risks_block, inp.measures_block,
+        inp.metrics_block, inp.system_name,
+    )
+    facts_llm = f"{facts}\n\n{glossary}" if glossary else facts
     absent = [title for title, block in [
         ("суждения", inp.judgments_block), ("риски", inp.risks_block),
         ("карточки мер", inp.measures_block), ("метрики", inp.metrics_block),
         ("история", inp.history_block),
     ] if not block.strip()]
 
-    # Э0 — Генти Генбуцу: инвентаризация фактов (детерминированно по построению).
+    # Э0 — Факты входа: инвентаризация фактов (детерминированно по построению).
     trace.stages.append(StageResult("E0", _STAGE_TITLES["E0"], facts))
 
     # Э1+Э2 — проблема и первопричина (LLM-проход 1, секции ПРОБЛЕМА/ПЕРВОПРИЧИНА).
-    # require_anchor: проблема/первопричина обязаны ссылаться на факты входа (Генти Генбуцу),
+    # require_anchor: проблема/первопричина обязаны ссылаться на факты входа,
     # иначе E7 унаследует «менеджерский» трёп, не привязанный к данным.
     analysis = _llm_pass(
-        REASONING_PASS_ANALYSIS.format(system_name=inp.system_name, period_label=inp.period_label, facts=facts),
+        REASONING_PASS_ANALYSIS.format(system_name=inp.system_name, period_label=inp.period_label, facts=facts_llm),
         inp, max_tokens=200, require_anchor=True,
     ) if use_llm else None
     analysis_sections = _split_sections(analysis or "", {
@@ -355,7 +368,7 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
         used_llm=bool(root), fell_back=not root,
     ))
 
-    # Э3 — Немаваси: ролевые линзы (LLM-проход 2, секция на линзу).
+    # Э3 — Ролевые точки зрения: экспертные линзы (LLM-проход 2, секция на линзу).
     lens_tasks = "\n".join(
         f"ЛИНЗА {code} — {REASONING_LENSES[code][0]}: {REASONING_LENSES[code][1]}"
         for code in lens_codes
@@ -363,7 +376,7 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
     lens_skeleton = "\n".join(f"ЛИНЗА {code}: <взгляд линзы>" for code in lens_codes)
     lens_text = _llm_pass(
         REASONING_PASS_LENSES.format(system_name=inp.system_name, period_label=inp.period_label,
-                                     facts=facts, lens_tasks=lens_tasks, lens_skeleton=lens_skeleton),
+                                     facts=facts_llm, lens_tasks=lens_tasks, lens_skeleton=lens_skeleton),
         inp, max_tokens=60 * len(lens_codes),
     ) if use_llm else None
     lens_sections = _split_sections(lens_text or "", {
@@ -384,7 +397,7 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
         fell_back=not any(lens.used_llm for lens in trace.lenses),
     ))
 
-    # Э4 — Дзидока: контроль уже применён к каждому проходу (_llm_pass); фиксируем итог.
+    # Э4 — Контроль достоверности: уже применён к каждому проходу (_llm_pass); фиксируем итог.
     rejected = [s.code for s in trace.stages if s.fell_back]
     trace.stages.append(StageResult(
         "E4", _STAGE_TITLES["E4"],
@@ -399,20 +412,20 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
         f"Первопричина: {trace.stage('E2').content}\n"
         f"Линзы:\n{lens_summary}"
     )
-    # Дзидока-правило синтеза: если ни карточек мер, ни минимизаций рисков не передано —
+    # Правило синтеза: если ни карточек мер, ни минимизаций рисков не передано —
     # мерам просто не из чего синтезироваться; LLM не спрашиваем (любой ответ был бы выдумкой),
     # E5 честно уходит в детерминированный fallback, а LLM-проход тратится только на заключение.
     has_measure_sources = bool(inp.measures_block.strip() or inp.risks_block.strip())
     if use_llm and has_measure_sources:
         synthesis = _llm_pass(
             REASONING_PASS_SYNTHESIS.format(system_name=inp.system_name, period_label=inp.period_label,
-                                            facts=facts, prior=prior),
+                                            facts=facts_llm, prior=prior),
             inp, max_tokens=300,
         )
     elif use_llm:
         synthesis = _llm_pass(
             REASONING_PASS_CONCLUSION_ONLY.format(system_name=inp.system_name, period_label=inp.period_label,
-                                                  facts=facts, prior=prior),
+                                                  facts=facts_llm, prior=prior),
             inp, max_tokens=220,
         )
     else:
@@ -427,7 +440,7 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
         used_llm=bool(measures), fell_back=not measures,
     ))
 
-    # Э6 — Хансей: саморефлексия (детерминированно: полнота данных + fallback-этапы).
+    # Э6 — Саморефлексия (детерминированно: полнота данных + fallback-этапы).
     fell_back_now = [s.code for s in trace.stages if s.fell_back]
     # Уверенность: высокая — все источники и все этапы от LLM; средняя — есть хотя бы один
     # первичный источник контура (суждения ИЛИ карточки мер); иначе низкая.
@@ -443,20 +456,20 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
     )
     trace.stages.append(StageResult("E6", _STAGE_TITLES["E6"], hansei))
 
-    # Э7 — Заключение ЛПР: контракт из 6 блоков (манифест, часть V). LLM-текст — как «общий
+    # Э7 — Заключение для руководителя (ЛПР): контракт из 6 блоков. LLM-текст — как «общий
     # вывод» внутри контракта; остальные блоки собираются из трассы (аудируемость).
     applied = ", ".join(lens.title for lens in trace.lenses)
     risks_out = "; ".join(_first_lines(inp.risks_block, 3)) or _ABSENT
     conclusion = (
-        f"Рассмотренные аспекты (Немаваси): {applied}.\n"
-        f"Первопричина (5 Почему): {trace.stage('E2').content}\n"
+        f"Рассмотренные аспекты: {applied}.\n"
+        f"Первопричина: {trace.stage('E2').content}\n"
         f"Активируемые риски (база рисков): {risks_out}\n"
-        f"Предлагаемые меры (Кайдзен):\n{trace.stage('E5').content}\n"
+        f"Предлагаемые меры:\n{trace.stage('E5').content}\n"
         f"Рекомендация ЛПР: "
         + (conclusion_llm if conclusion_llm else
            "вынести первопричину на решение топ-менеджмента; закрепить меры с ответственными и сроками "
            "в плане обеспечения качества. (Сформировано строго по входным данным.)")
-        + f"\nУверенность и оговорки (Хансей): {hansei}"
+        + f"\nУверенность и оговорки: {hansei}"
     )
     trace.conclusion = conclusion
     trace.stages.append(StageResult(

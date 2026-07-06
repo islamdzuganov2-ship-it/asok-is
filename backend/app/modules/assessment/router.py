@@ -656,9 +656,10 @@ async def save_judgments(
 async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
     """Заключение по профсуждениям через КОНВЕЙЕР многоаспектного рассуждения (BL-005).
 
-    Дао Тойота × ISO 25010/38500: Генти Генбуцу → 5 Почему → Немаваси (ролевые линзы) →
-    Дзидока (grounding) → Кайдзен → Хансей → заключение ЛПР. В ответе — аудируемая трасса
-    (`reasoning`). Самообучение: суждения прошлых периодов передаются как история (RAG).
+    ISO 25010/38500: факты входа → проблема → первопричина → ролевые точки зрения →
+    контроль достоверности (grounding) → синтез мер → саморефлексия → заключение ЛПР.
+    В ответе — аудируемая трасса (`reasoning`). Самообучение: суждения прошлых периодов
+    передаются как история (RAG).
     """
     period = await _require_period(db, period_id)
     system = await db.get(System, period.system_id)
@@ -684,7 +685,7 @@ async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(ge
         )).scalars().all())
     risks_block = "\n".join(f"- {r.title}: {r.mitigation or '—'}" for r in risk_rows)
 
-    # Генти Генбуцу: расчётные метрики периода — ещё один первичный источник фактов.
+    # Факты входа: расчётные метрики периода — ещё один первичный источник фактов.
     metric_rows = (await db.execute(
         select(MetricCatalog.characteristic, MetricCatalog.subcharacteristic, AssessmentValue.calculated_x)
         .join(AssessmentValue, AssessmentValue.metric_id == MetricCatalog.id)

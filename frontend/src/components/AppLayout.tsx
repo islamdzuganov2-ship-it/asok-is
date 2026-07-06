@@ -13,7 +13,7 @@ import {
     RobotOutlined,
     LineChartOutlined,
     ScheduleOutlined,
-    ExperimentOutlined,
+    // ExperimentOutlined — под развитие: иконка пункта «Оценка СИИ» (пока не выведен в меню).
 } from '@ant-design/icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -70,19 +70,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ...(execTaskPlan ? [{ key: '/dashboard/taskplan', icon: <ScheduleOutlined />, label: 'План задач' }] : []),
         { key: '/admin/flags', icon: <SettingOutlined />, label: 'Настройка' },
     ];
+    // ПОД РАЗВИТИЕ: раздел «Оценка СИИ» (ГОСТ Р 59898-2021) и история ИИ-оценок пока НЕ выведены
+    // в интерфейс (страница и маршрут /ai-assessments сохранены в коде — см. App.tsx). Когда
+    // раздел понадобится, добавить сюда пункт меню:
+    //   { key: '/ai-assessments', icon: <ExperimentOutlined />, label: 'Оценка СИИ' }
     const managerMenu = [
         { key: '/dashboard/manager', icon: <AuditOutlined />, label: 'Менеджер по качеству' },
         { key: '/dashboard/manager/dynamics', icon: <LineChartOutlined />, label: 'Динамика качества' },
         { key: '/dashboard/taskplan', icon: <ScheduleOutlined />, label: 'План задач' },
         { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
         { key: '/assessments/new', icon: <FormOutlined />, label: 'Оценка ИС' },
-        { key: '/ai-assessments', icon: <ExperimentOutlined />, label: 'Оценка СИИ' },
         { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
     ];
     const analystMenu = [
         { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
         { key: '/assessments/new', icon: <FormOutlined />, label: 'Оценка ИС' },
-        { key: '/ai-assessments', icon: <ExperimentOutlined />, label: 'Оценка СИИ' },
         { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
     ];
 

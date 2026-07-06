@@ -61,7 +61,7 @@ class MeasureCardIn(BaseModel):
 
 
 class MeasuresReasoningIn(BaseModel):
-    """Новый формат запроса: агрегаты + сами карточки мер (Генти Генбуцу — иди к первичным данным)."""
+    """Новый формат запроса: агрегаты + сами карточки мер (первичные данные для анализа)."""
     items: list[MeasuresAnalyticsItem] = []
     cards: list[MeasureCardIn] = []
 
@@ -94,7 +94,7 @@ async def measures_analytics(
     payload: MeasuresReasoningIn | list[MeasuresAnalyticsItem],
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Аналитика по МЕРАМ через конвейер многоаспектного рассуждения (BL-005, Дао Тойота).
+    """Аналитика по МЕРАМ через конвейер многоаспектного аналитического рассуждения (BL-005).
 
     Принимает новый формат {items, cards} (карточки мер — первичный источник) и легаси-массив
     агрегатов (обратная совместимость). Ответ сохраняет прежние поля (analytics/llm/mapped_risks)

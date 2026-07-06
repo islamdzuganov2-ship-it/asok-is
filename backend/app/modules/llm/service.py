@@ -98,12 +98,44 @@ def model_info() -> dict:
     }
 
 
+def _fit_prompt(llm, system: str, prompt: str, reserve_out: int) -> str:
+    """Обрезает пользовательский промпт по ТОКЕНАМ под окно контекста n_ctx.
+
+    Иначе длинные факты/глоссарий (особенно у ИС с множеством суждений) переполняют окно
+    (llama_cpp бросает «Requested tokens exceed context window»), инференс падает и этап
+    молча уходит в детерминированный fallback — то есть «мясо» LLM теряется именно там, где
+    данных много. Здесь мы вместо падения оставляем столько фактов, сколько влезает.
+    """
+    try:
+        n_ctx = llm.n_ctx()
+    except Exception:  # noqa: BLE001
+        return prompt
+    # Бюджет на пользовательский промпт = окно − вывод − системный промпт − запас на разметку чата.
+    sys_tokens = len(llm.tokenize(system.encode("utf-8"), add_bos=False))
+    budget = n_ctx - reserve_out - sys_tokens - 48
+    if budget <= 0:
+        return prompt
+    tokens = llm.tokenize(prompt.encode("utf-8"), add_bos=False)
+    if len(tokens) <= budget:
+        return prompt
+    kept = tokens[:budget]
+    try:
+        text = llm.detokenize(kept).decode("utf-8", errors="ignore")
+    except Exception:  # noqa: BLE001
+        # Грубый резерв: обрезка по символам (примерно 4 символа на токен).
+        text = prompt[: budget * 4]
+    logger.warning("Промпт обрезан под окно контекста: %d → %d токенов", len(tokens), budget)
+    return text + "\n…(факты усечены под окно контекста)"
+
+
 def complete(prompt: str, system: str = SYSTEM_PROMPT,
              max_tokens: int | None = None, temperature: float | None = None) -> str | None:
     """Низкоуровневый вызов чата. Возвращает текст ответа или None при недоступности."""
     llm = _load_llm()
     if llm is None:
         return None
+    reserve_out = max_tokens or settings.LLM_MAX_TOKENS
+    prompt = _fit_prompt(llm, system, prompt, reserve_out)
     try:
         with _infer_lock:
             resp = llm.create_chat_completion(
@@ -111,7 +143,7 @@ def complete(prompt: str, system: str = SYSTEM_PROMPT,
                     {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=max_tokens or settings.LLM_MAX_TOKENS,
+                max_tokens=reserve_out,
                 temperature=settings.LLM_TEMPERATURE if temperature is None else temperature,
                 top_p=settings.LLM_TOP_P,
             )

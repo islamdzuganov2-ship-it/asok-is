@@ -1,10 +1,11 @@
-"""Юнит-тесты конвейера многоаспектного рассуждения (BL-005, Дао Тойота × ISO 25010/38500).
+"""Юнит-тесты конвейера многоаспектного аналитического рассуждения (BL-005, ISO 25010/38500).
 
-Критерии приёмки манифеста (часть VII):
+Критерии приёмки:
   1) заключение — только после Э0–Э6, трасса аудируема;
-  2) минимум 3 ролевые линзы (Немаваси);
-  3) grounding сохранён (Дзидока): чисел вне входа нет, при нехватке данных — честная оговорка;
-  4) есть блоки первопричины (5 Почему) и саморефлексии (Хансей).
+  2) минимум 3 ролевые точки зрения;
+  3) grounding сохранён: чисел вне входа нет, при нехватке данных — честная оговорка;
+  4) есть блоки первопричины и саморефлексии;
+  5) в user-facing выводе нет терминов управленческих методологий.
 """
 import pytest
 
@@ -43,7 +44,7 @@ def test_trace_contains_all_stages_in_order():
     assert trace.conclusion.strip()
 
 
-# ─── Критерий 2: Немаваси — минимум 3 линзы ──────────────────────────────────────────
+# ─── Критерий 2: минимум 3 ролевые точки зрения ──────────────────────────────────────────
 
 def test_minimum_three_lenses_applied():
     trace = run_reasoning(_inp(), use_llm=False)
@@ -56,7 +57,7 @@ def test_less_than_three_lenses_rejected():
         run_reasoning(_inp(), use_llm=False, lens_codes=("CIO", "QUALITY"))
 
 
-# ─── Критерий 3: Дзидока / grounding ─────────────────────────────────────────────────
+# ─── Критерий 3: контроль достоверности / grounding ─────────────────────────────────────────────────
 
 def test_pipeline_fully_deterministic_without_llm(monkeypatch):
     monkeypatch.setattr(llm, "complete", lambda *a, **k: None)
@@ -75,7 +76,7 @@ def test_hallucinated_pct_triggers_andon_fallback(monkeypatch):
     joined = " ".join(s.content for s in trace.stages) + trace.conclusion
     assert "99%" not in joined
     assert trace.stage("E1").fell_back and trace.stage("E2").fell_back
-    assert "E1" in trace.stage("E4").content  # Дзидока фиксирует отбраковку в трассе
+    assert "E1" in trace.stage("E4").content  # контроль достоверности фиксирует отбраковку в трассе
 
 
 def test_grounded_llm_output_is_kept(monkeypatch):
@@ -105,7 +106,7 @@ def test_genchi_genbutsu_reports_absent_sources():
     e0 = trace.stage("E0").content
     assert "Карточки мер: данные отсутствуют" in e0
     assert "Профессиональные суждения:" in e0  # переданное — присутствует как факт
-    # Хансей называет непереданные источники
+    # саморефлексия называет непереданные источники
     assert "карточки мер" in trace.stage("E6").content
 
 
@@ -122,7 +123,7 @@ def test_conclusion_contract_sections_present():
 
 
 def test_measures_not_synthesized_without_sources(monkeypatch):
-    # Дзидока: без карточек мер и рисков LLM про меры не спрашиваем — любой ответ был бы выдумкой.
+    # без карточек мер и рисков LLM про меры не спрашиваем — любой ответ был бы выдумкой.
     monkeypatch.setattr(llm, "complete",
                         lambda *a, **k: "МЕРЫ: внедрить новый стенд.\nЗАКЛЮЧЕНИЕ: всё в порядке.")
     trace = run_reasoning(_inp(risks_block="", measures_block=""))
@@ -134,7 +135,7 @@ def test_measures_not_synthesized_without_sources(monkeypatch):
 
 
 def test_unanchored_generic_text_rejected(monkeypatch):
-    # Родовой «менеджерский» трёп без привязки к фактам входа — не первопричина (Генти Генбуцу).
+    # Родовой «менеджерский» трёп без привязки к фактам входа — не первопричина.
     generic = ("ПРОБЛЕМА: Для улучшения бизнеса нужно работать лучше.\n"
                "ПЕРВОПРИЧИНА: Необходимо повысить общую производительность процессов компании.")
     monkeypatch.setattr(llm, "complete", lambda *a, **k: generic)
@@ -153,7 +154,7 @@ def test_anchored_analysis_is_kept(monkeypatch):
 
 
 def test_degenerate_repetition_rejected(monkeypatch):
-    # Зацикленный повтор («данных отсутствия данных отсутствия…») — андон, а не заключение.
+    # Зацикленный повтор («данных отсутствия данных отсутствия…») отбраковывается, а не идёт в заключение.
     loop = "ЗАКЛЮЧЕНИЕ: " + "данных отсутствия " * 40
     monkeypatch.setattr(llm, "complete", lambda *a, **k: loop)
     trace = run_reasoning(_inp())
@@ -189,10 +190,10 @@ def test_measures_driven_reasoning_without_judgments():
                        judgments_block="", risks_block=RISKS, measures_block=cards_block),
         use_llm=False,
     )
-    # Генти Генбуцу честно фиксирует: суждений нет, меры есть
+    # блок фактов входа честно фиксирует: суждений нет, меры есть
     assert "Профессиональные суждения: данные отсутствуют" in trace.stage("E0").content
     assert "Карточки мер:" in trace.stage("E0").content
-    # Кайдзен синтезирует меры из карточек (источник есть — fallback не «отсутствуют»)
+    # синтез мер собирает меры из карточек (источник есть — fallback не «отсутствуют»)
     assert "из карточек мер" in trace.stage("E5").content
     # меры — первичный источник → уверенность не «низкая»
     assert trace.confidence == "средняя"
@@ -215,6 +216,21 @@ def test_training_block_contains_stage_trace():
     trace = run_reasoning(_inp(), use_llm=False)
     block = trace.as_training_block()
     assert "Постановка проблемы" in block
-    assert "5 Почему" in block
+    assert "Первопричина" in block
     assert "Линза: Менеджер качества" in block
-    assert "Хансей" in block
+    assert "Саморефлексия" in block
+
+
+# ─── Критерий 5: нет терминологии управленческих методологий в выводе ─────────────────
+
+_FORBIDDEN_TERMS = ("Дао", "Тойота", "Генти", "Генбуцу", "Немаваси",
+                    "Дзидока", "Кайдзен", "Хансей", "андон", "Пока-ёкэ")
+
+
+def test_no_methodology_jargon_in_user_facing_output():
+    trace = run_reasoning(_inp(), use_llm=False)
+    surfaces = [trace.conclusion, *(s.title for s in trace.stages),
+                *(s.content for s in trace.stages)]
+    blob = "\n".join(surfaces)
+    for term in _FORBIDDEN_TERMS:
+        assert term not in blob, f"жаргон методологии просочился в вывод: {term}"

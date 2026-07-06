@@ -12,8 +12,10 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { SaveOutlined, ArrowLeftOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useDispatch } from 'react-redux';
 import ExcelUploadBlock from '../components/ExcelUploadBlock';
 import { subDescription, subArtifacts } from '../constants/subDescriptions';
+import { apiSlice } from '../store/api/apiSlice';
 
 const { Text, Title } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -46,6 +48,7 @@ const LEVEL_TAG_COLOR: Record<string, string> = {
 const MetricsInputPage: React.FC = () => {
   const { id: periodId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const [metrics, setMetrics] = useState<MetricRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -122,8 +125,13 @@ const MetricsInputPage: React.FC = () => {
       if (!resp.ok) throw new Error(await resp.text());
       const result = await resp.json();
       message.success(`Сохранено: ${result.updated} метрик. Backend пересчитал X.`);
-      // Перечитываем — получаем calculated_x и quality_level
+      // Перечитываем локальную таблицу — получаем calculated_x и quality_level.
       await fetchMetrics();
+      // Сохранение идёт «сырым» fetch мимо RTK Query, поэтому вручную инвалидируем кэш —
+      // иначе сводки/результаты/дашборды («Новая оценка», summary, executive-dashboard),
+      // которые читаются через RTK Query, показывали бы старые данные до перезагрузки страницы.
+      // Автоматический пересчёт и обновление зависимых представлений — без обновления страницы.
+      dispatch(apiSlice.util.invalidateTags(['Metrics', 'Assessment', 'Dashboard']));
     } catch (e: any) {
       message.error(`Ошибка сохранения: ${e.message}`);
     } finally {

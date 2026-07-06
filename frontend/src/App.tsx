@@ -73,6 +73,10 @@ export const App: React.FC = () => {
                             <Route path="dashboard/manager/dynamics" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><QualityDynamicsPage /></RequireRole>} />
                             <Route path="dashboard/taskplan" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><TaskPlanDashboard /></RequireRole>} />
                             <Route path="assessments/new" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><AssessmentWorkspacePage /></RequireRole>} />
+                            {/* ПОД РАЗВИТИЕ: «Оценка СИИ» (ГОСТ Р 59898-2021) и история ИИ-оценок.
+                                Пункт меню и переключатель в «Настройка» намеренно убраны из UI (раздел
+                                пока не нужен). Маршрут и страница (AiAssessmentPage) сохранены в коде;
+                                чтобы вернуть раздел — добавить пункт меню в AppLayout.tsx. */}
                             <Route path="ai-assessments" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><AiAssessmentPage /></RequireRole>} />
                             <Route path="assessments/:id/input" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><MetricsInputPage /></RequireRole>} />
                             <Route path="assessments/:id/review" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><ExpertReviewPage /></RequireRole>} />

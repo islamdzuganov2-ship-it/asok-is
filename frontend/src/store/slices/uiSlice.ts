@@ -64,5 +64,7 @@ const uiSlice = createSlice({
   },
 });
 
-export const { openModal, closeModal, setGlobalLoading, toggleTheme, setDataMode, setExecFeature } = uiSlice.actions;
+export const {
+  openModal, closeModal, setGlobalLoading, toggleTheme, setDataMode, setExecFeature,
+} = uiSlice.actions;
 export const uiReducer = uiSlice.reducer;

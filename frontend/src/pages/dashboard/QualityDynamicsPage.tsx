@@ -3,12 +3,14 @@
  * Сверху выбор ИС (или «Все системы»). Далее:
  *  0) карточка «Качество информационной системы» — интегральный балл по кварталам
  *     (или все системы на одной диаграмме; клик по линии — переход к системе);
- *  1) график изменения качества по ХАРАКТЕРИСТИКАМ во времени (клик по точке/линии →
- *     причины изменения относительно предыдущих оценок);
+ *     всплывающее окно показывается ТОЛЬКО при аномалии (иначе не мешает);
+ *  1) график изменения качества по ХАРАКТЕРИСТИКАМ во времени — БЕЗ всплывающего окна
+ *     (оно избыточно); аномалии видны маркерами на графике, клик по линии/точке → причины;
  *  2) карточки по каждой ПОДХАРАКТЕРИСТИКЕ с её трендом во времени (клик → причины);
  *  3) ввод причин изменения качества по кварталам (в модалке).
- * Аномальные изменения (|Δ| ≥ ANOMALY_THRESHOLD) подсвечиваются на графиках; во всплывашке —
- * причина от менеджера по качеству, при её отсутствии — предупреждение (и уведомление МК).
+ * Аномальные изменения (|Δ| ≥ ANOMALY_THRESHOLD) подсвечиваются на графиках красными маркерами;
+ * во всплывашке «Качество ИС» — причина от менеджера по качеству, при её отсутствии —
+ * предупреждение (и уведомление МК).
  */
 import React, { useMemo, useState } from 'react';
 import { Alert, Card, Col, Row, Select, Space, Typography, Tag } from 'antd';
@@ -82,10 +84,24 @@ const QualityDynamicsPage: React.FC = () => {
   const [modalSeries, setModalSeries] = useState<DynSeries | null>(null);
 
   // 0. Карточка «Качество информационной системы»: одна ИС по кварталам или все ИС разом.
+  // Всплывающее окно показывается ТОЛЬКО когда в наведённой точке есть аномалия — в остальных
+  // случаях формат возвращает '' и попап не появляется (не мешает просмотру тренда).
   const systemChartOption = useMemo(() => {
     if (isAll) {
       return {
-        tooltip: { trigger: 'axis', confine: true, valueFormatter: (v: number) => (v == null ? 'н/д' : `${v}%`) },
+        tooltip: {
+          trigger: 'axis', confine: true,
+          formatter: (params: any[]) => {
+            const list = Array.isArray(params) ? params : [params];
+            const qIdx = list[0]?.dataIndex ?? 0;
+            const lines = list.map((p: any) => {
+              const ser = DYNAMICS[p.seriesName]?.system;
+              return ser && detectAnomalies(ser.series).includes(qIdx)
+                ? pointTooltip(p.seriesName, ser, qIdx, reasons) : '';
+            }).filter(Boolean);
+            return lines.length ? `<b>${QUARTERS[qIdx]}</b><br/>${lines.join('<br/>')}` : '';
+          },
+        },
         legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 } },
         grid: { top: 16, left: 44, right: 16, bottom: 52 },
         xAxis: { type: 'category', data: QUARTERS, boundaryGap: false },
@@ -106,6 +122,8 @@ const QualityDynamicsPage: React.FC = () => {
         trigger: 'axis', confine: true,
         formatter: (params: any[]) => {
           const p = Array.isArray(params) ? params[0] : params;
+          // Попап — только при аномалии в наведённом квартале; иначе ничего не показываем.
+          if (!detectAnomalies(s.series).includes(p.dataIndex)) return '';
           return `<b>${QUARTERS[p.dataIndex]}</b><br/>${pointTooltip(system.name, s, p.dataIndex, reasons)}`;
         },
       },
@@ -123,20 +141,11 @@ const QualityDynamicsPage: React.FC = () => {
     };
   }, [isAll, dyn, system.name, reasons]);
 
-  // 1. Динамика по характеристикам (+ причины аномалий во всплывашке).
+  // 1. Динамика по характеристикам. Всплывающее окно ОТКЛЮЧЕНО намеренно: оно избыточно и
+  // мешает (по требованию МК). Аномалии видны красными маркерами на линиях, а причины
+  // открываются по клику (модалка) — этого достаточно.
   const charChartOption = useMemo(() => ({
-    tooltip: {
-      trigger: 'axis', confine: true,
-      formatter: (params: any[]) => {
-        const list = Array.isArray(params) ? params : [params];
-        const qIdx = list[0]?.dataIndex ?? 0;
-        const lines = list.map((p: any) => {
-          const s = dyn.chars[p.seriesIndex];
-          return s ? pointTooltip(system.name, s, qIdx, reasons) : '';
-        });
-        return `<b>${QUARTERS[qIdx]}</b><br/>${lines.filter(Boolean).join('<br/>')}`;
-      },
-    },
+    tooltip: { show: false },
     legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 } },
     grid: { top: 16, left: 44, right: 16, bottom: 52 },
     xAxis: { type: 'category', data: QUARTERS, boundaryGap: false },
@@ -150,7 +159,7 @@ const QualityDynamicsPage: React.FC = () => {
       lineStyle: { width: 2 },
       data: seriesPoints(c.series),
     })),
-  }), [dyn, system.name, reasons]);
+  }), [dyn]);
 
   const subs = charFilter ? dyn.subs.filter((s) => s.char === charFilter) : dyn.subs;
 
