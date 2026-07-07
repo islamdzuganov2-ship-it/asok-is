@@ -44,7 +44,7 @@ DEMO_USERS = {
 
 
 def _token_response(user: dict) -> dict[str, str]:
-    token_payload = {"sub": user["id"], "role": user["role"]}
+    token_payload = {"sub": user["id"], "role": user["role"], "username": user["username"]}
     return {
         "access_token": create_access_token(token_payload),
         "refresh_token": create_refresh_token(token_payload),
@@ -97,8 +97,8 @@ async def refresh_token(payload: TokenRefreshRequest) -> dict[str, str]:
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     return {
-        "access_token": create_access_token({"sub": token.sub, "role": token.role}),
-        "refresh_token": create_refresh_token({"sub": token.sub, "role": token.role}),
+        "access_token": create_access_token({"sub": token.sub, "role": token.role, "username": token.username}),
+        "refresh_token": create_refresh_token({"sub": token.sub, "role": token.role, "username": token.username}),
         "token_type": "bearer",
         "role": token.role,
     }

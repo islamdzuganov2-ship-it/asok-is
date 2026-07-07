@@ -21,9 +21,10 @@ class TokenRefreshRequest(BaseModel):
 
 
 class TokenPayload(BaseModel):
-    sub: str        # UUID пользователя
-    role: str       # роль из User.ALL_ROLES
-    exp: int        # unix timestamp истечения
+    sub: str                        # UUID пользователя
+    role: str                       # роль из User.ALL_ROLES
+    exp: int                        # unix timestamp истечения
+    username: Optional[str] = None  # логин (для человекочитаемого аудита; старые токены — без него)
 
 
 class UserResponse(BaseModel):

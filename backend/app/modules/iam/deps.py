@@ -46,7 +46,9 @@ async def get_current_user(
 
     return {
         "id": payload.sub,
-        "username": payload.sub,
+        # Человекочитаемый логин для аудита (created_by/decided_by); старые токены без
+        # username → fallback на sub (UUID), новые (после релогина) — реальный логин.
+        "username": payload.username or payload.sub,
         "roles": [payload.role] if payload.role else [],
     }
 

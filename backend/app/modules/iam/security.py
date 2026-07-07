@@ -59,4 +59,5 @@ def decode_token(token: str, expected_type: Optional[str] = None) -> TokenPayloa
         sub=str(payload["sub"]),
         role=payload.get("role", ""),
         exp=int(payload["exp"]),
+        username=payload.get("username"),
     )
