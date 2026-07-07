@@ -3,13 +3,21 @@
 """
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.v1.api import api_router
 from app.infrastructure.config import settings
 from app.infrastructure.database import Base, engine, import_models
 from app.scripts.seed_iso25010 import seed_iso25010_async
+from app.shared.exceptions import (
+    ConflictError,
+    DomainError,
+    NotFoundError,
+    PermissionDeniedError,
+    ValidationError,
+)
 
 import_models()  # реестр моделей: полная Base.metadata для стартового create_all (ТЗ v13)
 
@@ -46,6 +54,20 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
+
+# Маппинг доменных исключений на HTTP (ТЗ v13: домены бросают доменные ошибки, транспорт — здесь).
+_DOMAIN_HTTP_STATUS = [
+    (NotFoundError, 404),
+    (ConflictError, 409),
+    (ValidationError, 422),
+    (PermissionDeniedError, 403),
+]
+
+
+@app.exception_handler(DomainError)
+async def _domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
+    status_code = next((code for typ, code in _DOMAIN_HTTP_STATUS if isinstance(exc, typ)), 400)
+    return JSONResponse(status_code=status_code, content={"detail": str(exc)})
 
 
 @app.get("/")

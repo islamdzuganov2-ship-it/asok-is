@@ -21,13 +21,16 @@ def test_database_url():
     """URL тестовой БД (можно переопределить через env)"""
     return os.getenv(
         "TEST_DATABASE_URL",
-        "postgresql+asyncpg://asok_user:asok_pass123@postgres:5432/asok_is_test"
+        "postgresql+asyncpg://asok_user:asok_secure_password_123@postgres:5432/asok_is_test"
     )
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 async def engine(test_database_url: str):
-    """Async engine для тестов"""
-    return create_async_engine(test_database_url, echo=False)
+    """Async engine для тестов (function-scope: свой event loop на каждый тест —
+    иначе session-scoped пул привязан к loop первого теста → InterfaceError)."""
+    eng = create_async_engine(test_database_url, echo=False)
+    yield eng
+    await eng.dispose()
 
 @pytest.fixture(scope="function")
 async def db_session(engine):
