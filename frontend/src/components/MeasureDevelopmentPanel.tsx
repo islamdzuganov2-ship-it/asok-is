@@ -9,7 +9,8 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, Button, Card, Input, List, Modal, Space, Tag, Typography, message } from 'antd';
 import { BulbOutlined, RiseOutlined } from '@ant-design/icons';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
+import { useAppDispatch } from '../store/hooks';
 import { RootState } from '../store';
 import { addProposal } from '../store/slices/governanceSlice';
 import { ManagerSystem } from '../data/mockDashboards';
@@ -42,7 +43,7 @@ interface Props {
 }
 
 const MeasureDevelopmentPanel: React.FC<Props> = ({ systemName, system }) => {
-  const dispatch = useDispatch();
+  const dispatch = useAppDispatch();
   const fullName = useSelector((s: RootState) => s.auth.fullName) || 'Менеджер по качеству';
   const [active, setActive] = useState<Zone | null>(null);
   const [owner, setOwner] = useState('');

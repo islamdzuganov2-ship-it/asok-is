@@ -2,23 +2,19 @@
  * governance.test.ts — юнит-тесты слоя мер качества (ТЗ v14 §5):
  * правки меры топ-менеджером пишутся в историю изменений (аудит),
  * демо-набор мер — ролевой (ответственные по характеристикам, эскалации по критичности).
+ *
+ * T-10: логика правки вынесена в чистую функцию applyEdit (используется thunk editProposal
+ * в mock-режиме; в live историю ведёт бэкенд). Тест проверяет именно её.
  */
 import { describe, expect, it } from 'vitest';
-import reducer, { editProposal, type Proposal } from '../store/slices/governanceSlice';
+import { applyEdit } from '../store/slices/governanceSlice';
 import { SCALE_PROPOSALS } from '../data/mockScaleData';
 
-const mkState = (proposals: Proposal[]) => ({ proposals: proposals.map((p) => ({ ...p })) });
-
-describe('editProposal: аудит правок', () => {
+describe('applyEdit: аудит правок меры (mock-режим)', () => {
   const base = SCALE_PROPOSALS[0];
 
   it('пишет каждое изменённое поле в history (кто, когда, было → стало)', () => {
-    const state = mkState([base]);
-    const next = reducer(state as any, editProposal({
-      id: base.id, by: 'CTO (Проверяющий)',
-      patch: { owner: 'Новый О.О.', dueDate: '01.09.2026' },
-    }));
-    const p = next.proposals.find((x) => x.id === base.id)!;
+    const p = applyEdit(base, { owner: 'Новый О.О.', dueDate: '01.09.2026' }, 'CTO (Проверяющий)')!;
     expect(p.owner).toBe('Новый О.О.');
     expect(p.dueDate).toBe('01.09.2026');
     expect(p.history).toHaveLength(2);
@@ -33,19 +29,13 @@ describe('editProposal: аудит правок', () => {
     expect(ownerChange.from).toBe(base.owner);
   });
 
-  it('не пишет в историю поля без изменений', () => {
-    const state = mkState([base]);
-    const next = reducer(state as any, editProposal({
-      id: base.id, by: 'CTO', patch: { owner: base.owner },
-    }));
-    expect(next.proposals.find((x) => x.id === base.id)!.history).toBeUndefined();
+  it('не пишет в историю поля без изменений (возвращает null)', () => {
+    expect(applyEdit(base, { owner: base.owner }, 'CTO')).toBeNull();
   });
 
   it('последовательные правки накапливаются в истории', () => {
-    let state: any = mkState([base]);
-    state = reducer(state, editProposal({ id: base.id, by: 'CTO', patch: { dueDate: '01.08.2026' } }));
-    state = reducer(state, editProposal({ id: base.id, by: 'CIO', patch: { dueDate: '15.08.2026' } }));
-    const p = state.proposals.find((x: Proposal) => x.id === base.id)!;
+    let p = applyEdit(base, { dueDate: '01.08.2026' }, 'CTO')!;
+    p = applyEdit(p, { dueDate: '15.08.2026' }, 'CIO')!;
     expect(p.history).toHaveLength(2);
     expect(p.history![1].from).toBe('01.08.2026');
     expect(p.history![1].to).toBe('15.08.2026');

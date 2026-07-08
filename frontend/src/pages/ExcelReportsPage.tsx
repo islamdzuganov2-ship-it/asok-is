@@ -3,7 +3,8 @@ import { Alert, Button, Card, Col, Empty, Input, Row, Segmented, Select, Space, 
 import { FileExcelOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
-import { shallowEqual, useDispatch, useSelector } from 'react-redux';
+import { shallowEqual, useSelector } from 'react-redux';
+import { useAppDispatch } from '../store/hooks';
 import {
     EditableMetric,
     useGetAssessmentMetricsQuery,
@@ -107,7 +108,7 @@ export const ExcelReportsPage: React.FC = () => {
     });
     const [importWorkbook, { isLoading: uploading }] = useImportWorkbookMutation();
 
-    const dispatch = useDispatch();
+    const dispatch = useAppDispatch();
     // Реестр мер: в Демо — все, в LLM — только реальные (демо-меры скрыты).
     const proposals = useSelector(selectVisibleProposals, shallowEqual);
     const currentUser = useSelector((s: RootState) => s.auth.fullName) || 'Топ-менеджмент';

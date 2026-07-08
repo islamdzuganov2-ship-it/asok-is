@@ -8,7 +8,8 @@
  */
 import React, { useEffect } from 'react';
 import { Modal, Form, Input, Checkbox, Select, DatePicker, Typography, Tag, Space } from 'antd';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
+import { useAppDispatch } from '../store/hooks';
 import dayjs from 'dayjs';
 import { addProposal } from '../store/slices/governanceSlice';
 import { RootState } from '../store';
@@ -41,7 +42,7 @@ interface Props {
 
 export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClose }) => {
   const [form] = Form.useForm();
-  const dispatch = useDispatch();
+  const dispatch = useAppDispatch();
   const fullName = useSelector((s: RootState) => s.auth.fullName) || 'Менеджер по качеству';
   const createRisk = Form.useWatch('createRisk', form);
 

@@ -13,7 +13,8 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Typography, Tag, Input, Button, Space, Divider, List, Tooltip, Empty, message } from 'antd';
 import { CheckOutlined, CloseOutlined, EditOutlined, HistoryOutlined } from '@ant-design/icons';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
+import { useAppDispatch } from '../store/hooks';
 import { RootState } from '../store';
 import {
   approveProposal, rejectProposal, setExecution, updateProposalMeta, editProposal,
@@ -56,7 +57,7 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 const fmtTime = (iso: string) => new Date(iso).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
 
 export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose }) => {
-  const dispatch = useDispatch();
+  const dispatch = useAppDispatch();
   const fullName = useSelector((s: RootState) => s.auth.fullName) || 'Топ-менеджмент';
   const role = useSelector((s: RootState) => s.auth.role) || '';
   // Свежая версия меры из стора (после правок/решений пропс может устареть).
