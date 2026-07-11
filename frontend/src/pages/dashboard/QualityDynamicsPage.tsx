@@ -13,8 +13,8 @@
  * предупреждение (и уведомление МК).
  */
 import React, { useMemo, useState } from 'react';
-import { Alert, Card, Col, Row, Select, Space, Typography, Tag } from 'antd';
-import { DatabaseOutlined, FundOutlined, LineChartOutlined, WarningOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Col, Row, Select, Space, Typography, Tag } from 'antd';
+import { DatabaseOutlined, EyeInvisibleOutlined, EyeOutlined, FundOutlined, LineChartOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store';
@@ -22,7 +22,9 @@ import {
   MANAGER_SCALE_SYSTEMS, DYNAMICS, QUARTERS, detectAnomalies, type DynSeries,
 } from '../../data/mockScaleData';
 import { BRAND, ragToken } from '../../theme/ragPalette';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD } from '../../theme/premium';
 import Sparkline from '../../components/Sparkline';
+import CollapsibleCard from '../../components/CollapsibleCard';
 import { DynamicsModal } from '../../components/DynamicsModal';
 import { reasonKey, selectReasons } from '../../store/slices/dynamicsSlice';
 
@@ -82,6 +84,9 @@ const QualityDynamicsPage: React.FC = () => {
   const dyn = DYNAMICS[system.name];
   const [charFilter, setCharFilter] = useState<string | undefined>();
   const [modalSeries, setModalSeries] = useState<DynSeries | null>(null);
+  // Карточка подхарактеристик — сворачиваемая; выбор фильтра характеристики её авто-раскрывает (T-22).
+  const [subsOpen, setSubsOpen] = useState(true);
+  const onCharFilter = (v?: string) => { setCharFilter(v); setSubsOpen(true); };
 
   // 0. Карточка «Качество информационной системы»: одна ИС по кварталам или все ИС разом.
   // Всплывающее окно показывается ТОЛЬКО когда в наведённой точке есть аномалия — в остальных
@@ -162,27 +167,16 @@ const QualityDynamicsPage: React.FC = () => {
   }), [dyn]);
 
   const subs = charFilter ? dyn.subs.filter((s) => s.char === charFilter) : dyn.subs;
-
-  // Незаполненные причины аномалий по выбранной ИС (система + характеристики).
-  const missingReasons = useMemo(() => {
-    if (isAll) return 0;
-    let n = 0;
-    [dyn.system, ...dyn.chars].forEach((s) => {
-      detectAnomalies(s.series).forEach((i) => {
-        if (!reasons[reasonKey(system.name, s.key, QUARTERS[i])]) n += 1;
-      });
-    });
-    return n;
-  }, [isAll, dyn, system.name, reasons]);
+  const charName = charFilter ? dyn.chars.find((c) => c.char === charFilter)?.name : undefined;
 
   const sysCur = lastValue(dyn.system.series);
 
   return (
-    <div style={{ padding: 24, background: BRAND.canvas, minHeight: '100%' }}>
+    <div style={pageContainer}>
       <Row align="middle" justify="space-between" gutter={[16, 8]} wrap>
         <Col>
-          <Title level={4} style={{ margin: 0, color: BRAND.ink }}>
-            <LineChartOutlined /> Динамика качества
+          <Title level={4} style={pageTitle}>
+            <LineChartOutlined style={{ color: GOLD.base, marginRight: 8 }} /> Динамика качества
           </Title>
           <Text type="secondary">
             {isLive
@@ -226,7 +220,8 @@ const QualityDynamicsPage: React.FC = () => {
       <Card
         title={
           <Space>
-            <FundOutlined />
+            <span style={accentDot(GOLD.base)} />
+            <FundOutlined style={{ color: BRAND.inkSoft }} />
             <span style={{ color: BRAND.ink }}>
               Качество информационной системы{isAll ? ' — все системы' : ` — «${system.name}»`}
             </span>
@@ -235,23 +230,15 @@ const QualityDynamicsPage: React.FC = () => {
             )}
           </Space>
         }
-        style={{ marginTop: 16, borderColor: BRAND.divider }}
+        {...premiumCard('gold', { marginTop: 16 })}
         extra={
           <Text type="secondary" style={{ fontSize: 12 }}>
             {isAll ? 'клик по линии — перейти к системе' : 'клик по точке — причины изменения по кварталам'}
           </Text>
         }
       >
-        {!isAll && missingReasons > 0 && (
-          <Alert
-            style={{ marginBottom: 12 }}
-            type="warning"
-            showIcon
-            icon={<WarningOutlined />}
-            message={`Аномальные изменения без причины: ${missingReasons}`}
-            description="На графиках подсвечены точки аномального роста/просадки. Кликните по точке и заполните причину изменения — уведомление в колокольчике не исчезнет, пока причины не заполнены."
-          />
-        )}
+        {/* Избыточный Alert «Аномальные изменения без причины» убран (ТЗ v15, T-21):
+            аномалии видны красными маркерами, причины — по клику, счётчик — в колокольчике МК. */}
         <ReactECharts
           option={systemChartOption}
           notMerge
@@ -274,8 +261,13 @@ const QualityDynamicsPage: React.FC = () => {
       <>
       {/* 1. Динамика по характеристикам */}
       <Card
-        title={<span style={{ color: BRAND.ink }}>Качество по характеристикам во времени</span>}
-        style={{ marginTop: 16, borderColor: BRAND.divider }}
+        title={
+          <Space>
+            <span style={accentDot('#6E89A6')} />
+            <span style={{ color: BRAND.ink }}>Качество по характеристикам во времени</span>
+          </Space>
+        }
+        {...premiumCard('slate', { marginTop: 16 })}
         extra={<Text type="secondary" style={{ fontSize: 12 }}>клик по линии или точке — причины изменения</Text>}
       >
         <ReactECharts
@@ -292,19 +284,36 @@ const QualityDynamicsPage: React.FC = () => {
         />
       </Card>
 
-      {/* 2. Динамика по подхарактеристикам */}
-      <Card
-        title={<span style={{ color: BRAND.ink }}>Качество по подхарактеристикам во времени ({subs.length})</span>}
-        style={{ marginTop: 16, borderColor: BRAND.divider }}
+      {/* 2. Динамика по подхарактеристикам — сворачиваемая, авто-раскрытие по фильтру (T-22) */}
+      <CollapsibleCard
+        accent="sage"
+        open={subsOpen}
+        onToggle={setSubsOpen}
+        style={{ marginTop: 16 }}
+        title={
+          <>
+            Качество по подхарактеристикам во времени <Text type="secondary" style={{ fontWeight: 400 }}>({subs.length})</Text>
+            {charName && <Tag color="blue" style={{ marginLeft: 8 }}>{charName}</Tag>}
+          </>
+        }
         extra={
-          <Select
-            allowClear
-            placeholder="Все характеристики"
-            style={{ width: 240 }}
-            value={charFilter}
-            onChange={setCharFilter}
-            options={dyn.chars.map((c) => ({ value: c.char, label: c.name }))}
-          />
+          <Space size={8}>
+            <Select
+              allowClear
+              placeholder="Все характеристики"
+              style={{ width: 220 }}
+              value={charFilter}
+              onChange={onCharFilter}
+              options={dyn.chars.map((c) => ({ value: c.char, label: c.name }))}
+            />
+            <Button
+              size="small"
+              icon={subsOpen ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+              onClick={() => setSubsOpen(!subsOpen)}
+            >
+              {subsOpen ? 'Скрыть все' : 'Показать все'}
+            </Button>
+          </Space>
         }
       >
         <Row gutter={[12, 12]}>
@@ -314,7 +323,7 @@ const QualityDynamicsPage: React.FC = () => {
               <Col xs={24} sm={12} md={8} lg={6} key={s.key + s.char}>
                 <Card
                   size="small" hoverable onClick={() => setModalSeries(s)}
-                  style={{ borderColor: BRAND.divider, height: '100%' }}
+                  style={{ borderColor: BRAND.divider, height: '100%', borderRadius: 12 }}
                   styles={{ body: { padding: 12 } }}
                 >
                   <Text strong style={{ fontSize: 12, display: 'block', minHeight: 32 }}>{s.name}</Text>
@@ -330,7 +339,7 @@ const QualityDynamicsPage: React.FC = () => {
             );
           })}
         </Row>
-      </Card>
+      </CollapsibleCard>
       </>
       )}
       </>

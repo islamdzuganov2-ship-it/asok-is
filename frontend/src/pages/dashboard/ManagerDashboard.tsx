@@ -1,23 +1,32 @@
 /**
- * ManagerDashboard.tsx — дашборд Менеджера по качеству. ТЗ v9 §3.2.
- * Выбор ИС/характеристики, Gauge характеристики, таблица метрик,
- * модал профессионального суждения + постановка задачи (карточка риска).
- * Созданные меры видны топ-менеджменту со статусом «ожидает одобрения».
+ * ManagerDashboard.tsx — дашборд «Основное» роли «Менеджер по качеству» (ТЗ v9 §3.2 + v15).
+ *
+ * Логика раскрытия (ТЗ v15, T-27…T-30):
+ *  0) Карточка-пирог «Профиль качества по характеристикам» — интерактивный селектор
+ *     (клик по сектору выбирает характеристику; центр доната — интегральный балл ИС).
+ *  1) Карточка «Метрики характеристики «X»» появляется ТОЛЬКО по выбранной характеристике,
+ *     с опцией «Спрятать» (T-28).
+ *  2) Каскад (T-29): при выборе характеристики раскрывается карточка подхарактеристик (метрики);
+ *     если на характеристику есть меры — раскрывается карточка «Меры и намерения»; если мер нет —
+ *     меры и «Профессиональные суждения» не раскрываются, пока не выбрана подхарактеристика.
  *
  * Режим данных:
  *  - 'mock' (Демо) — масштабный демо-набор (30 ИС) из mockScaleData;
- *  - 'live' (LLM)  — РЕАЛЬНЫЕ оценки из БД (GET /assessments/dashboard → systemDetails):
- *    выбор реальной ИС, характеристики/метрики, «невозможно измерить» = н/д, суждения по реальным данным.
+ *  - 'live' (LLM)  — РЕАЛЬНЫЕ оценки из БД (GET /assessments/dashboard → systemDetails).
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Card, Col, Row, Typography, Table, Tag, Button, Select, Space, List, Spin, Empty } from 'antd';
-import { EditOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DatabaseOutlined } from '@ant-design/icons';
+import {
+  EditOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DatabaseOutlined,
+  EyeInvisibleOutlined, PieChartOutlined,
+} from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { useSelector, shallowEqual } from 'react-redux';
 import { RootState } from '../../store';
 import { ManagerMetric, ManagerSystem } from '../../data/mockDashboards';
 import { MANAGER_SCALE_SYSTEMS as MANAGER_MOCK_SYSTEMS } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND } from '../../theme/ragPalette';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD } from '../../theme/premium';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import MeasureDevelopmentPanel from '../../components/MeasureDevelopmentPanel';
@@ -36,6 +45,8 @@ const STATUS_META: Record<ProposalStatus, { label: string; color: string; icon: 
 // score -1 = «невозможно измерить» → серый/нулевой gauge, честная подпись.
 const scoreLevel = (s: number) => (s < 0 ? 'Невозможно измерить' : levelLabel(s));
 const scoreTok = (s: number) => (s < 0 ? { color: '#AAB0B6', soft: '#F1F2F3', border: '#D9DBDE' } : ragToken(s));
+// Нормализация названий характеристик/подхарактеристик (ё/е, регистр, пробелы) — как в теплокарте.
+const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
 
 // Ответ /assessments/dashboard → список систем в форме дашборда менеджера.
 interface LiveSub { name: string; score: number }
@@ -65,7 +76,9 @@ const ManagerDashboard: React.FC = () => {
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [systemId, setSystemId] = useState<string>(MANAGER_MOCK_SYSTEMS[0].id);
-  const [charKey, setCharKey] = useState<string>(MANAGER_MOCK_SYSTEMS[0].characteristics[0].key);
+  // По умолчанию характеристика НЕ выбрана — карточка метрик и каскад раскрываются по выбору (T-28/T-29).
+  const [charKey, setCharKey] = useState<string | undefined>(undefined);
+  const [subName, setSubName] = useState<string | undefined>(undefined);
   const [target, setTarget] = useState<JudgmentTarget | null>(null);
   const [selectedMeasure, setSelectedMeasure] = useState<Proposal | null>(null);
   const [showAllMeasures, setShowAllMeasures] = useState(false);
@@ -83,7 +96,7 @@ const ManagerDashboard: React.FC = () => {
         if (!alive) return;
         const mapped = mapLiveSystems(d.systemDetails ?? []);
         setLiveSystems(mapped);
-        if (mapped.length) { setSystemId(mapped[0].id); setCharKey(mapped[0].characteristics[0].key); }
+        if (mapped.length) setSystemId(mapped[0].id);
       })
       .catch((e) => { if (alive) setLiveError(e.message); })
       .finally(() => { if (alive) setLiveLoading(false); });
@@ -96,24 +109,48 @@ const ManagerDashboard: React.FC = () => {
     [activeSystems, systemId],
   );
 
-  // При смене ИС сбрасываем выбранную характеристику на первую.
+  // При смене ИС каскад начинается заново (ничего не выбрано).
   useEffect(() => {
-    if (system) setCharKey(system.characteristics[0].key);
+    setCharKey(undefined);
+    setSubName(undefined);
+    setShowAllMeasures(false);
   }, [systemId, system?.id]);
 
   const visibleProposals = useSelector(selectVisibleProposals, shallowEqual);
-  // В LLM — реальные меры выбранной ИС (демо-меры скрыты); в демо — меры выбранной демо-ИС.
-  const myProposals = system
-    ? visibleProposals.filter((p) => p.systemName === system.name)
-    : visibleProposals;
-  // Показываем 3 самых критичных (наименьший балл), остальное — по раскрытию.
-  const shownProposals = useMemo(() => {
-    const sorted = [...myProposals].sort((a, b) => a.calculatedScore - b.calculatedScore);
-    return showAllMeasures ? sorted : sorted.slice(0, 3);
-  }, [myProposals, showAllMeasures]);
+  const myProposals = useMemo(
+    () => (system ? visibleProposals.filter((p) => p.systemName === system.name) : []),
+    [visibleProposals, system?.name],
+  );
 
-  const characteristic = system?.characteristics.find((c) => c.key === charKey) ?? system?.characteristics[0];
+  // Выбранная характеристика (undefined, пока не выбрана на пироге/в списке).
+  const characteristic = charKey ? system?.characteristics.find((c) => c.key === charKey) : undefined;
   const charTok = scoreTok(characteristic?.score ?? -1);
+
+  // Каскад раскрытия (T-29): меры/суждения — по характеристике или выбранной подхарактеристике.
+  const charMeasures = useMemo(
+    () => (characteristic ? myProposals.filter((p) => norm(p.characteristic) === norm(characteristic.title)) : []),
+    [myProposals, characteristic?.title],
+  );
+  const subMeasures = useMemo(
+    () => (subName ? charMeasures.filter((p) => norm(p.metricName) === norm(subName)) : []),
+    [charMeasures, subName],
+  );
+  const hasCharMeasures = charMeasures.length > 0;
+  const measuresList = subName && subMeasures.length ? subMeasures : charMeasures;
+  const shownProposals = useMemo(() => {
+    const sorted = [...measuresList].sort((a, b) => a.calculatedScore - b.calculatedScore);
+    return showAllMeasures ? sorted : sorted.slice(0, 3);
+  }, [measuresList, showAllMeasures]);
+
+  // Что раскрыто в каскаде (карточки показываются только когда по выбору есть содержимое):
+  const showMetrics = !!characteristic;
+  const showMeasures = !!characteristic && (hasCharMeasures || subMeasures.length > 0);
+
+  // Интегральный балл ИС (для центра доната) = среднее измеримых характеристик.
+  const integral = useMemo(() => {
+    const meas = system?.characteristics.filter((c) => c.score >= 0) ?? [];
+    return meas.length ? Math.round(meas.reduce((a, c) => a + c.score, 0) / meas.length) : -1;
+  }, [system?.id]);
 
   const gaugeOption = useMemo(
     () => ({
@@ -127,7 +164,7 @@ const ManagerDashboard: React.FC = () => {
         anchor: { show: true, size: 8, itemStyle: { color: BRAND.ink } },
         detail: {
           formatter: (characteristic?.score ?? -1) < 0 ? 'н/д' : '{value}%',
-          fontSize: 26, fontWeight: 700, color: charTok.color, offsetCenter: [0, '34%'],
+          fontSize: 24, fontWeight: 700, color: charTok.color, offsetCenter: [0, '34%'],
         },
         data: [{ value: Math.max(0, characteristic?.score ?? 0) }],
       }],
@@ -135,8 +172,42 @@ const ManagerDashboard: React.FC = () => {
     [characteristic?.score, charTok.color],
   );
 
+  // Пирог-селектор: 8 характеристик ИС, окраска по RAG, клик по сектору → выбор характеристики.
+  const pieOption = useMemo(() => {
+    if (!system) return {};
+    return {
+      tooltip: {
+        trigger: 'item', confine: true,
+        formatter: (p: any) => `${p.marker} ${p.name}<br/><b>${p.data.raw < 0 ? 'н/д' : `${p.data.raw}%`}</b>`,
+      },
+      legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 }, icon: 'circle' },
+      title: {
+        text: integral < 0 ? 'н/д' : `${integral}%`,
+        subtext: 'интегральный балл',
+        left: 'center', top: '37%',
+        textStyle: { color: BRAND.ink, fontSize: 27, fontWeight: 800 },
+        subtextStyle: { color: '#8a94a6', fontSize: 11 },
+      },
+      series: [{
+        type: 'pie', radius: ['55%', '80%'], center: ['50%', '45%'], avoidLabelOverlap: true,
+        itemStyle: { borderColor: '#fff', borderWidth: 3, borderRadius: 6 },
+        label: { show: false }, labelLine: { show: false },
+        emphasis: { scale: true, scaleSize: 6, itemStyle: { shadowBlur: 16, shadowColor: 'rgba(43,58,75,.22)' } },
+        data: system.characteristics.map((c) => ({
+          name: c.title,
+          value: c.score < 0 ? 3 : Math.max(3, c.score),
+          raw: c.score,
+          itemStyle: { color: scoreTok(c.score).color, opacity: charKey && c.key !== charKey ? 0.42 : 1 },
+        })),
+      }],
+    };
+  }, [system?.id, integral, charKey]);
+
+  const selectChar = (key: string) => { setCharKey(key); setSubName(undefined); setShowAllMeasures(false); };
+  const hideChar = () => { setCharKey(undefined); setSubName(undefined); };
+
   const columns = [
-    { title: 'Метрика', dataIndex: 'name', key: 'name', width: '46%' },
+    { title: 'Метрика (подхарактеристика)', dataIndex: 'name', key: 'name', width: '46%' },
     {
       title: 'Расчётный %', dataIndex: 'score', key: 'score', width: '20%',
       render: (v: number) => <Text strong style={{ color: scoreTok(v).color }}>{v < 0 ? 'н/д' : `${v}%`}</Text>,
@@ -155,9 +226,12 @@ const ManagerDashboard: React.FC = () => {
         <Button
           size="small" type="primary" icon={<EditOutlined />}
           disabled={!system}
-          onClick={() => system && characteristic && setTarget({
-            systemName: system.name, characteristic: characteristic.title, metricName: r.name, score: Math.max(0, r.score),
-          })}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (system && characteristic) setTarget({
+              systemName: system.name, characteristic: characteristic.title, metricName: r.name, score: Math.max(0, r.score),
+            });
+          }}
         >
           Суждение
         </Button>
@@ -165,13 +239,15 @@ const ManagerDashboard: React.FC = () => {
     },
   ];
 
-  const showData = !!system && !!characteristic;
+  const showData = !!system;
 
   return (
-    <div style={{ padding: 24, background: BRAND.canvas, minHeight: '100%' }}>
+    <div style={pageContainer}>
       <Row align="middle" justify="space-between" gutter={[16, 8]} wrap>
         <Col>
-          <Title level={4} style={{ margin: 0, color: BRAND.ink }}>Менеджер по качеству</Title>
+          <Title level={4} style={pageTitle}>
+            <PieChartOutlined style={{ color: GOLD.base, marginRight: 8 }} />Основное
+          </Title>
           <Text type="secondary">
             {isLive ? 'Режим LLM · реальные данные из БД' : 'Демо-данные'}
             {showData ? ` · ИС: «${system!.name}»` : ''}
@@ -206,133 +282,188 @@ const ManagerDashboard: React.FC = () => {
       )}
 
       {showData && (
-        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-          <Col xs={24} md={10}>
-            <Card style={{ borderColor: charTok.border, background: charTok.soft, height: '100%' }}>
-              <Text type="secondary">Характеристика</Text>
-              <Title level={5} style={{ margin: '2px 0 8px', color: BRAND.ink }}>
-                {characteristic!.title}{' '}
-                <Tag color={charTok.color} style={{ color: '#fff', border: 'none' }}>
-                  {characteristic!.score < 0 ? 'н/д' : `${characteristic!.score}%`}
-                </Tag>
-              </Title>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div style={{ flex: '0 0 122px', height: 150 }}>
-                  <ReactECharts option={gaugeOption} style={{ height: '100%', width: '100%' }} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <>
+          {/* Профиль качества — полноширинная карточка-селектор (пирог + «фишки» рядом) */}
+          <Card
+            {...premiumCard('gold', { marginTop: 16 })}
+            title={
+              <Space>
+                <span style={accentDot(GOLD.base)} />
+                <span style={{ color: BRAND.ink }}>Профиль качества по характеристикам</span>
+              </Space>
+            }
+            extra={<Text type="secondary" style={{ fontSize: 12 }}>клик по сектору или «фишке» — выбрать характеристику</Text>}
+          >
+            <Row gutter={[16, 12]} align="middle">
+              <Col xs={24} md={11}>
+                <ReactECharts
+                  option={pieOption}
+                  notMerge
+                  style={{ height: 280, width: '100%' }}
+                  onEvents={{
+                    click: (p: any) => {
+                      const c = system!.characteristics.find((x) => x.title === p?.data?.name);
+                      if (c) selectChar(c.key);
+                    },
+                  }}
+                />
+              </Col>
+              <Col xs={24} md={13}>
+                {/* Доступный селектор-дублёр диаграммы (клавиатура/надёжность при недоступности canvas) */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {system!.characteristics.map((c) => {
-                    const activeC = c.key === charKey;
+                    const active = c.key === charKey;
+                    const tok = scoreTok(c.score);
                     return (
-                      <div
+                      <span
                         key={c.key}
-                        onClick={() => setCharKey(c.key)}
-                        title={c.title}
+                        role="button"
+                        tabIndex={0}
+                        data-char={c.title}
+                        onClick={() => selectChar(c.key)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectChar(c.key); } }}
                         style={{
-                          cursor: 'pointer', fontSize: 12, padding: '5px 8px', borderRadius: 6,
-                          background: activeC ? '#fff' : 'transparent',
-                          border: `1px solid ${activeC ? charTok.border : 'transparent'}`,
-                          display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center',
+                          cursor: 'pointer', fontSize: 12, padding: '4px 11px', borderRadius: 20,
+                          border: `1px solid ${active ? tok.color : '#E3E5E9'}`,
+                          background: active ? tok.color : '#fff', color: active ? '#fff' : BRAND.ink,
+                          display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all .18s ease', userSelect: 'none',
                         }}
                       >
-                        <span style={{
-                          color: BRAND.ink, overflow: 'hidden', textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap', fontWeight: activeC ? 500 : 400,
-                        }}>{c.title}</span>
-                        <span style={{ color: scoreTok(c.score).color, fontWeight: 500, flex: '0 0 auto' }}>
-                          {c.score < 0 ? 'н/д' : `${c.score}%`}
-                        </span>
-                      </div>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? '#fff' : tok.color, flex: '0 0 auto' }} />
+                        {c.title}
+                        <b style={{ opacity: 0.85 }}>{c.score < 0 ? 'н/д' : `${c.score}%`}</b>
+                      </span>
                     );
                   })}
                 </div>
+              </Col>
+            </Row>
+          </Card>
+
+          {/* Метрики характеристики — ПОД профилем, появляется ТОЛЬКО по выбору + «Спрятать» */}
+          {showMetrics && (
+            <Card
+              {...premiumCard('ink', { marginTop: 16 })}
+              title={
+                <Space wrap>
+                  <span style={accentDot(charTok.color)} />
+                  <span style={{ color: BRAND.ink }}>Метрики характеристики «{characteristic!.title}»</span>
+                  <Tag color={charTok.color} style={{ color: '#fff', border: 'none' }}>
+                    {characteristic!.score < 0 ? 'н/д' : `${characteristic!.score}%`}
+                  </Tag>
+                </Space>
+              }
+              extra={<Button size="small" icon={<EyeInvisibleOutlined />} onClick={hideChar}>Спрятать</Button>}
+            >
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ flex: '0 0 148px', height: 160 }}>
+                  <ReactECharts option={gaugeOption} style={{ height: '100%', width: '100%' }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 300 }}>
+                  <Table<ManagerMetric>
+                    dataSource={characteristic!.metrics}
+                    columns={columns}
+                    rowKey="id"
+                    size="small"
+                    pagination={false}
+                    onRow={(r) => ({
+                      onClick: () => setSubName(r.name === subName ? undefined : r.name),
+                      style: { cursor: 'pointer', background: r.name === subName ? '#EEF3F8' : undefined },
+                    })}
+                    locale={{ emptyText: <Empty description="Нет метрик" /> }}
+                  />
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Клик по строке — выбрать подхарактеристику (уточняет меры и суждения по ней).
+                  </Text>
+                </div>
               </div>
             </Card>
-          </Col>
-
-          <Col xs={24} md={14}>
-            <Card
-              title={<span style={{ color: BRAND.ink }}>Метрики характеристики «{characteristic!.title}»</span>}
-              style={{ borderColor: BRAND.divider, height: '100%' }}
-              styles={{ body: { padding: 0 } }}
-            >
-              <Table<ManagerMetric>
-                dataSource={characteristic!.metrics}
-                columns={columns}
-                rowKey="id"
-                size="small"
-                pagination={false}
-                locale={{ emptyText: <Empty description="Нет метрик" /> }}
-              />
-            </Card>
-          </Col>
-        </Row>
+          )}
+        </>
       )}
 
-      {/* Выработка мер по систематическим проблемам (фактура + рекомендация ИИ → топ-менеджмент) */}
-      {showData && <MeasureDevelopmentPanel systemName={system!.name} system={system} />}
+      {/* Выработка мер — завязана на выбранную характеристику; карточка показывается ТОЛЬКО если
+          по этой характеристике есть систематическая проблема (иначе не раскрывается) */}
+      {showMetrics && (
+        <MeasureDevelopmentPanel
+          systemName={system!.name}
+          system={system}
+          characteristic={characteristic!.title}
+          hideWhenEmpty
+        />
+      )}
 
-      {/* Меры/намерения, поставленные менеджером (видны топ-менеджменту) */}
-      <Card
-        title={<span style={{ color: BRAND.ink }}>Поставленные меры и намерения{showData ? ` — «${system!.name}»` : ''}</span>}
-        style={{ marginTop: 16, borderColor: BRAND.divider }}
-      >
-        {myProposals.length === 0 ? (
-          <Text type="secondary">
-            Пока нет мер. Откройте «Суждение» по метрике, чтобы зафиксировать профессиональное суждение
-            и поставить задачу — она уйдёт топ-менеджменту на одобрение.
-          </Text>
-        ) : (
-          <List
-            dataSource={shownProposals}
-            footer={myProposals.length > 3 ? (
-              <div style={{ textAlign: 'center' }}>
-                <Button type="link" onClick={() => setShowAllMeasures(!showAllMeasures)}>
-                  {showAllMeasures ? 'Свернуть' : `Показать все (${myProposals.length})`}
-                </Button>
-              </div>
-            ) : undefined}
-            renderItem={(p) => {
-              const meta = STATUS_META[p.status];
-              return (
-                <List.Item
-                  onClick={() => setSelectedMeasure(p)}
-                  style={{ cursor: 'pointer', borderRadius: 8, padding: '8px 10px' }}
-                >
-                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                    <Space wrap>
-                      <Text strong>{p.riskTitle || p.metricName}</Text>
-                      <Tag icon={meta.icon} color={meta.color} style={{ color: '#fff', border: 'none' }}>
-                        {meta.label}
-                      </Tag>
-                      {p.execution === 'DONE' && <Tag color="green">выполнено</Tag>}
-                      {p.execution === 'NOT_DONE' && <Tag color="red">не выполнено</Tag>}
-                      {p.status === 'APPROVED' && !p.execution && <Tag color="blue">отчитаться о выполнении</Tag>}
-                      <Text type="secondary" style={{ fontSize: 12 }}>{p.characteristic}</Text>
+      {/* Меры и намерения — раскрываются только когда меры по характеристике/подхарактеристике есть */}
+      {showMeasures && (
+        <Card
+          {...premiumCard('terracotta', { marginTop: 16 })}
+          title={
+            <Space wrap>
+              <span style={accentDot('#C06B5A')} />
+              <span style={{ color: BRAND.ink }}>Меры и намерения — характеристика «{characteristic!.title}»</span>
+              {subName && <Tag>{subName}</Tag>}
+            </Space>
+          }
+        >
+          {measuresList.length === 0 ? (
+            <Text type="secondary">
+              По выбору мер пока нет. Откройте «Суждение» по метрике, чтобы зафиксировать
+              профессиональное суждение и поставить задачу — она уйдёт топ-менеджменту на одобрение.
+            </Text>
+          ) : (
+            <List
+              dataSource={shownProposals}
+              footer={measuresList.length > 3 ? (
+                <div style={{ textAlign: 'center' }}>
+                  <Button type="link" onClick={() => setShowAllMeasures(!showAllMeasures)}>
+                    {showAllMeasures ? 'Свернуть' : `Показать все (${measuresList.length})`}
+                  </Button>
+                </div>
+              ) : undefined}
+              renderItem={(p) => {
+                const meta = STATUS_META[p.status];
+                return (
+                  <List.Item
+                    onClick={() => setSelectedMeasure(p)}
+                    style={{ cursor: 'pointer', borderRadius: 8, padding: '8px 10px' }}
+                  >
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Space wrap>
+                        <Text strong>{p.riskTitle || p.metricName}</Text>
+                        <Tag icon={meta.icon} color={meta.color} style={{ color: '#fff', border: 'none' }}>
+                          {meta.label}
+                        </Tag>
+                        {p.execution === 'DONE' && <Tag color="green">выполнено</Tag>}
+                        {p.execution === 'NOT_DONE' && <Tag color="red">не выполнено</Tag>}
+                        {p.status === 'APPROVED' && !p.execution && <Tag color="blue">отчитаться о выполнении</Tag>}
+                        <Text type="secondary" style={{ fontSize: 12 }}>{p.characteristic}</Text>
+                      </Space>
+                      <Text type="secondary" style={{ fontSize: 13 }}>{p.rationale}</Text>
+                      {(p.owner || p.dueDate) && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {p.owner && <>Ответственный: {p.owner}{p.ownerRole ? ` (${p.ownerRole})` : ''}. </>}
+                          {p.dueDate && <>Срок: {p.dueDate}.</>}
+                        </Text>
+                      )}
+                      {p.decidedBy && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          Решение: {meta.label.toLowerCase()} ({p.decidedBy})
+                        </Text>
+                      )}
                     </Space>
-                    <Text type="secondary" style={{ fontSize: 13 }}>{p.rationale}</Text>
-                    {(p.owner || p.dueDate) && (
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {p.owner && <>Ответственный: {p.owner}{p.ownerRole ? ` (${p.ownerRole})` : ''}. </>}
-                        {p.dueDate && <>Срок: {p.dueDate}.</>}
-                      </Text>
-                    )}
-                    {p.decidedBy && (
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        Решение: {meta.label.toLowerCase()} ({p.decidedBy})
-                      </Text>
-                    )}
-                  </Space>
-                </List.Item>
-              );
-            }}
-          />
-        )}
-      </Card>
+                  </List.Item>
+                );
+              }}
+            />
+          )}
+        </Card>
+      )}
 
-      {/* Заполненные профессиональные суждения по выбранной ИС — чёткая связь с выбранной
-          характеристикой (та же, что в карточке «Метрики характеристики "X"») */}
-      {showData && <FilledJudgmentsCard systemName={system!.name} characteristic={characteristic!.title} />}
+      {/* Профессиональные суждения — завязаны на характеристику/подхарактеристику; карточка
+          показывается ТОЛЬКО если суждения есть (self-hide при пустоте) */}
+      {showMetrics && (
+        <FilledJudgmentsCard systemName={system!.name} characteristic={characteristic!.title} sub={subName} hideWhenEmpty />
+      )}
 
       <ProfessionalJudgmentModal open={!!target} target={target} onClose={() => setTarget(null)} />
       <MeasureDecisionModal

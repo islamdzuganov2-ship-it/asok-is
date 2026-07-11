@@ -10,6 +10,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, List, Tag, Typography, Space, Empty, Button, Input, Switch } from 'antd';
 import { FormOutlined } from '@ant-design/icons';
+import { premiumCard, accentDot } from '../theme/premium';
 
 const { Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -19,9 +20,9 @@ interface Item { system_name: string; period: string; characteristic: string; su
 // Нормализация названий характеристик (ё/е, регистр, пробелы) — как в теплокарте.
 const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
 
-interface Props { systemName?: string; characteristic?: string }
+interface Props { systemName?: string; characteristic?: string; sub?: string; hideWhenEmpty?: boolean }
 
-const FilledJudgmentsCard: React.FC<Props> = ({ systemName, characteristic }) => {
+const FilledJudgmentsCard: React.FC<Props> = ({ systemName, characteristic, sub, hideWhenEmpty }) => {
   const [items, setItems] = useState<Item[]>([]);
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState(false);
@@ -41,11 +42,12 @@ const FilledJudgmentsCard: React.FC<Props> = ({ systemName, characteristic }) =>
     return () => { alive = false; };
   }, [systemName]);
 
-  const charFiltered = useMemo(() => (
-    characteristic && onlyChar
-      ? items.filter((i) => norm(i.characteristic) === norm(characteristic))
-      : items
-  ), [items, characteristic, onlyChar]);
+  const charFiltered = useMemo(() => {
+    if (!(characteristic && onlyChar)) return items;
+    return items.filter((i) =>
+      norm(i.characteristic) === norm(characteristic)
+      && (!sub || norm(i.subcharacteristic) === norm(sub)));
+  }, [items, characteristic, onlyChar, sub]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -55,19 +57,24 @@ const FilledJudgmentsCard: React.FC<Props> = ({ systemName, characteristic }) =>
 
   const linked = characteristic && onlyChar;
 
+  // «Раскрывается только когда что-то есть»: если по выбору суждений нет — карточку не рисуем.
+  // Решение по charFiltered (до строкового поиска), чтобы поиск не «прятал» карточку.
+  if (hideWhenEmpty && charFiltered.length === 0) return null;
+
   return (
     <Card
       title={
         <Space wrap size={6}>
+          <span style={accentDot('#6E89A6')} />
           <FormOutlined />
           <span>
-            Заполненные профессиональные суждения{systemName ? ` — «${systemName}»` : ''}
+            Профессиональные суждения{systemName ? ` — «${systemName}»` : ''}
           </span>
           {linked && <Tag color="blue">характеристика «{characteristic}»</Tag>}
+          {linked && sub && <Tag>{sub}</Tag>}
         </Space>
       }
-      style={{ marginTop: 16 }}
-      styles={{ body: { paddingTop: 12 } }}
+      {...premiumCard('slate', { marginTop: 16 })}
       extra={
         <Space size={12}>
           {characteristic && (

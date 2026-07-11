@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Col, Row, Typography, Tag, Progress, Badge, Space, Button, Spin, Alert, Modal, Table } from 'antd';
-import { RobotOutlined, FireOutlined, AppstoreOutlined, FundOutlined } from '@ant-design/icons';
+import { RobotOutlined, FireOutlined, AppstoreOutlined, FundOutlined, UnorderedListOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import ReactECharts from 'echarts-for-react';
 import { useSelector, shallowEqual } from 'react-redux';
@@ -120,6 +120,8 @@ const ExecutiveDashboard: React.FC = () => {
   const [allOpen, setAllOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [showAllHeatmap, setShowAllHeatmap] = useState(false);
+  // Реестр мер качества по умолчанию скрыт — раскрывается по кнопке.
+  const [showRegistry, setShowRegistry] = useState(false);
   // Фокус на характеристике для карточки ИС (клик по ячейке теплокарты).
   const [activeChar, setActiveChar] = useState<string | undefined>(undefined);
 
@@ -425,8 +427,23 @@ const ExecutiveDashboard: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Реестр мер качества — фильтры, приоритетная сортировка, сроки, решение по клику */}
-      <MeasuresRegistryCard proposals={proposals} onOpen={setDecisionProposal} />
+      {/* Реестр мер качества — по умолчанию СКРЫТ, раскрывается по кнопке */}
+      <div style={{ marginTop: 16 }}>
+        <Button
+          type={showRegistry ? 'default' : 'primary'}
+          ghost={showRegistry}
+          icon={<UnorderedListOutlined />}
+          onClick={() => setShowRegistry((v) => !v)}
+        >
+          {showRegistry ? 'Скрыть реестр мер качества' : 'Показать реестр мер качества'}
+          {showRegistry ? <DownOutlined style={{ marginLeft: 6 }} /> : <RightOutlined style={{ marginLeft: 6 }} />}
+        </Button>
+        {showRegistry && (
+          <div style={{ marginTop: 12 }}>
+            <MeasuresRegistryCard proposals={proposals} onOpen={setDecisionProposal} />
+          </div>
+        )}
+      </div>
 
       <ActionInsightModal
         open={!!active}

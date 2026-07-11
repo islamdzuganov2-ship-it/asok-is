@@ -40,9 +40,16 @@ interface Zone {
 interface Props {
   systemName: string;
   system: ManagerSystem | undefined;
+  /** Если задано — показывать зоны только по этой характеристике (норм. сравнение ё/е, регистр). */
+  characteristic?: string;
+  /** Не рендерить карточку, если систематических зон (после фильтра) нет. */
+  hideWhenEmpty?: boolean;
 }
 
-const MeasureDevelopmentPanel: React.FC<Props> = ({ systemName, system }) => {
+// Нормализация названий характеристик (ё/е, регистр, пробелы) — как в теплокарте.
+const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
+
+const MeasureDevelopmentPanel: React.FC<Props> = ({ systemName, system, characteristic, hideWhenEmpty }) => {
   const dispatch = useAppDispatch();
   const fullName = useSelector((s: RootState) => s.auth.fullName) || 'Менеджер по качеству';
   const [active, setActive] = useState<Zone | null>(null);
@@ -55,13 +62,14 @@ const MeasureDevelopmentPanel: React.FC<Props> = ({ systemName, system }) => {
   const zones: Zone[] = useMemo(() => {
     if (!system) return [];
     return system.characteristics
+      .filter((c) => !characteristic || norm(c.title) === norm(characteristic))
       .map((c) => {
         const lowSubs = c.metrics.filter((m) => m.score >= 0 && m.score < 41).map((m) => ({ name: m.name, score: m.score }));
         return { title: c.title, score: c.score, lowSubs, systematic: c.score >= 0 && (c.score < 41 || lowSubs.length >= 2) };
       })
       .filter((z) => z.systematic)
       .sort((a, b) => a.score - b.score);
-  }, [system]);
+  }, [system, characteristic]);
 
   const openMeasure = (z: Zone) => {
     setActive(z);
@@ -98,6 +106,9 @@ const MeasureDevelopmentPanel: React.FC<Props> = ({ systemName, system }) => {
     message.success('Мера выработана и направлена топ-менеджменту на решение');
     setActive(null);
   };
+
+  // «Раскрывается только когда что-то есть»: при активном фильтре и отсутствии зон карточку не рисуем.
+  if (hideWhenEmpty && zones.length === 0) return null;
 
   return (
     <Card

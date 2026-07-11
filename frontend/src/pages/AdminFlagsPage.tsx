@@ -1,6 +1,6 @@
 import React from 'react';
 import { Typography, Card, Switch, Tag, Row, Col, Space } from 'antd';
-import { LineChartOutlined, ScheduleOutlined, DashboardOutlined } from '@ant-design/icons';
+import { LineChartOutlined, ScheduleOutlined, DashboardOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { setExecFeature, type ExecFeatureKey } from '../store/slices/uiSlice';
@@ -39,6 +39,18 @@ const AnalyticsPreview: React.FC<{ on: boolean }> = ({ on }) => (
   </svg>
 );
 
+// Мини-превью «Аналитика сбоев» — донат первопричин + столбцы MTTR.
+const IncidentsPreview: React.FC<{ on: boolean }> = ({ on }) => (
+  <svg width="100%" height="60" viewBox="0 0 160 60" preserveAspectRatio="none">
+    <circle cx="30" cy="30" r="16" fill="none" stroke={on ? '#7E57C2' : '#D5DAE0'} strokeWidth="8" strokeDasharray="30 70" transform="rotate(-90 30 30)" />
+    <circle cx="30" cy="30" r="16" fill="none" stroke={on ? '#6E89A6' : '#E3E6EA'} strokeWidth="8" strokeDasharray="18 82" strokeDashoffset="-30" transform="rotate(-90 30 30)" />
+    {[[74, 28], [98, 18], [122, 34], [146, 22]].map(([x, h], i) => (
+      <rect key={i} x={x} y={52 - h} width="14" height={h} rx="3"
+        fill={on ? ['#7E57C2', '#C9A14A', '#6F9F86', '#C06B5A'][i] : '#D5DAE0'} />
+    ))}
+  </svg>
+);
+
 interface FeatureDef {
   key: ExecFeatureKey;
   title: string;
@@ -68,6 +80,13 @@ const FEATURES: FeatureDef[] = [
     desc: 'Диаграмма Ганта: сроки, ответственные, задачи в СУЗ, комментарии и эскалация.',
     icon: <ScheduleOutlined />,
     Preview: TaskPlanPreview,
+  },
+  {
+    key: 'execIncidents',
+    title: 'Аналитика технических сбоев',
+    desc: 'Сбои по первопричинам (релиз/инфраструктура/производительность/сеть/электроснабжение), MTTR и топ нестабильных ИС.',
+    icon: <ThunderboltOutlined />,
+    Preview: IncidentsPreview,
   },
 ];
 

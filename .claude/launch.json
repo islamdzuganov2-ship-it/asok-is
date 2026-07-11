@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "frontend", "--", "--port", "3100", "--strictPort"],
       "port": 3100
+    },
+    {
+      "name": "asok-frontend-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend", "--", "--port", "3101", "--strictPort"],
+      "port": 3101
     }
   ]
 }

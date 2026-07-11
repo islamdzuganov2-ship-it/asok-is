@@ -1,5 +1,13 @@
 /**
- * TaskPlanDashboard.tsx — «План задач по повышению качества» + читаемая временная диаграмма.
+ * TaskPlanDashboard.tsx — «План задач по повышению качества» (формирование тех. долга).
+ * Два представления (ТЗ v15, T-23/T-24), обе карточки сворачиваемые «в самом верху»:
+ *   1) читаемая временная диаграмма (Ганта): сроки/статусы задач по времени;
+ *   2) пузырьковая карта задач (TaskBubbleTimeline): ось Y — ОТВЕТСТВЕННЫЕ, X — срок исполнения;
+ *      цвет-свечение = зона (красный — просрочено, жёлтый — зона риска, зелёный — в плане);
+ *      совпавшие по дате задачи одного ответственного собираются в «пирог» и разъезжаются при
+ *      наведении; под диаграммой — сворачиваемый список задач (тема · ответственный · срок).
+ * В самой диаграмме системы не подписываются (ось Y — ответственные), но их можно отфильтровать
+ * селектором в шапке. Клик по пузырьку/строке списка открывает карточку задачи.
  *
  * Эскалация (SoD):
  *   • инициирует ТОЛЬКО менеджер по качеству — с причиной невыполнения/просрочки;
@@ -7,19 +15,28 @@
  *   • после решения задачу отрабатывает менеджер по качеству.
  */
 import React, { useMemo, useState } from 'react';
-import { Card, Typography, Tag, Space, Input, Button, Modal, message, Alert, Tooltip, Empty, Segmented } from 'antd';
-import { LinkOutlined, WarningOutlined, CheckOutlined, CloseOutlined, RiseOutlined, StopOutlined } from '@ant-design/icons';
-import { useDispatch, useSelector, shallowEqual } from 'react-redux';
+import { Typography, Tag, Space, Input, Button, Modal, message, Alert, Tooltip, Empty, Segmented, Select, Table } from 'antd';
+import {
+  LinkOutlined, WarningOutlined, CheckOutlined, CloseOutlined, RiseOutlined, StopOutlined,
+  ScheduleOutlined, DatabaseOutlined, DownOutlined, UnorderedListOutlined,
+} from '@ant-design/icons';
+import { useSelector, shallowEqual } from 'react-redux';
+import { useAppDispatch } from '../../store/hooks';
 import { RootState } from '../../store';
 import {
   selectVisibleProposals, updateTask, setExecution, escalateTask, decideEscalation, resolveEscalation, type Proposal,
 } from '../../store/slices/governanceSlice';
 import { BRAND } from '../../theme/ragPalette';
+import { pageContainer, pageTitle, GOLD, accentDot } from '../../theme/premium';
+import CollapsibleCard from '../../components/CollapsibleCard';
+import TaskBubbleTimeline from '../../components/TaskBubbleTimeline';
 
 const { Title, Text, Paragraph } = Typography;
 
 const DAY = 86400000;
 const LABEL_W = 300;
+const RISK_DAYS = 14; // «зона риска» — до срока осталось ≤ 14 дней
+const ALL_SYS = '__ALL__';
 const parseRu = (d?: string): Date | null => {
   if (!d) return null;
   const m = /(\d{2})\.(\d{2})\.(\d{4})/.exec(d);
@@ -36,8 +53,16 @@ const KIND_META: Record<Kind, { color: string; light: string; label: string }> =
   pending:   { color: '#C9A14A', light: '#E0C589', label: 'ожидает решения' },
 };
 
+// 3-цветная «зона» задачи для пузырьков (T-24).
+type Health = 'overdue' | 'risk' | 'plan';
+const HEALTH: Record<Health, { color: string; label: string }> = {
+  overdue: { color: '#C06B5A', label: 'просрочено' },
+  risk:    { color: '#C9A14A', label: 'в зоне риска' },
+  plan:    { color: '#6F9F86', label: 'в плане' },
+};
+
 const TaskPlanDashboard: React.FC = () => {
-  const dispatch = useDispatch();
+  const dispatch = useAppDispatch();
   const role = useSelector((s: RootState) => s.auth.role) || '';
   const fullName = useSelector((s: RootState) => s.auth.fullName) || 'Пользователь';
   const proposals = useSelector(selectVisibleProposals, shallowEqual);
@@ -51,6 +76,8 @@ const TaskPlanDashboard: React.FC = () => {
   const [owner, setOwner] = useState('');
   const [due, setDue] = useState('');
   const [filter, setFilter] = useState<string>('Активные');
+  const [sysFilter, setSysFilter] = useState<string>(ALL_SYS);
+  const [listOpen, setListOpen] = useState(true);
 
   const now = Date.now();
   const kindOf = (t: Proposal): Kind => {
@@ -61,30 +88,48 @@ const TaskPlanDashboard: React.FC = () => {
     if (d && d.getTime() < now) return 'overdue';
     return 'progress';
   };
+  // Зона задачи (3 цвета): просрочено / зона риска / в плане.
+  const healthOf = (t: Proposal): Health => {
+    if (t.execution === 'DONE') return 'plan';
+    const d = parseRu(t.dueDate);
+    if (!d) return 'plan';
+    const daysLeft = Math.round((d.getTime() - now) / DAY);
+    if (daysLeft < 0) return 'overdue';
+    if (daysLeft <= RISK_DAYS) return 'risk';
+    return 'plan';
+  };
 
-  const allTasks = useMemo(
-    () => proposals.filter((p) => p.status !== 'REJECTED')
-      .map((p) => ({ p, kind: kindOf(p) }))
-      .sort((a, b) => (parseRu(a.p.dueDate)?.getTime() ?? Infinity) - (parseRu(b.p.dueDate)?.getTime() ?? Infinity)),
+  // Список систем для фильтра (только по действующим задачам).
+  const systems = useMemo(
+    () => [...new Set(proposals.filter((p) => p.status !== 'REJECTED').map((p) => p.systemName))].sort(),
     [proposals],
   );
+
+  // База: не отклонённые задачи выбранной системы, отсортированные по сроку.
+  const baseTasks = useMemo(
+    () => proposals.filter((p) => p.status !== 'REJECTED')
+      .filter((p) => sysFilter === ALL_SYS || p.systemName === sysFilter)
+      .map((p) => ({ p, kind: kindOf(p) }))
+      .sort((a, b) => (parseRu(a.p.dueDate)?.getTime() ?? Infinity) - (parseRu(b.p.dueDate)?.getTime() ?? Infinity)),
+    [proposals, sysFilter],
+  );
   const counts = useMemo(() => {
-    const c: Record<string, number> = { Все: allTasks.length, Активные: 0, Просрочено: 0, Эскалация: 0, Выполнено: 0 };
-    allTasks.forEach(({ kind }) => {
+    const c: Record<string, number> = { Все: baseTasks.length, Активные: 0, Просрочено: 0, Эскалация: 0, Выполнено: 0 };
+    baseTasks.forEach(({ kind }) => {
       if (kind === 'done') c['Выполнено'] += 1;
       else if (kind === 'overdue') c['Просрочено'] += 1;
       else c['Активные'] += 1;
       if (kind === 'escalated') c['Эскалация'] += 1;
     });
     return c;
-  }, [allTasks]);
-  const tasks = useMemo(() => allTasks.filter(({ kind }) =>
+  }, [baseTasks]);
+  const tasks = useMemo(() => baseTasks.filter(({ kind }) =>
     filter === 'Все'
     || (filter === 'Выполнено' && kind === 'done')
     || (filter === 'Просрочено' && kind === 'overdue')
     || (filter === 'Эскалация' && kind === 'escalated')
     || (filter === 'Активные' && kind !== 'done')
-  ), [allTasks, filter]);
+  ), [baseTasks, filter]);
 
   const bounds = useMemo(() => {
     const ts = tasks.flatMap(({ p }) => {
@@ -136,20 +181,83 @@ const TaskPlanDashboard: React.FC = () => {
   const rowH = 46;
   const filterKeys = ['Активные', 'Просрочено', 'Эскалация', 'Выполнено', 'Все'];
 
-  return (
-    <div style={{ padding: 24, background: BRAND.canvas, minHeight: '100%' }}>
-      <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }} wrap>
-        <Title level={4} style={{ margin: 0, color: BRAND.ink }}>План задач по повышению качества</Title>
-        <Segmented value={filter} onChange={(v) => setFilter(v as string)}
-          options={filterKeys.map((k) => ({ label: `${k} (${counts[k] ?? 0})`, value: k }))} />
-      </Space>
+  // Легенда трёх зон (для шапки пузырьковой карты).
+  const zoneLegend = (
+    <Space size={12} wrap>
+      {(Object.keys(HEALTH) as Health[]).map((h) => (
+        <Space key={h} size={5}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: HEALTH[h].color, boxShadow: `0 0 6px ${HEALTH[h].color}`, display: 'inline-block' }} />
+          <Text type="secondary" style={{ fontSize: 12 }}>{HEALTH[h].label}</Text>
+        </Space>
+      ))}
+    </Space>
+  );
 
-      <Card style={{ marginTop: 16 }} styles={{ body: { overflowX: 'auto', padding: 16 } }}>
+  // Колонки списка задач под пузырьковой картой.
+  const listColumns = [
+    {
+      title: 'Тема задачи', key: 'title',
+      render: (_: unknown, r: { p: Proposal }) => {
+        const h = healthOf(r.p);
+        return (
+          <Space size={6}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: HEALTH[h].color, boxShadow: `0 0 5px ${HEALTH[h].color}`, display: 'inline-block', flex: '0 0 auto' }} />
+            {r.p.escalated && <RiseOutlined style={{ color: '#7E57C2' }} />}
+            <Text style={{ color: BRAND.ink }}>{r.p.riskTitle || r.p.metricName}</Text>
+          </Space>
+        );
+      },
+    },
+    { title: 'Ответственный', key: 'owner', render: (_: unknown, r: { p: Proposal }) => (r.p.owner ? <Text>{r.p.owner}</Text> : <Text type="secondary">не назначен</Text>) },
+    {
+      title: 'Срок исполнения', key: 'due', width: 160,
+      sorter: (a: { p: Proposal }, b: { p: Proposal }) => (parseRu(a.p.dueDate)?.getTime() ?? Infinity) - (parseRu(b.p.dueDate)?.getTime() ?? Infinity),
+      render: (_: unknown, r: { p: Proposal }) => {
+        const d = parseRu(r.p.dueDate);
+        const daysLeft = d ? Math.round((d.getTime() - now) / DAY) : null;
+        const color = daysLeft == null ? '#8a94a6' : daysLeft < 0 ? '#C06B5A' : daysLeft <= RISK_DAYS ? '#C9A14A' : '#6F9F86';
+        return <Text style={{ color }}>{r.p.dueDate || 'без срока'}</Text>;
+      },
+    },
+  ];
+
+  return (
+    <div style={pageContainer}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <Title level={4} style={pageTitle}>
+            <ScheduleOutlined style={{ color: GOLD.base, marginRight: 8 }} />План задач по повышению качества
+          </Title>
+          <Text type="secondary">Формирование и контроль технического долга качества.</Text>
+        </div>
+        <Space wrap>
+          <Text type="secondary"><DatabaseOutlined /> Система:</Text>
+          <Select
+            value={sysFilter}
+            onChange={setSysFilter}
+            style={{ minWidth: 210 }}
+            showSearch
+            optionFilterProp="label"
+            options={[{ value: ALL_SYS, label: '— Все системы —' }, ...systems.map((s) => ({ value: s, label: s }))]}
+          />
+          <Segmented value={filter} onChange={(v) => setFilter(v as string)}
+            options={filterKeys.map((k) => ({ label: `${k} (${counts[k] ?? 0})`, value: k }))} />
+        </Space>
+      </div>
+
+      {/* 1. Читаемая временная диаграмма (Ганта) */}
+      <CollapsibleCard
+        accent="slate"
+        style={{ marginTop: 16 }}
+        title="Временная диаграмма"
+        subtitle="сроки и статусы задач по времени"
+        bodyStyle={{ overflowX: 'auto' }}
+      >
         {tasks.length === 0 ? <Empty description="Нет задач в выбранном фильтре." /> : (
           <div style={{ minWidth: 900 }}>
             {/* Шкала месяцев */}
             <div style={{ display: 'flex', height: 22 }}>
-              <div style={{ width: LABEL_W, flex: '0 0 auto', fontSize: 12, color: '#8a94a6', fontWeight: 500 }}>Задача · ИС · ответственный</div>
+              <div style={{ width: LABEL_W, flex: '0 0 auto', fontSize: 12, color: '#8a94a6', fontWeight: 500 }}>Задача · ответственный</div>
               <div style={{ position: 'relative', flex: 1 }}>
                 {months.map((m) => (
                   <span key={m.label + m.pct} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: 11, color: '#8a94a6', transform: 'translateX(-50%)' }}>{m.label}</span>
@@ -191,7 +299,7 @@ const TaskPlanDashboard: React.FC = () => {
                         </div>
                       </Tooltip>
                       <div style={{ fontSize: 11, color: '#8a94a6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {p.systemName} · {p.owner || 'ответственный не назначен'}
+                        {p.owner || 'ответственный не назначен'}
                       </div>
                     </div>
                     <div style={{ position: 'relative', flex: 1, height: '100%' }}>
@@ -232,13 +340,55 @@ const TaskPlanDashboard: React.FC = () => {
             </Space>
           </div>
         )}
-      </Card>
+      </CollapsibleCard>
+
+      {/* 2. Пузырьковая карта задач (T-24) */}
+      <CollapsibleCard
+        accent="gold"
+        style={{ marginTop: 16 }}
+        title="Пузырьковая карта задач"
+        subtitle="ось Y — ответственные · X — срок исполнения · цвет = зона · совпавшие даты собираются в пирог (наведите, чтобы разъехались)"
+        extra={zoneLegend}
+      >
+        {tasks.length === 0 ? <Empty description="Нет задач в выбранном фильтре." /> : (
+          <>
+            <TaskBubbleTimeline tasks={tasks} onOpen={openTask} />
+
+            {/* Сворачиваемый список задач под диаграммой */}
+            <div style={{ marginTop: 8, borderTop: '1px solid #EEF0F2', paddingTop: 10 }}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setListOpen(!listOpen)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setListOpen(!listOpen); } }}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', marginBottom: listOpen ? 8 : 0 }}
+              >
+                <DownOutlined style={{ fontSize: 12, color: BRAND.inkSoft, transition: 'transform .25s ease', transform: listOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
+                <span style={accentDot(GOLD.base)} />
+                <UnorderedListOutlined style={{ color: BRAND.inkSoft }} />
+                <Text strong style={{ color: BRAND.ink }}>Список задач ({tasks.length})</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>· клик по строке — открыть задачу</Text>
+              </div>
+              {listOpen && (
+                <Table
+                  dataSource={tasks}
+                  columns={listColumns as any}
+                  rowKey={(r) => r.p.id}
+                  size="small"
+                  pagination={tasks.length > 10 ? { pageSize: 10, size: 'small' } : false}
+                  onRow={(r) => ({ onClick: () => openTask(r.p), style: { cursor: 'pointer' } })}
+                />
+              )}
+            </div>
+          </>
+        )}
+      </CollapsibleCard>
 
       <Modal open={!!sel} onCancel={() => setSel(null)} footer={null} width={640} title={sel ? (sel.riskTitle || sel.metricName) : ''}>
         {sel && (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Space wrap>
-              <Tag>{sel.systemName}</Tag><Tag>{sel.characteristic}</Tag>
+              <Tag>{sel.characteristic}</Tag>
               <Tag color={sel.status === 'APPROVED' ? 'green' : sel.status === 'REJECTED' ? 'red' : 'gold'}>{sel.status}</Tag>
               {sel.execution === 'DONE' && <Tag color="green">выполнено</Tag>}
               {sel.escalated && <Tag color="purple">эскалирована</Tag>}
