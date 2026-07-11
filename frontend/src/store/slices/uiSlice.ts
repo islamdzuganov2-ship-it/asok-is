@@ -15,11 +15,12 @@ export interface ExecFeatures {
   execAnalytics: boolean;  // «Аналитический дашборд»
   execDynamics: boolean;   // «Динамика качества»
   execTaskPlan: boolean;   // «План задач по повышению качества»
+  execIncidents: boolean;  // «Аналитика технических сбоев» (T-21)
 }
 export type ExecFeatureKey = keyof ExecFeatures;
 
 function loadFeatures(): ExecFeatures {
-  const def: ExecFeatures = { execAnalytics: false, execDynamics: false, execTaskPlan: false };
+  const def: ExecFeatures = { execAnalytics: false, execDynamics: false, execTaskPlan: false, execIncidents: false };
   try {
     return { ...def, ...JSON.parse(localStorage.getItem(FEATURE_KEY) || '{}') };
   } catch {
@@ -35,6 +36,7 @@ interface UiState {
   execAnalytics: boolean;
   execDynamics: boolean;
   execTaskPlan: boolean;
+  execIncidents: boolean;
 }
 
 const uiSlice = createSlice({
@@ -58,7 +60,8 @@ const uiSlice = createSlice({
     setExecFeature(state, action: PayloadAction<{ key: ExecFeatureKey; value: boolean }>) {
       state[action.payload.key] = action.payload.value;
       localStorage.setItem(FEATURE_KEY, JSON.stringify({
-        execAnalytics: state.execAnalytics, execDynamics: state.execDynamics, execTaskPlan: state.execTaskPlan,
+        execAnalytics: state.execAnalytics, execDynamics: state.execDynamics,
+        execTaskPlan: state.execTaskPlan, execIncidents: state.execIncidents,
       }));
     },
   },

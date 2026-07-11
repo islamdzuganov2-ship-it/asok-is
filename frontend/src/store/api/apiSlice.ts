@@ -171,6 +171,54 @@ export interface ExcelImportResult {
     sheets: Array<{ name: string; imported: number; skipped: number }>;
 }
 
+// ─── Аналитика техсбоев (T-21) ───
+export interface TechIncidentDto {
+    id: string;
+    systemName: string;
+    category: string;
+    severity: string;
+    title: string;
+    description?: string;
+    rootCause?: string;
+    releaseRef?: string;
+    occurredAt: string;
+    resolvedAt?: string | null;
+    source: string;
+    createdBy?: string;
+}
+export interface IncidentCategoryStat {
+    category: string;
+    count: number;
+    share: number;
+    openCount: number;
+    avgMttrHours: number | null;
+}
+export interface IncidentSystemStat {
+    systemName: string;
+    count: number;
+    openCount: number;
+}
+export interface IncidentAnalytics {
+    total: number;
+    openCount: number;
+    resolvedCount: number;
+    avgMttrHours: number | null;
+    releaseInducedShare: number;
+    byCategory: IncidentCategoryStat[];
+    topSystems: IncidentSystemStat[];
+}
+export interface IncidentCreateDto {
+    systemName: string;
+    category: string;
+    severity: string;
+    title: string;
+    description?: string;
+    rootCause?: string;
+    releaseRef?: string;
+    occurredAt: string;
+    resolvedAt?: string | null;
+}
+
 export const apiSlice = createApi({
     reducerPath: 'api',
     baseQuery: fetchBaseQuery({
@@ -183,7 +231,7 @@ export const apiSlice = createApi({
             return headers;
         },
     }),
-    tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems'],
+    tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems', 'Incidents'],
     endpoints: (builder) => ({
         getExecutiveDashboard: builder.query<DashboardData, void>({
             query: () => '/reports/executive-dashboard',
@@ -325,6 +373,23 @@ export const apiSlice = createApi({
             },
             invalidatesTags: ['Metrics', 'Assessment', 'Dashboard'],
         }),
+        // ─── Аналитика техсбоев (T-21) ───
+        getIncidents: builder.query<TechIncidentDto[], { system?: string } | void>({
+            query: (p) => `/incidents${(p as { system?: string } | undefined)?.system ? `?system=${encodeURIComponent((p as { system?: string }).system!)}` : ''}`,
+            providesTags: ['Incidents'],
+        }),
+        getIncidentAnalytics: builder.query<IncidentAnalytics, { system?: string } | void>({
+            query: (p) => `/incidents/analytics${(p as { system?: string } | undefined)?.system ? `?system=${encodeURIComponent((p as { system?: string }).system!)}` : ''}`,
+            providesTags: ['Incidents'],
+        }),
+        createIncident: builder.mutation<TechIncidentDto, IncidentCreateDto>({
+            query: (body) => ({ url: '/incidents', method: 'POST', body }),
+            invalidatesTags: ['Incidents'],
+        }),
+        resolveIncident: builder.mutation<TechIncidentDto, { id: string; resolvedAt?: string }>({
+            query: ({ id, resolvedAt }) => ({ url: `/incidents/${id}/resolve`, method: 'POST', body: { resolvedAt } }),
+            invalidatesTags: ['Incidents'],
+        }),
     }),
 });
 
@@ -350,4 +415,8 @@ export const {
     useGetExcelReportsQuery,
     useGetExcelMatricesQuery,
     useUploadExcelReportMutation,
+    useGetIncidentsQuery,
+    useGetIncidentAnalyticsQuery,
+    useCreateIncidentMutation,
+    useResolveIncidentMutation,
 } = apiSlice;
