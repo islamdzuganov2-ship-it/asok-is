@@ -11,8 +11,9 @@ import {
 import { RightOutlined, DatabaseOutlined } from '@ant-design/icons';
 import * as echarts from 'echarts';
 import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, shallowEqual } from 'react-redux';
 import { RootState } from '../store';
+import { selectVisibleProposals } from '../store/slices/governanceSlice';
 import { ANALYTICS_SCALE } from '../data/mockScaleData';
 import LevelHeatmap, { LEVEL_COLORS } from '../components/LevelHeatmap';
 import { critTagStyle, levelLabel } from '../theme/ragPalette';
@@ -43,14 +44,19 @@ interface DashboardData {
 
 type CharModal = CharDetail & { system?: string };
 
-type DetailKey = 'global' | 'metrics' | 'systems' | 'low';
+type DetailKey = 'global' | 'metrics' | 'systems' | 'low' | 'measures';
 
 const DETAIL_TITLE: Record<DetailKey, string> = {
   global: 'Глобальный балл — из чего складывается',
   metrics: 'Все метрики по уровням качества',
   systems: 'ИС в мониторинге',
   low: 'Низкие метрики по системам',
+  measures: 'Метрики, имеющие связанные меры',
 };
+
+// Нормализация названий (ё/е, регистр, пробелы/точки) — единый ключ сопоставления,
+// как в теплокарте и ManagerDashboard. Гарантирует точный матчинг «метрика ↔ мера».
+const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
 
 const critTag = (v: string) => <Tag style={critTagStyle(v)}>{v}</Tag>;
 
@@ -61,6 +67,7 @@ const EMPTY_DASHBOARD: DashboardData = {
 
 const DashboardPage: React.FC = () => {
   const dataMode = useSelector((s: RootState) => s.ui.dataMode);
+  const proposals = useSelector(selectVisibleProposals, shallowEqual);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +170,30 @@ const DashboardPage: React.FC = () => {
     };
   }, [data, matrix, heatSystem]);
 
+  // T-54: связка «метрика ↔ мера». Детерминированный матчинг по ключу
+  // `система|характеристика|метрика` между метриками дашборда (systemDetails) и мерами
+  // (governance-предложения). Без LLM: имена — единый источник (qualityModel), поэтому
+  // точный ключевой матчинг даёт 100% точность и мгновенную скорость. Считаем дистинкт-метрики.
+  const measureLinks = useMemo(() => {
+    const keyOf = (sys: string, ch: string, m: string) => `${norm(sys)}|${norm(ch)}|${norm(m)}`;
+    const countByKey = new Map<string, number>();
+    proposals.forEach((p) => {
+      const k = keyOf(p.systemName, p.characteristic, p.metricName);
+      countByKey.set(k, (countByKey.get(k) ?? 0) + 1);
+    });
+    const rows: { key: string; system: string; characteristic: string; metric: string; measures: number }[] = [];
+    (data?.systemDetails ?? []).forEach((s) => {
+      s.chars.forEach((c) => {
+        c.subs.forEach((sub) => {
+          const k = keyOf(s.name, c.title, sub.name);
+          const n = countByKey.get(k);
+          if (n) rows.push({ key: `${s.name}|${c.title}|${sub.name}`, system: s.name, characteristic: c.title, metric: sub.name, measures: n });
+        });
+      });
+    });
+    return { count: rows.length, rows };
+  }, [data, proposals]);
+
   if (error) {
     return <Alert type="error" showIcon message="Ошибка загрузки дашборда"
       description={`${error}. Проверьте подключение к backend.`} style={{ margin: 24 }} />;
@@ -214,6 +245,30 @@ const DashboardPage: React.FC = () => {
         </>
       );
     }
+    if (detail === 'measures') {
+      return (
+        <>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+            Метрик со связанной мерой: {measureLinks.count}. Связка определяется по ключу
+            «система · характеристика · метрика» (метрика ↔ мера качества), без LLM.
+          </Text>
+          <Table
+            dataSource={measureLinks.rows} rowKey="key" size="small"
+            pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            locale={{ emptyText: 'Нет метрик со связанными мерами' }}
+            columns={[
+              { title: 'ИС', dataIndex: 'system', ellipsis: true },
+              { title: 'Характеристика', dataIndex: 'characteristic', ellipsis: true },
+              { title: 'Метрика', dataIndex: 'metric', ellipsis: true },
+              {
+                title: 'Мер', dataIndex: 'measures', width: 70,
+                render: (v: number) => <Tag color="#6F9F86" style={{ color: '#fff', border: 'none' }}>{v}</Tag>,
+              },
+            ]}
+          />
+        </>
+      );
+    }
     const rows = detail === 'low'
       ? [...data.problematicSystems].sort((a, b) => b.lowMetricsCount - a.lowMetricsCount)
       : data.problematicSystems;
@@ -249,11 +304,14 @@ const DashboardPage: React.FC = () => {
           : 'Детальный операционный взгляд (live из БД): распределение по уровням, метрики, полная тепловая карта по всем ИС.'}
       </Text>
 
+      {/* Порядок (T-53): Глобальный балл · ИС в мониторинге · Всего метрик · Низких метрик ·
+          Метрик имеющих меры (T-54). Пять карточек — flex-раскладка (равная ширина, перенос). */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={12} sm={6}><KpiCard k="global" title="Глобальный балл" value={`${healthPct}%`} color={healthColor} /></Col>
-        <Col xs={12} sm={6}><KpiCard k="metrics" title="Всего метрик" value={data?.totalMetrics ?? 0} /></Col>
-        <Col xs={12} sm={6}><KpiCard k="systems" title="ИС в мониторинге" value={data?.yAxisLabels.length ?? 0} /></Col>
-        <Col xs={12} sm={6}><KpiCard k="low" title="Низких метрик" value={lowTotal} color="#f5222d" /></Col>
+        <Col flex="1 1 168px"><KpiCard k="global" title="Глобальный балл" value={`${healthPct}%`} color={healthColor} /></Col>
+        <Col flex="1 1 168px"><KpiCard k="systems" title="ИС в мониторинге" value={data?.yAxisLabels.length ?? 0} /></Col>
+        <Col flex="1 1 168px"><KpiCard k="metrics" title="Всего метрик" value={data?.totalMetrics ?? 0} /></Col>
+        <Col flex="1 1 168px"><KpiCard k="low" title="Низких метрик" value={lowTotal} color="#f5222d" /></Col>
+        <Col flex="1 1 168px"><KpiCard k="measures" title="Метрик имеющих меры" value={measureLinks.count} color="#6F9F86" /></Col>
       </Row>
 
       <Row gutter={[16, 16]}>

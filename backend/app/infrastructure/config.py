@@ -32,22 +32,33 @@ class Settings(BaseSettings):
     # Redis / Celery
     REDIS_URL: str = "redis://redis:6379/0"
 
-    # LLM (in-process, llama.cpp / GGUF — без внешних сервисов)
-    # Модель: Qwen2.5-1.5B-Instruct Q4_K_M (arch `qwen2`), файл models/llm/asok-model.gguf.
-    # NB: arch `qwen35` (Qwen3.5) текущим рантаймом не поддерживается — см. docs/LLM_SETUP.md.
+    # LLM (in-process, llama.cpp / GGUF — без внешних сервисов).
+    # МОДЕЛЬ-АГНОСТИЧНО: система принимает ЛЮБУЮ GGUF-модель, положенную в LOCAL_LLM_MODEL_DIR,
+    # опрашивает её метаданные (архитектура, окно контекста, шаблон чата) и адаптируется.
+    # LOCAL_LLM_MODEL_FILE="auto" → автоподбор файла из папки (новейший *.gguf); можно задать
+    # конкретное имя, чтобы закрепить модель. Рантайм llama-cpp-python>=0.3 грузит современные
+    # архитектуры (qwen2/qwen3, llama, gemma2, phi3, mistral и др.).
     LLM_ENABLED: bool = True
     LOCAL_LLM_MODEL_DIR: str = "models/llm"
-    LOCAL_LLM_MODEL_FILE: str = "asok-model.gguf"
-    LLM_N_CTX: int = 4096
-    LLM_N_THREADS: int = 8          # 9B на CPU — больше потоков
-    LLM_N_GPU_LAYERS: int = 0       # >0 если собран llama.cpp с CUDA/Metal
+    LOCAL_LLM_MODEL_FILE: str = "auto"   # "auto" → автоподбор; либо явное имя файла .gguf
+    LLM_N_CTX: int = 4096                 # верхняя граница; фактически ограничивается окном модели
+    LLM_N_THREADS: int = 8               # потоки CPU (крупные модели — больше)
+    LLM_N_GPU_LAYERS: int = 0            # 0 = CPU; -1 = все слои на GPU (нужна CUDA/Metal-сборка)
     LLM_MAX_TOKENS: int = 320
-    LLM_TEMPERATURE: float = 0.1    # максимум детерминизма/честности
+    LLM_TEMPERATURE: float = 0.1         # максимум детерминизма/честности
     LLM_TOP_P: float = 0.9
+    LLM_CHAT_FORMAT: str = "auto"        # "auto" → шаблон чата из GGUF; иначе явный формат llama.cpp
+
+    # «Резервный мозг»: обучение и настройки LLM хранятся ВНЕ файла модели (переносимо между
+    # моделями) — writable-каталог, отдельный от read-only каталога моделей. См. modules/llm/brain.py.
+    LLM_BRAIN_DIR: str = "models/llm_brain"
 
     @property
     def LLM_MODEL_PATH(self) -> str:
-        return os.path.join(self.LOCAL_LLM_MODEL_DIR, self.LOCAL_LLM_MODEL_FILE)
+        """Явно сконфигурированный путь (для обратной совместимости). Фактически загружаемый файл
+        определяет service.discover_model_path() с учётом режима "auto"."""
+        name = self.LOCAL_LLM_MODEL_FILE if self.LOCAL_LLM_MODEL_FILE not in ("", "auto", "AUTO") else "asok-model.gguf"
+        return os.path.join(self.LOCAL_LLM_MODEL_DIR, name)
 
     # Внешние интеграции (ТЗ v13 §B5): пустой URL = интеграция выключена (работает заглушка).
     # Реальные адаптеры (фаза 4+) читают эндпоинты/токены ТОЛЬКО отсюда (env), не из кода.

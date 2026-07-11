@@ -160,6 +160,27 @@ def _allowed_pcts(*texts: str) -> set[str]:
     return allowed
 
 
+_WORD_RE = re.compile(r"[А-Яа-яЁёA-Za-z]{4,}")
+
+
+def _is_echo(text: str, *sources: str) -> bool:
+    """Вырожденный ответ LLM: маленькая модель «эхом» пересказывает вход, не добавляя своих слов.
+
+    Такой ответ грамматически валиден и не содержит «лишних» процентов, поэтому проходит
+    grounding-проверку — но как управленческий вывод он бесполезен (напр. просто перечисляет
+    названия характеристик). Считаем ответ эхом, если он почти не привнёс собственной лексики
+    поверх входных данных; тогда вызывающий код уходит в честный детерминированный fallback.
+    """
+    out_w = {w.lower() for w in _WORD_RE.findall(text or "")}
+    if len(out_w) < 3:
+        return True
+    src_w: set[str] = set()
+    for s in sources:
+        src_w |= {w.lower() for w in _WORD_RE.findall(s or "")}
+    novel = out_w - src_w
+    return len(novel) < 3 or (len(novel) / len(out_w)) < 0.15
+
+
 def _grounded_fallback(system_name: str, period_label: str, metrics_block: str) -> str:
     """Честное резюме строго по входным цифрам (без LLM / при недостоверном ответе)."""
     if not metrics_block.strip():
@@ -180,9 +201,10 @@ def _grounded_fallback(system_name: str, period_label: str, metrics_block: str) 
             f"ИС «{system_name}», период {period_label}: показатели рассчитаны, "
             "процентных отклонений во входных данных не зафиксировано."
         )
+    name = worst_line.split("|")[0].strip() or worst_line
     return (
-        f"ИС «{system_name}», период {period_label}: наиболее просевший показатель — "
-        f"«{worst_line}». Рекомендация: приоритизировать устранение по этой характеристике "
+        f"ИС «{system_name}», период {period_label}: наиболее просевшая характеристика — "
+        f"«{name}» ({worst_pct}%). Рекомендация: приоритизировать устранение по этой характеристике "
         "и закрепить меру в плане обеспечения качества. "
         "(Вывод сформирован строго по расчётным метрикам, без допущений.)"
     )
@@ -298,6 +320,10 @@ def generate_summary(system_name: str, period_label: str,
                 "LLM упомянула проценты вне входных данных %s — заменяю на честный fallback",
                 sorted(hallucinated),
             )
+            text = _grounded_fallback(system_name, period_label, metrics_block)
+        elif _is_echo(text, metrics_block, known_risks, system_name, period_label):
+            # Маленькая модель вернула «эхо» входа (перечень характеристик) — бесполезно как вывод.
+            logger.warning("LLM вернула вырожденный ответ (эхо входных данных) — честный fallback")
             text = _grounded_fallback(system_name, period_label, metrics_block)
     else:
         text = _grounded_fallback(system_name, period_label, metrics_block)

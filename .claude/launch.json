@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "frontend", "--", "--port", "3101", "--strictPort"],
       "port": 3101
+    },
+    {
+      "name": "asok-frontend-verify",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend", "--", "--port", "3105", "--strictPort"],
+      "port": 3105
     }
   ]
 }

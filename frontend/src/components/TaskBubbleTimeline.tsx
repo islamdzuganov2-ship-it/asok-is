@@ -168,35 +168,48 @@ const TaskBubbleTimeline: React.FC<Props> = ({ tasks, onOpen }) => {
                 );
               }
 
-              // Кластер: «пирог» (донат) + fan-out по наведению.
-              const D = 34;
+              // Кластер: «пирог» (донат), при наведении разъезжается на отдельные пузырьки.
+              const D = 36;
               const stops = cl.tasks.map((p, i) => {
                 const from = (i / n) * 360; const to = ((i + 1) / n) * 360;
                 return `${ZONE[zoneOf(p)].color} ${from}deg ${to}deg`;
               }).join(', ');
               const glow = ZONE[worstZone(cl.tasks)].color;
-              const R = 34; // радиус разлёта
+              const bubbleD = 24;
+              const R = Math.max(42, 14 + n * 8); // радиус разлёта растёт с числом задач
+              const shieldR = R + bubbleD;        // «щит» наведения покрывает всю зону разлёта
 
               return (
                 <div
                   key={cl.key}
                   onMouseEnter={() => setHover(cl.key)}
                   onMouseLeave={() => setHover((h) => (h === cl.key ? null : h))}
-                  style={{ position: 'absolute', left: `${cx}%`, top: cy, width: 0, height: 0, zIndex: isHover ? 5 : 1 }}
+                  style={{ position: 'absolute', left: `${cx}%`, top: cy, width: 0, height: 0, zIndex: isHover ? 30 : 2 }}
                 >
-                  {/* Пирог-глиф */}
+                  {/* Прозрачный «щит» наведения покрывает всю область разлёта — устраняет мигание:
+                      курсор не попадает в «мёртвые зоны» между разъехавшимися пузырьками, поэтому
+                      кластер не схлопывается, и любой пузырёк можно спокойно выбрать. */}
+                  {isHover && (
+                    <div style={{
+                      position: 'absolute', left: 0, top: 0, width: shieldR * 2, height: shieldR * 2,
+                      transform: 'translate(-50%,-50%)', borderRadius: '50%', pointerEvents: 'auto',
+                      background: 'radial-gradient(circle, rgba(43,58,75,0.06), rgba(43,58,75,0) 68%)',
+                    }} />
+                  )}
+
+                  {/* Пирог-глиф (виден, пока не наведено) */}
                   <div
                     style={{
                       position: 'absolute', left: 0, top: 0, width: D, height: D, transform: 'translate(-50%,-50%)',
                       borderRadius: '50%', background: `conic-gradient(${stops})`,
                       boxShadow: `0 0 14px ${glow}, 0 1px 4px rgba(0,0,0,.22)`, cursor: 'pointer',
-                      opacity: isHover ? 0 : 1, transition: 'opacity .2s ease', pointerEvents: isHover ? 'none' : 'auto',
+                      opacity: isHover ? 0 : 1, transition: 'opacity .18s ease', pointerEvents: isHover ? 'none' : 'auto',
                     }}
                   >
                     <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, color: BRAND.ink }}>{n}</div>
                   </div>
 
-                  {/* Разлетающиеся пузырьки */}
+                  {/* Разлетающиеся пузырьки — выбираются кликом */}
                   {cl.tasks.map((p, i) => {
                     const ang = (-90 + (360 / n) * i) * Math.PI / 180;
                     const bx = isHover ? Math.cos(ang) * R : 0;
@@ -207,12 +220,12 @@ const TaskBubbleTimeline: React.FC<Props> = ({ tasks, onOpen }) => {
                         <div
                           onClick={() => onOpen(p)}
                           style={{
-                            position: 'absolute', left: 0, top: 0, width: 20, height: 20,
+                            position: 'absolute', left: 0, top: 0, width: bubbleD, height: bubbleD,
                             transform: `translate(-50%,-50%) translate(${bx}px, ${by}px)`,
                             borderRadius: '50%', background: ZONE[z].color, border: '2px solid #fff',
-                            boxShadow: `0 0 10px ${ZONE[z].color}, 0 1px 3px rgba(0,0,0,.25)`,
-                            opacity: isHover ? 1 : 0, cursor: 'pointer',
-                            transition: 'transform .25s cubic-bezier(.34,1.56,.64,1), opacity .2s ease',
+                            boxShadow: `0 0 10px ${ZONE[z].color}, 0 1px 3px rgba(0,0,0,.28)`,
+                            opacity: isHover ? 1 : 0, cursor: 'pointer', zIndex: 2,
+                            transition: 'transform .28s cubic-bezier(.34,1.42,.5,1), opacity .18s ease',
                             pointerEvents: isHover ? 'auto' : 'none',
                           }}
                         />

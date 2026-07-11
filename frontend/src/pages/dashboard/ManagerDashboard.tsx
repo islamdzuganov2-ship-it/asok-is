@@ -176,20 +176,21 @@ const ManagerDashboard: React.FC = () => {
   const pieOption = useMemo(() => {
     if (!system) return {};
     return {
+      // Легенда под бубликом убрана намеренно: справа есть список-легенда, а наведение на
+      // сектор показывает наименование характеристики во всплывашке.
       tooltip: {
         trigger: 'item', confine: true,
         formatter: (p: any) => `${p.marker} ${p.name}<br/><b>${p.data.raw < 0 ? 'н/д' : `${p.data.raw}%`}</b>`,
       },
-      legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 }, icon: 'circle' },
       title: {
         text: integral < 0 ? 'н/д' : `${integral}%`,
         subtext: 'интегральный балл',
-        left: 'center', top: '37%',
-        textStyle: { color: BRAND.ink, fontSize: 27, fontWeight: 800 },
+        left: 'center', top: '42%',
+        textStyle: { color: BRAND.ink, fontSize: 28, fontWeight: 800 },
         subtextStyle: { color: '#8a94a6', fontSize: 11 },
       },
       series: [{
-        type: 'pie', radius: ['55%', '80%'], center: ['50%', '45%'], avoidLabelOverlap: true,
+        type: 'pie', radius: ['56%', '82%'], center: ['50%', '50%'], avoidLabelOverlap: true,
         itemStyle: { borderColor: '#fff', borderWidth: 3, borderRadius: 6 },
         label: { show: false }, labelLine: { show: false },
         emphasis: { scale: true, scaleSize: 6, itemStyle: { shadowBlur: 16, shadowColor: 'rgba(43,58,75,.22)' } },
@@ -283,7 +284,8 @@ const ManagerDashboard: React.FC = () => {
 
       {showData && (
         <>
-          {/* Профиль качества — полноширинная карточка-селектор (пирог + «фишки» рядом) */}
+          {/* Профиль качества — бублик слева (в той же колонке, что спидометр в «Метриках»),
+              справа — легенда-СПИСОК характеристик (как список в карточке «Метрики характеристики»). */}
           <Card
             {...premiumCard('gold', { marginTop: 16 })}
             title={
@@ -292,14 +294,15 @@ const ManagerDashboard: React.FC = () => {
                 <span style={{ color: BRAND.ink }}>Профиль качества по характеристикам</span>
               </Space>
             }
-            extra={<Text type="secondary" style={{ fontSize: 12 }}>клик по сектору или «фишке» — выбрать характеристику</Text>}
+            extra={<Text type="secondary" style={{ fontSize: 12 }}>клик по сектору или строке справа — выбрать характеристику</Text>}
           >
-            <Row gutter={[16, 12]} align="middle">
-              <Col xs={24} md={11}>
+            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Бублик — левая колонка фиксированной ширины (совпадает со спидометром ниже) */}
+              <div style={{ flex: '0 0 260px', minWidth: 240 }}>
                 <ReactECharts
                   option={pieOption}
                   notMerge
-                  style={{ height: 280, width: '100%' }}
+                  style={{ height: 260, width: '100%' }}
                   onEvents={{
                     click: (p: any) => {
                       const c = system!.characteristics.find((x) => x.title === p?.data?.name);
@@ -307,40 +310,41 @@ const ManagerDashboard: React.FC = () => {
                     },
                   }}
                 />
-              </Col>
-              <Col xs={24} md={13}>
-                {/* Доступный селектор-дублёр диаграммы (клавиатура/надёжность при недоступности canvas) */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {system!.characteristics.map((c) => {
-                    const active = c.key === charKey;
-                    const tok = scoreTok(c.score);
-                    return (
-                      <span
-                        key={c.key}
-                        role="button"
-                        tabIndex={0}
-                        data-char={c.title}
-                        onClick={() => selectChar(c.key)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectChar(c.key); } }}
-                        style={{
-                          cursor: 'pointer', fontSize: 12, padding: '4px 11px', borderRadius: 20,
-                          border: `1px solid ${active ? tok.color : '#E3E5E9'}`,
-                          background: active ? tok.color : '#fff', color: active ? '#fff' : BRAND.ink,
-                          display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all .18s ease', userSelect: 'none',
-                        }}
-                      >
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? '#fff' : tok.color, flex: '0 0 auto' }} />
-                        {c.title}
-                        <b style={{ opacity: 0.85 }}>{c.score < 0 ? 'н/д' : `${c.score}%`}</b>
+              </div>
+              {/* Легенда-список: строка на характеристику (цвет + название + балл), клик = выбор */}
+              <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {system!.characteristics.map((c) => {
+                  const active = c.key === charKey;
+                  const tok = scoreTok(c.score);
+                  return (
+                    <div
+                      key={c.key}
+                      role="button"
+                      tabIndex={0}
+                      data-char={c.title}
+                      onClick={() => selectChar(c.key)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectChar(c.key); } }}
+                      style={{
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                        padding: '7px 12px', borderRadius: 10,
+                        background: active ? tok.soft : 'transparent',
+                        border: `1px solid ${active ? tok.border : 'transparent'}`,
+                        transition: 'all .15s ease', userSelect: 'none',
+                      }}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: tok.color, flex: '0 0 auto', boxShadow: `0 0 0 3px ${tok.soft}` }} />
+                        <span style={{ color: BRAND.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: active ? 600 : 400 }}>{c.title}</span>
                       </span>
-                    );
-                  })}
-                </div>
-              </Col>
-            </Row>
+                      <b style={{ color: tok.color, flex: '0 0 auto', fontVariantNumeric: 'tabular-nums' }}>{c.score < 0 ? 'н/д' : `${c.score}%`}</b>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </Card>
 
-          {/* Метрики характеристики — ПОД профилем, появляется ТОЛЬКО по выбору + «Спрятать» */}
+          {/* Метрики характеристики — ПОД профилем; спидометр в ТОЙ ЖЕ левой колонке (под бубликом) */}
           {showMetrics && (
             <Card
               {...premiumCard('ink', { marginTop: 16 })}
@@ -355,9 +359,12 @@ const ManagerDashboard: React.FC = () => {
               }
               extra={<Button size="small" icon={<EyeInvisibleOutlined />} onClick={hideChar}>Спрятать</Button>}
             >
-              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                <div style={{ flex: '0 0 148px', height: 160 }}>
-                  <ReactECharts option={gaugeOption} style={{ height: '100%', width: '100%' }} />
+              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                {/* Спидометр — левая колонка той же ширины (260px), что и бублик выше → они на одном уровне */}
+                <div style={{ flex: '0 0 260px', minWidth: 240, display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+                  <div style={{ width: 214, height: 190 }}>
+                    <ReactECharts option={gaugeOption} style={{ height: '100%', width: '100%' }} />
+                  </div>
                 </div>
                 <div style={{ flex: 1, minWidth: 300 }}>
                   <Table<ManagerMetric>
