@@ -9,7 +9,8 @@ from collections import defaultdict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -337,13 +338,18 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db)) -> Dashboa
     )
 
 
-class DynamicsPoint(BaseModel):
+class _CamelOut(BaseModel):
+    """Базовая Out-схема с camelCase-алиасами (как DashboardDataOut — для консистентности фронта)."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class DynamicsPoint(_CamelOut):
     period: str
     integral: float                       # интегральный показатель качества за период, %
     characteristics: dict[str, float]     # характеристика → средний %
 
 
-class MeasureMarker(BaseModel):
+class MeasureMarker(_CamelOut):
     """Метка меры на шкале динамики (T-15): когда по характеристике поставлена мера."""
     characteristic: str
     created_at: str
@@ -351,7 +357,7 @@ class MeasureMarker(BaseModel):
     status: str
 
 
-class SystemDynamicsOut(BaseModel):
+class SystemDynamicsOut(_CamelOut):
     system_id: UUID
     system_name: str
     points: list[DynamicsPoint]
