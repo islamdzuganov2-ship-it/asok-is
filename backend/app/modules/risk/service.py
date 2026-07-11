@@ -29,16 +29,25 @@ async def search_risks(db: AsyncSession, q: str, limit: int = 5) -> list[RiskBas
     return list((await db.execute(stmt)).scalars().all())
 
 
+def _norm_char(s: str | None) -> str:
+    """Нормализация имени характеристики для сопоставления: ё→е, регистр, пробелы.
+    Устраняет рассинхрон источников (напр. риск «Надежность» vs метрика «Надёжность»)."""
+    return (s or "").lower().replace("ё", "е").strip()
+
+
 async def risks_for_characteristics(
     db: AsyncSession, characteristics: list[str], limit: int = 8
 ) -> list[RiskBase]:
-    """Активные риски по набору характеристик — обоснование мер/заключений (reporting/llm)."""
+    """Активные риски по набору характеристик — обоснование мер/заключений (reporting/llm).
+
+    Сопоставление устойчиво к ё/е и регистру: имена характеристик в базе рисков и в оценке
+    исторически расходятся (Надёжность/Надежность), иначе grounding молча теряет релевантные риски.
+    """
     if not characteristics:
         return []
-    stmt = (
-        select(RiskBase)
-        .where(RiskBase.status == "active")
-        .where(RiskBase.characteristic.in_(characteristics))
-        .limit(limit)
-    )
-    return list((await db.execute(stmt)).scalars().all())
+    wanted = {_norm_char(c) for c in characteristics}
+    rows = list((await db.execute(
+        select(RiskBase).where(RiskBase.status == "active")
+    )).scalars().all())
+    matched = [r for r in rows if _norm_char(r.characteristic) in wanted]
+    return matched[:limit]

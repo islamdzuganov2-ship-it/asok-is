@@ -31,6 +31,25 @@ CATEGORIES = (
     CATEGORY_NETWORK, CATEGORY_POWER,
 )
 
+# Маппинг первопричины сбоя → характеристика качества ISO 25010 (для риск-триггеров T-16):
+# частые сбои категории проактивно «подсвечивают» риски по связанной характеристике.
+CATEGORY_TO_CHARACTERISTIC: dict[str, str] = {
+    CATEGORY_RELEASE: "Сопровождаемость",       # регрессии после релиза — тестируемость/сопровождаемость
+    CATEGORY_INFRASTRUCTURE: "Надёжность",       # отказы инфраструктуры — зрелость/доступность
+    CATEGORY_PERFORMANCE: "Производительность",   # деградация — время отклика/ресурсы/ёмкость
+    CATEGORY_NETWORK: "Надёжность",              # сетевые сбои — доступность
+    CATEGORY_POWER: "Надёжность",               # электроснабжение — отказоустойчивость
+}
+
+# Русские метки категорий (для сообщений backend, напр. пояснение риск-триггера).
+CATEGORY_LABELS: dict[str, str] = {
+    CATEGORY_RELEASE: "релиз",
+    CATEGORY_INFRASTRUCTURE: "инфраструктура",
+    CATEGORY_PERFORMANCE: "производительность",
+    CATEGORY_NETWORK: "сеть",
+    CATEGORY_POWER: "электроснабжение",
+}
+
 # Критичность сбоя — та же шкала, что у базы рисков (консистентность).
 SEVERITIES = ("critical", "high", "medium", "low")
 

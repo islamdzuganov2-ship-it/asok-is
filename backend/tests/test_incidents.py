@@ -72,6 +72,20 @@ async def test_analytics_aggregates(db_session):
     assert a.top_systems[0].system_name == "АБС Core" and a.top_systems[0].count == 2
 
 
+async def test_triggering_characteristics(db_session):
+    # T-16: категории сбоев маппятся на характеристики ISO для риск-триггеров.
+    await service.create(db_session, _new(category='INFRASTRUCTURE'), 'm')
+    await service.create(db_session, _new(category='NETWORK'), 'm')
+    await service.create(db_session, _new(category='RELEASE'), 'm')
+    tc = await service.triggering_characteristics(db_session)
+    # INFRASTRUCTURE + NETWORK → «Надёжность»; RELEASE → «Сопровождаемость».
+    assert 'Надёжность' in tc and 'Сопровождаемость' in tc
+    nadezh = {lbl for lbl, _ in tc['Надёжность']}
+    assert 'инфраструктура' in nadezh and 'сеть' in nadezh
+    rel = {lbl for lbl, _ in tc['Сопровождаемость']}
+    assert 'релиз' in rel
+
+
 async def test_get_or_404(db_session):
     import uuid
     with pytest.raises(NotFoundError):

@@ -16,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.incidents.models import (
     CATEGORIES,
+    CATEGORY_LABELS,
     CATEGORY_RELEASE,
+    CATEGORY_TO_CHARACTERISTIC,
     SEVERITIES,
     TechIncident,
 )
@@ -97,6 +99,26 @@ async def resolve(db: AsyncSession, inc: TechIncident, resolved_at: datetime | N
     await db.commit()
     await db.refresh(inc)
     return inc
+
+
+async def triggering_characteristics(
+    db: AsyncSession, *, system: str | None = None,
+) -> dict[str, list[tuple[str, int]]]:
+    """Риск-триггеры (T-16): по техсбоям → характеристика ISO 25010 → [(категория, число сбоев)].
+
+    Проактивный сигнал «недопущения техсбоя»: частые сбои категории подсвечивают риски по
+    связанной характеристике. Возвращает характеристику → перечень триггерящих категорий с числом.
+    """
+    rows = await list_incidents(db, system=system)
+    cat_count: dict[str, int] = defaultdict(int)
+    for r in rows:
+        cat_count[r.category] += 1
+    char_triggers: dict[str, list[tuple[str, int]]] = defaultdict(list)
+    for cat, cnt in sorted(cat_count.items(), key=lambda kv: kv[1], reverse=True):
+        char = CATEGORY_TO_CHARACTERISTIC.get(cat)
+        if char:
+            char_triggers[char].append((CATEGORY_LABELS.get(cat, cat), cnt))
+    return dict(char_triggers)
 
 
 async def analytics(db: AsyncSession, *, system: str | None = None) -> IncidentAnalyticsOut:

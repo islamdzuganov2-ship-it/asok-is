@@ -61,3 +61,8 @@ class RiskBaseOut(BaseModel):
     created_by: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class TriggeredRiskOut(RiskBaseOut):
+    """Риск, сработавший по текущему состоянию (T-16): + пояснение причины срабатывания."""
+    triggered_by: str  # «техсбои: инфраструктура (3), сеть (1)» / «просевшая характеристика»
