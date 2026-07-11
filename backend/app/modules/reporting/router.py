@@ -26,6 +26,7 @@ from app.modules.reporting.schemas import (
     QualityPlanMatrixRow,
     RiskMatrixRow,
 )
+from app.modules.governance import list_proposals  # кросс-доменный фасад (T-15: метки мер)
 from app.modules.llm import reasoning as llm_reasoning
 from app.modules.llm import service as llm_service
 from app.modules.risk import RiskBase, risks_for_characteristics
@@ -334,3 +335,70 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db)) -> Dashboa
         yAxisLabels=system_names,
         problematicSystems=problematic,
     )
+
+
+class DynamicsPoint(BaseModel):
+    period: str
+    integral: float                       # интегральный показатель качества за период, %
+    characteristics: dict[str, float]     # характеристика → средний %
+
+
+class MeasureMarker(BaseModel):
+    """Метка меры на шкале динамики (T-15): когда по характеристике поставлена мера."""
+    characteristic: str
+    created_at: str
+    title: str
+    status: str
+
+
+class SystemDynamicsOut(BaseModel):
+    system_id: UUID
+    system_name: str
+    points: list[DynamicsPoint]
+    measures: list[MeasureMarker]  # метки мер по характеристикам (T-15: наложить на ряд)
+
+
+@router.get("/system-dynamics", response_model=SystemDynamicsOut)
+async def system_dynamics(system_id: UUID, db: AsyncSession = Depends(get_db)) -> SystemDynamicsOut:
+    """Динамика качества ИС по периодам (T-15 — эффективность мер + live-режим «Динамики качества»).
+
+    Интегральный показатель и средние по 8 характеристикам (ISO 25010) за каждый квартал в
+    хронологии (period_sort_key). Позволяет оценить ЭФФЕКТИВНОСТЬ принятой меры: стало ли лучше по
+    её характеристике в периодах после внедрения (мера накладывается на ряд по characteristic+дате).
+    """
+    system = await db.get(System, system_id)
+    if system is None:
+        raise HTTPException(status_code=404, detail="Система не найдена")
+    result = await db.execute(
+        select(AssessmentValue)
+        .options(selectinload(AssessmentValue.metric), selectinload(AssessmentValue.period))
+        .join(AssessmentPeriod, AssessmentValue.period_id == AssessmentPeriod.id)
+        .where(AssessmentPeriod.system_id == system_id)
+    )
+    by_period: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    for v in result.scalars().all():
+        if v.calculated_x is None:
+            continue
+        canon = canonical_characteristic(v.metric.characteristic)
+        if canon:
+            by_period[v.period.period][canon].append(float(v.calculated_x))
+
+    points: list[DynamicsPoint] = []
+    for period in sorted(by_period, key=period_sort_key):
+        chars = {c: round(sum(s) / len(s) * 100, 1) for c, s in by_period[period].items()}
+        integral = round(sum(chars.values()) / len(chars), 1) if chars else 0.0
+        points.append(DynamicsPoint(period=period, integral=integral, characteristics=chars))
+
+    # Метки мер (T-15): когда и по какой характеристике поставлена мера — чтобы на фронте
+    # наложить на ряд и увидеть, изменилось ли качество по характеристике ПОСЛЕ внедрения.
+    proposals = await list_proposals(db, system=system.name)
+    measures = [
+        MeasureMarker(
+            characteristic=canonical_characteristic(p.characteristic) or (p.characteristic or "—"),
+            created_at=p.created_at.isoformat() if p.created_at else "",
+            title=p.risk_title or p.characteristic or "Мера",
+            status=p.status,
+        )
+        for p in proposals if p.characteristic
+    ]
+    return SystemDynamicsOut(system_id=system_id, system_name=system.name, points=points, measures=measures)
