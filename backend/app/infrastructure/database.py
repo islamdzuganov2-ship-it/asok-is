@@ -64,3 +64,4 @@ def import_models() -> None:
     import app.modules.reporting.models    # noqa: F401  (мигрирован в modules/reporting)
     import app.modules.risk.models    # noqa: F401  (мигрирован в modules/risk)
     import app.modules.governance.models  # noqa: F401  (governance-петля в БД, T-10)
+    import app.modules.incidents.models  # noqa: F401  (аналитика техсбоев, T-21)
