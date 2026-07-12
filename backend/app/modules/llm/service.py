@@ -106,6 +106,21 @@ def discover_model_path() -> str | None:
     return chosen
 
 
+def _is_model_gguf(path: str) -> bool:
+    """Отсекает вспомогательные GGUF, не являющиеся самостоятельной языковой моделью.
+
+    Напр. `mmproj-*.gguf` — проектор мультимодальных моделей (идёт в пару к основной модели и
+    не грузится как LLM). Явно заданный LOCAL_LLM_MODEL_FILE этот фильтр не затрагивает.
+    """
+    return "mmproj" not in os.path.basename(path).lower()
+
+
+def _list_gguf(directory: str) -> list[str]:
+    """GGUF-кандидаты каталога (без вспомогательных), новейшие первыми."""
+    files = [p for p in glob.glob(os.path.join(directory, "*.gguf")) if _is_model_gguf(p)]
+    return sorted(files, key=os.path.getmtime, reverse=True)
+
+
 def _parse_quant(path: str, meta: dict) -> str:
     m = _QUANT_RE.search(os.path.basename(path))
     if m:
