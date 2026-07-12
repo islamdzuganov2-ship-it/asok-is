@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "name": "qwen2.5-0.5b-instruct",
+      "architecture": "qwen2",
+      "first_used": "2026-07-12T06:12:48",
+      "last_used": "2026-07-12T06:34:41",
+      "runs": 2
+    }
+  ]
+}

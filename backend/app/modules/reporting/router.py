@@ -6,9 +6,13 @@ Excel-матрицы периода, статус LLM.
 """
 import asyncio
 from collections import defaultdict
+from io import BytesIO
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 from sqlalchemy import select
@@ -17,6 +21,8 @@ from sqlalchemy.orm import selectinload
 
 from app.infrastructure.database import get_db
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
+from app.modules.iam import require_role
+from app.modules.llm import brain as llm_brain
 from app.modules.quality import CHARACTERISTICS, canonical_characteristic
 from app.modules.reporting.models import DefectMatrix, QualityPlanMatrix, RiskMatrix
 from app.modules.reporting.schemas import (
@@ -28,6 +34,7 @@ from app.modules.reporting.schemas import (
     RiskMatrixRow,
 )
 from app.modules.governance import list_proposals  # кросс-доменный фасад (T-15: метки мер)
+from app.modules.llm import gate as llm_gate
 from app.modules.llm import reasoning as llm_reasoning
 from app.modules.llm import service as llm_service
 from app.modules.risk import RiskBase, risks_for_characteristics
@@ -39,8 +46,40 @@ router = APIRouter()
 
 @router.get("/llm-status")
 async def get_llm_status() -> dict:
-    """Статус встроенной LLM — для UI-переключателя «Моки ↔ LLM»."""
+    """Статус встроенной LLM: паспорт загруженной модели (архитектура/контекст) + мозг."""
     return llm_service.model_info()
+
+
+@router.get("/llm-models")
+async def get_llm_models() -> dict:
+    """Список GGUF-моделей в каталоге (для переключения/диагностики): имя, размер, выбранная."""
+    return {"models": llm_service.list_models()}
+
+
+@router.post("/llm-reload")
+async def reload_llm(_: dict = Depends(require_role("ADMIN"))) -> dict:
+    """Горячая перезагрузка модели без рестарта контейнера (после подмены файла). Только ADMIN."""
+    return llm_service.reload()
+
+
+class ConclusionFeedbackIn(BaseModel):
+    """Обратная связь человека по заключению LLM (обучение «резервного мозга»)."""
+    fingerprint: str
+    verdict: str                      # accept | reject | edit
+    edited_text: str | None = None    # для verdict=edit — исправленный экспертом текст
+    user: str | None = None
+
+
+@router.post("/conclusion-feedback")
+async def conclusion_feedback(payload: ConclusionFeedbackIn) -> dict:
+    """Принимает оценку/правку заключения → пишет в «резервный мозг» (влияет на будущий recall)."""
+    try:
+        entry = llm_brain.record_feedback(
+            payload.fingerprint, payload.verdict, payload.edited_text or "", payload.user or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "ok", "feedback": entry, "brain": llm_brain.stats()}
 
 
 class MeasuresAnalyticsItem(BaseModel):
@@ -114,11 +153,16 @@ async def measures_analytics(
     risk_rows = await risks_for_characteristics(db, chars, limit=8)
     risks_block = "\n".join(f"- {r.title}: {r.mitigation or '—'}" for r in risk_rows)
 
+    # Rule Engine: самая просевшая характеристика по среднему баллу мер → триггер Severity.
+    scores = [i.avg_score for i in items if i.avg_score is not None]
+    q_proxy = (min(scores) / 100.0) if scores else None
+    rules_block = llm_gate.evaluate_gate(q=q_proxy).as_block()
+
     result = await asyncio.to_thread(
         llm_reasoning.generate_reasoned_conclusion,
         "ИТ-ландшафт банка", "текущий период",
         "",             # профсуждения в этом потоке не передаются (их поток — judgment-conclusion)
-        risks_block, "", measures_block, "",
+        risks_block, "", measures_block, "", rules_block,
     )
     return {
         "analytics": result["conclusion"],
@@ -126,6 +170,8 @@ async def measures_analytics(
         "mapped_risks": [{"title": r.title, "characteristic": r.characteristic} for r in risk_rows],
         "reasoning": result["trace"],
         "confidence": result["confidence"],
+        "fingerprint": result["fingerprint"],
+        "fired_rules": [ln.lstrip("- ") for ln in rules_block.splitlines() if ln.strip()],
     }
 
 
@@ -408,3 +454,75 @@ async def system_dynamics(system_id: UUID, db: AsyncSession = Depends(get_db)) -
         for p in proposals if p.characteristic
     ]
     return SystemDynamicsOut(system_id=system_id, system_name=system.name, points=points, measures=measures)
+
+
+_XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _write_sheet(ws, headers: list[str], rows: list[list]) -> None:
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in rows:
+        ws.append(row)
+
+
+@router.get("/export/{period_id}/xlsx")
+async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db)) -> StreamingResponse:
+    """Выгрузка реестров периода в .xlsx (T-14): характеристики качества, риски, недостатки, план.
+
+    Управленческая выгрузка «одним файлом» (4 листа) — то, что в ТЗ v11 R2.1 просилось экспортом
+    per-реестр. Данные — те же таблицы, что показывает вкладка «Отчёты и реестры».
+    """
+    period = await db.get(AssessmentPeriod, period_id)
+    if period is None:
+        raise HTTPException(status_code=404, detail="Период оценки не найден")
+
+    vals = list((await db.execute(
+        select(AssessmentValue).options(selectinload(AssessmentValue.metric))
+        .where(AssessmentValue.period_id == period_id)
+    )).scalars().all())
+    risks = list((await db.execute(
+        select(RiskMatrix).where(RiskMatrix.period_id == period_id).order_by(RiskMatrix.id)
+    )).scalars().all())
+    defects = list((await db.execute(
+        select(DefectMatrix).where(DefectMatrix.period_id == period_id).order_by(DefectMatrix.id)
+    )).scalars().all())
+    plans = list((await db.execute(
+        select(QualityPlanMatrix).where(QualityPlanMatrix.period_id == period_id).order_by(QualityPlanMatrix.id)
+    )).scalars().all())
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Характеристики качества"
+    _write_sheet(
+        ws,
+        ["Характеристика", "Подхарактеристика", "A", "B", "X", "Уровень", "Комментарий"],
+        [[v.metric.characteristic, v.metric.subcharacteristic, v.val_a, v.val_b,
+          float(v.calculated_x) if v.calculated_x is not None else None,
+          v.quality_level, v.expert_comment] for v in vals],
+    )
+    _write_sheet(
+        wb.create_sheet("Риски"),
+        ["Характеристика", "Подхарактеристика", "Описание риска", "Последствие", "Меры минимизации"],
+        [[r.characteristic, r.subcharacteristic, r.risk_description, r.risk_consequence, r.mitigation_measures] for r in risks],
+    )
+    _write_sheet(
+        wb.create_sheet("Недостатки"),
+        ["N", "Характеристика", "Цифровой показатель", "Уровень качества", "Описание недостатка"],
+        [[r.id, r.characteristic, r.digital_metric, r.quality_metric_level, r.defect_description] for r in defects],
+    )
+    _write_sheet(
+        wb.create_sheet("План качества"),
+        ["N", "Характеристика", "Подхарактеристика", "Задача", "ВНД", "Ответственный", "Срок"],
+        [[r.id, r.characteristic, r.subcharacteristic, r.task_description, r.internal_document, r.assignee_fio, r.deadline] for r in plans],
+    )
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"asok_report_{period.period}.xlsx".replace(" ", "_")
+    return StreamingResponse(
+        buf, media_type=_XLSX_MEDIA,
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )

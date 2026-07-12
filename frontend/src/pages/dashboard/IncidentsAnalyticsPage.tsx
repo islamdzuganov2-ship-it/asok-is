@@ -13,7 +13,7 @@ import {
     Alert, Button, Col, DatePicker, Empty, Form, Input, Modal, Row, Select, Space, Spin,
     Statistic, Table, Tag, Typography, message,
 } from 'antd';
-import { PlusOutlined, ThunderboltOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, ThunderboltOutlined, ReloadOutlined, DatabaseOutlined, CalendarOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import ReactECharts from 'echarts-for-react';
 import { useSelector } from 'react-redux';
@@ -21,15 +21,15 @@ import dayjs from 'dayjs';
 import { RootState } from '../../store';
 import {
     useCreateIncidentMutation,
-    useGetIncidentAnalyticsQuery,
     useGetIncidentsQuery,
     type TechIncidentDto,
 } from '../../store/api/apiSlice';
 import { MOCK_INCIDENTS, INCIDENT_CATEGORIES, computeIncidentAnalytics } from '../../data/mockIncidents';
 import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf } from '../../theme/premium';
+import CollapsibleCard from '../../components/CollapsibleCard';
 import { BRAND } from '../../theme/ragPalette';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 const CATEGORY_LABEL: Record<string, string> = {
     RELEASE: 'Привнесено релизом',

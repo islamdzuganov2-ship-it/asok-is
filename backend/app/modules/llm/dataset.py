@@ -20,14 +20,16 @@ from sqlalchemy import select
 
 from app.infrastructure.database import AsyncSessionLocal
 from app.modules.assessment.models import AssessmentPeriod, ProfessionalJudgment
+from app.modules.llm import brain
 from app.modules.llm.prompts import CONCLUSION_SYSTEM_PROMPT
 from app.modules.llm.reasoning import ReasoningInput, run_reasoning
 from app.modules.llm.service import _judgment_fallback
 from app.modules.risk.models import RiskBase
 from app.modules.systems.models import System
 
-# models/llm монтируется read-only, поэтому датасет пишем в writable-каталог backend/llm_dataset.
-OUT_DIR = os.environ.get("LLM_DATASET_DIR", "llm_dataset")
+# Каталог моделей монтируется read-only; корпус пишем в переносимый «резервный мозг»
+# (LLM_BRAIN_DIR) — там же копятся исправления человека, поэтому это единый источник для LoRA.
+OUT_DIR = os.environ.get("LLM_DATASET_DIR", brain.brain_dir())
 OUT_FILE = os.path.join(OUT_DIR, "judgments_sft.jsonl")
 
 
@@ -85,11 +87,20 @@ async def build_dataset() -> list[dict]:
 
 async def main() -> None:
     examples = await build_dataset()
+    # Подмешиваем «золотые» примеры — исправленные человеком заключения (обратная связь).
+    edits = brain.human_edits()
+    for e in edits:
+        examples.append({
+            "system": CONCLUSION_SYSTEM_PROMPT,
+            "instruction": "Сформируй управленческое заключение по заданному формату.",
+            "reasoning": "",
+            "output": e["output"],
+        })
     os.makedirs(OUT_DIR, exist_ok=True)
     with open(OUT_FILE, "w", encoding="utf-8") as f:
         for ex in examples:
             f.write(json.dumps(ex, ensure_ascii=False) + "\n")
-    print(f"Экспортировано примеров: {len(examples)} → {OUT_FILE}")
+    print(f"Экспортировано примеров: {len(examples)} (из них правок эксперта: {len(edits)}) → {OUT_FILE}")
 
 
 if __name__ == "__main__":

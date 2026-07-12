@@ -124,6 +124,8 @@ const ExecutiveDashboard: React.FC = () => {
   const [showRegistry, setShowRegistry] = useState(false);
   // Фокус на характеристике для карточки ИС (клик по ячейке теплокарты).
   const [activeChar, setActiveChar] = useState<string | undefined>(undefined);
+  // Балл выбранной характеристики — для корректной карточки характеристики (T-56).
+  const [activeCharScore, setActiveCharScore] = useState<number | undefined>(undefined);
 
   // Источник данных: 'mock' (демо) ↔ 'live' (реальное API + LLM, без моков).
   const [live, setLive] = useState<LiveDashboard | null>(null);
@@ -365,7 +367,7 @@ const ExecutiveDashboard: React.FC = () => {
                   return (
                     <tr key={r.system}>
                       <td
-                        onClick={() => { if (sys) { setActiveChar(undefined); setActive(sys); } }}
+                        onClick={() => { if (sys) { setActiveChar(undefined); setActiveCharScore(undefined); setActive(sys); } }}
                         title="Открыть карточку ИС (кто отвечает, действия, все меры)"
                         style={{ fontSize: 13, color: BRAND.ink, paddingRight: 12, cursor: sys ? 'pointer' : 'default' }}
                       >{r.system}</td>
@@ -374,7 +376,7 @@ const ExecutiveDashboard: React.FC = () => {
                         return (
                           <td
                             key={i}
-                            onClick={() => { if (sys) { setActiveChar(heatCharsFull[i]); setActive(sys); } }}
+                            onClick={() => { if (sys) { setActiveChar(heatCharsFull[i]); setActiveCharScore(cell.score); setActive(sys); } }}
                             title={`${heatCharsFull[i]} — карточка ИС с мерами по характеристике`}
                             style={{ textAlign: 'center', cursor: sys ? 'pointer' : 'default' }}
                           >
@@ -449,7 +451,8 @@ const ExecutiveDashboard: React.FC = () => {
         open={!!active}
         system={active}
         characteristic={activeChar}
-        onClose={() => { setActive(null); setActiveChar(undefined); }}
+        characteristicScore={activeCharScore}
+        onClose={() => { setActive(null); setActiveChar(undefined); setActiveCharScore(undefined); }}
       />
       <MeasureDecisionModal
         open={!!decisionProposal}

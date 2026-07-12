@@ -16,6 +16,17 @@ from app.infrastructure.database import Base
 def anyio_backend():
     return "asyncio"
 
+
+@pytest.fixture(autouse=True)
+def _isolate_llm_brain(tmp_path, monkeypatch):
+    """Изоляция «резервного мозга» LLM в temp-каталог на каждый тест.
+
+    Иначе brain.remember() писал бы JSONL в репозиторий, а brain.recall() читал бы чужую
+    память между прогонами (недетерминизм). Каталог сбрасывается автоматически (tmp_path).
+    """
+    from app.infrastructure.config import settings
+    monkeypatch.setattr(settings, "LLM_BRAIN_DIR", str(tmp_path / "llm_brain"))
+
 @pytest.fixture(scope="session")
 def test_database_url():
     """URL тестовой БД (можно переопределить через env)"""

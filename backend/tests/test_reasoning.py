@@ -114,8 +114,10 @@ def test_genchi_genbutsu_reports_absent_sources():
 
 def test_conclusion_contract_sections_present():
     trace = run_reasoning(_inp(), use_llm=False)
-    for block in ("Рассмотренные аспекты", "Первопричина", "Активируемые риски",
-                  "Предлагаемые меры", "Рекомендация ЛПР", "Уверенность и оговорки"):
+    # Структура заключения соответствует схеме «Rule Engine → LLM»: Объяснение · Причины ·
+    # Риски · Рекомендации (+ аудит: меры и оговорки).
+    for block in ("Объяснение", "Причины", "Риски",
+                  "Рекомендации", "Предлагаемые меры", "Уверенность и оговорки"):
         assert block in trace.conclusion, f"нет блока: {block}"
     # первопричина и рефлексия — из соответствующих этапов
     assert trace.stage("E2").content.split()[0] in trace.conclusion
@@ -205,7 +207,7 @@ def test_measures_driven_reasoning_without_judgments():
 def test_generate_reasoned_conclusion_shape_and_cache(monkeypatch):
     monkeypatch.setattr(llm, "complete", lambda *a, **k: None)
     r1 = generate_reasoned_conclusion("ЕХД", "Q2-2026", JUDGMENTS, RISKS)
-    assert set(r1) == {"conclusion", "trace", "confidence", "llm"}
+    assert set(r1) == {"conclusion", "trace", "confidence", "llm", "fingerprint"}
     assert r1["trace"]["stages"][0]["code"] == "E0"
     assert len(r1["trace"]["lenses"]) >= 3
     r2 = generate_reasoned_conclusion("ЕХД", "Q2-2026", JUDGMENTS, RISKS)

@@ -29,7 +29,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from app.modules.llm import service
+from app.modules.llm import brain, service
 from app.modules.llm.knowledge import relevant_terms
 from app.modules.llm.prompts import (
     REASONING_LENSES,
@@ -59,7 +59,7 @@ _STAGE_TITLES = dict(STAGES)
 
 @dataclass(frozen=True)
 class ReasoningInput:
-    """Входы конвейера — три источника контура + метрики и история (RAG)."""
+    """Входы конвейера — три источника контура + метрики, история (RAG) и сработавшие правила."""
     system_name: str
     period_label: str
     judgments_block: str = ""   # профессиональные суждения (характеристика / подхар.: текст)
@@ -67,6 +67,7 @@ class ReasoningInput:
     measures_block: str = ""    # карточки мер (сводка), может отсутствовать
     metrics_block: str = ""     # расчётные метрики ("характеристика | метрика | %")
     history_block: str = ""     # суждения/выводы прошлых периодов (преемственность)
+    rules_block: str = ""       # сработавшие детерминированные правила движка (см. modules/llm/gate.py)
 
 
 @dataclass
@@ -180,7 +181,7 @@ def _grounded(text: str, inp: ReasoningInput) -> bool:
     used = set(service._PCT_RE.findall(text or ""))
     allowed = service._allowed_pcts(
         inp.judgments_block, inp.risks_block, inp.measures_block,
-        inp.metrics_block, inp.history_block,
+        inp.metrics_block, inp.history_block, inp.rules_block,
     )
     return not (used - allowed)
 
@@ -198,8 +199,13 @@ def _cap_block(block: str, limit: int = 10) -> str:
 
 
 def _facts_text(inp: ReasoningInput) -> str:
-    """Блок фактов для промптов: только переданные данные, с явными отметками отсутствия."""
+    """Блок фактов для промптов: только переданные данные, с явными отметками отсутствия.
+
+    Сработавшие правила движка (rules_block) идут ПЕРВЫМИ: именно они — повод для объяснения,
+    и LLM обязана объяснить их причины/риски/рекомендации (модель не решает, а объясняет вердикт).
+    """
     sections = [
+        ("Сработавшие правила движка (повод для разбора)", _cap_block(inp.rules_block, 6)),
         ("Профессиональные суждения", _cap_block(inp.judgments_block, 12)),
         ("Риски из базы рисков", _cap_block(inp.risks_block, 8)),
         ("Карточки мер", _cap_block(inp.measures_block, 8)),
@@ -208,6 +214,8 @@ def _facts_text(inp: ReasoningInput) -> str:
     ]
     out = []
     for title, block in sections:
+        if title.startswith("Сработавшие правила") and not block.strip():
+            continue  # нет сработавших правил — не засоряем факты пустой секцией
         out.append(f"{title}:\n{block.strip()}" if block.strip() else f"{title}: {_ABSENT}")
     return "\n".join(out)
 
@@ -399,9 +407,12 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
 
     # Э4 — Контроль достоверности: уже применён к каждому проходу (_llm_pass); фиксируем итог.
     rejected = [s.code for s in trace.stages if s.fell_back]
+    gate_note = ("Вердикт вынесен детерминированным движком правил (см. факты входа); LLM его "
+                 "ОБЪЯСНЯЕТ, а не переопределяет. " if inp.rules_block.strip() else "")
     trace.stages.append(StageResult(
         "E4", _STAGE_TITLES["E4"],
-        ("Grounding-контроль пройден: числа этапов — только из входных данных. "
+        (gate_note
+         + "Grounding-контроль пройден: числа этапов — только из входных данных. "
          + (f"Этапы на детерминированном fallback: {', '.join(rejected)}." if rejected
             else "Все этапы приняты от LLM.")),
     ))
@@ -456,19 +467,23 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
     )
     trace.stages.append(StageResult("E6", _STAGE_TITLES["E6"], hansei))
 
-    # Э7 — Заключение для руководителя (ЛПР): контракт из 6 блоков. LLM-текст — как «общий
-    # вывод» внутри контракта; остальные блоки собираются из трассы (аудируемость).
+    # Э7 — Заключение для руководителя (ЛПР). Структура блоков соответствует схеме
+    # «Rule Engine → LLM»: Объяснение · Причины · Риски · Рекомендации. Движок выносит вердикт,
+    # LLM его объясняет; блоки собираются из трассы (аудируемость), LLM-текст — в «Рекомендациях».
     applied = ", ".join(lens.title for lens in trace.lenses)
     risks_out = "; ".join(_first_lines(inp.risks_block, 3)) or _ABSENT
+    fired = _first_lines(inp.rules_block, 4)
+    explanation = ("Сработавшие правила движка: " + "; ".join(fired)
+                   if fired else f"Рассмотренные аспекты: {applied}.")
     conclusion = (
-        f"Рассмотренные аспекты: {applied}.\n"
-        f"Первопричина: {trace.stage('E2').content}\n"
-        f"Активируемые риски (база рисков): {risks_out}\n"
-        f"Предлагаемые меры:\n{trace.stage('E5').content}\n"
-        f"Рекомендация ЛПР: "
+        f"Объяснение: {explanation}\n"
+        f"Причины (первопричина): {trace.stage('E2').content}\n"
+        f"Риски (база рисков): {risks_out}\n"
+        f"Рекомендации: "
         + (conclusion_llm if conclusion_llm else
            "вынести первопричину на решение топ-менеджмента; закрепить меры с ответственными и сроками "
            "в плане обеспечения качества. (Сформировано строго по входным данным.)")
+        + f"\nПредлагаемые меры:\n{trace.stage('E5').content}"
         + f"\nУверенность и оговорки: {hansei}"
     )
     trace.conclusion = conclusion
@@ -483,28 +498,73 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
 _cache: dict[int, dict] = {}
 
 
+def _extract_chars(judgments_block: str, metrics_block: str) -> list[str]:
+    """Характеристики качества, упомянутые во входе (для ключей памяти «мозга» и recall)."""
+    chars: set[str] = set()
+    for ln in (judgments_block or "").splitlines():
+        if "/" in ln:
+            chars.add(ln.split("/")[0].strip())
+    for ln in (metrics_block or "").splitlines():
+        if "|" in ln:
+            chars.add(ln.split("|")[0].strip())
+    return sorted(c for c in chars if c)
+
+
 def generate_reasoned_conclusion(system_name: str, period_label: str, judgments_block: str,
                                  risks_block: str = "", history_block: str = "",
-                                 measures_block: str = "", metrics_block: str = "") -> dict:
+                                 measures_block: str = "", metrics_block: str = "",
+                                 rules_block: str = "") -> dict:
     """Высокоуровневый вход конвейера (аналог generate_judgment_conclusion, но с трассой).
 
-    Возвращает {"conclusion", "trace", "confidence", "llm"}; кэшируется по входам.
+    Самообучение через «резервный мозг» (переносимо между моделями): перед прогоном история
+    обогащается памятью прошлых заключений (brain.recall), после — заключение запоминается
+    (brain.remember). Возвращает {"conclusion","trace","confidence","llm","fingerprint"};
+    кэшируется по входам (включая сработавшие правила).
     """
     key = hash((system_name, period_label, judgments_block, risks_block,
-                history_block, measures_block, metrics_block))
+                history_block, measures_block, metrics_block, rules_block))
     if key in _cache:
         return _cache[key]
+
+    chars = _extract_chars(judgments_block, metrics_block)
+    fp = brain.fingerprint(system_name, period_label, judgments_block, measures_block)
+    # RAG: подмешиваем к истории релевантную память «мозга» (живёт вне модели → переносима).
+    try:
+        recalled = brain.recall(system_name, chars)
+    except Exception:  # noqa: BLE001
+        recalled = ""
+    merged_history = "\n".join(h for h in (history_block, recalled) if h.strip())
+
     trace = run_reasoning(ReasoningInput(
         system_name=system_name, period_label=period_label,
         judgments_block=judgments_block, risks_block=risks_block,
         measures_block=measures_block, metrics_block=metrics_block,
-        history_block=history_block,
+        history_block=merged_history, rules_block=rules_block,
     ))
+
+    # Запоминаем заключение в «мозг» (вне файла модели) — переживёт переключение модели.
+    try:
+        brain.remember({
+            "fingerprint": fp,
+            "system": system_name,
+            "period": period_label,
+            "chars": chars,
+            "problem": (trace.stage("E1").content if trace.stage("E1") else ""),
+            "root_cause": (trace.stage("E2").content if trace.stage("E2") else ""),
+            "measures": (trace.stage("E5").content if trace.stage("E5") else ""),
+            "risks": risks_block[:500],
+            "confidence": trace.confidence,
+            "model_name": (service._profile.name if service._profile else ""),
+        })
+    except Exception:  # noqa: BLE001
+        logger.debug("brain.remember пропущен", exc_info=True)
+
     result = {
         "conclusion": trace.conclusion,
         "trace": trace.to_dict(),
         "confidence": trace.confidence,
         "llm": trace.llm_used,
+        "fingerprint": fp,
     }
     _cache[key] = result
     return result

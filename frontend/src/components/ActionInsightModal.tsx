@@ -14,7 +14,8 @@ import {
 } from '@ant-design/icons';
 import { useSelector, shallowEqual } from 'react-redux';
 import { selectVisibleProposals, type Proposal } from '../store/slices/governanceSlice';
-import { ragToken } from '../theme/ragPalette';
+import { ragToken, levelLabel } from '../theme/ragPalette';
+import { guidanceFor } from '../constants/characteristicGuidance';
 import type { ExecSystemInsight } from '../data/mockDashboards';
 import { MeasureDecisionModal } from './MeasureDecisionModal';
 
@@ -25,8 +26,10 @@ const norm = (s?: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replac
 interface Props {
   open: boolean;
   system: ExecSystemInsight | null;
-  /** Если задана — карточка сфокусирована на характеристике: меры фильтруются по ней. */
+  /** Если задана — карточка сфокусирована на характеристике: резюме/рекомендация/действия/меры — по ней. */
   characteristic?: string;
+  /** Балл выбранной характеристики для этой ИС (для корректного заголовка карточки характеристики). */
+  characteristicScore?: number;
   onClose: () => void;
 }
 
@@ -41,13 +44,27 @@ const Block: React.FC<{ icon: React.ReactNode; title: string; children: React.Re
   </div>
 );
 
-export const ActionInsightModal: React.FC<Props> = ({ open, system, characteristic, onClose }) => {
+export const ActionInsightModal: React.FC<Props> = ({ open, system, characteristic, characteristicScore, onClose }) => {
   const visible = useSelector(selectVisibleProposals, shallowEqual);
   const proposals = visible.filter((p) => p.systemName === system?.name);
   const [decisionProposal, setDecisionProposal] = useState<Proposal | null>(null);
 
   if (!system) return null;
   const tok = ragToken(system.score);
+
+  // T-56: карточка, открытая ПО ХАРАКТЕРИСТИКЕ, показывает резюме/рекомендацию/действия ИМЕННО этой
+  // характеристики (а не системное «Интегральная оценка… Наиболее просевшая характеристика — X»).
+  const g = guidanceFor(characteristic);
+  const hasCharScore = characteristicScore != null && characteristicScore >= 0;
+  const charTok = hasCharScore ? ragToken(characteristicScore as number) : null;
+  const summaryText = characteristic
+    ? `Характеристика «${characteristic}» по ИС «${system.name}» — `
+      + `${hasCharScore ? `${characteristicScore}% (${levelLabel(characteristicScore as number).toLowerCase()})` : 'невозможно измерить'}.`
+      + `${g ? ` ${g.rationale}` : ''}`
+    : system.aiSummary;
+  const recommendationText = characteristic && g ? g.action : system.recommendation;
+  const actionsList = characteristic && g ? g.actions : system.actions;
+
   // Если карточка открыта по характеристике — показываем меры только по ней.
   const pending = proposals.filter((p) =>
     p.status === 'PENDING_APPROVAL'
@@ -57,17 +74,23 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
     <Modal open={open} onCancel={onClose} footer={null} width={520} title={null}>
       <Space align="center" style={{ marginBottom: 4 }} wrap>
         <Title level={5} style={{ margin: 0 }}>{system.name}</Title>
-        <Tag color={tok.color} style={{ color: '#fff', border: 'none' }}>
-          {system.score}% · {tok.label}
-        </Tag>
+        {characteristic && charTok ? (
+          <Tag color={charTok.color} style={{ color: '#fff', border: 'none' }}>
+            {characteristicScore}% · {charTok.label}
+          </Tag>
+        ) : (
+          <Tag color={tok.color} style={{ color: '#fff', border: 'none' }}>
+            {system.score}% · {tok.label}
+          </Tag>
+        )}
         {characteristic && <Tag>{characteristic}</Tag>}
       </Space>
       <Paragraph type="secondary" style={{ fontSize: 13, marginTop: 8 }}>
-        {system.aiSummary}
+        {summaryText}
       </Paragraph>
 
       <Block icon={<BulbOutlined />} title="Рекомендация">
-        <Text strong>{system.recommendation}</Text>
+        <Text strong>{recommendationText}</Text>
       </Block>
 
       <Space size={32} style={{ display: 'flex', flexWrap: 'wrap' }}>
@@ -82,7 +105,7 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
       <Block icon={<BulbOutlined />} title="Рекомендуемые действия">
         <List
           size="small"
-          dataSource={system.actions}
+          dataSource={actionsList}
           split={false}
           renderItem={(a, i) => (
             <List.Item style={{ padding: '2px 0', border: 'none' }}>

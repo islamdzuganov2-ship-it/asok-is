@@ -45,6 +45,7 @@ from app.modules.risk import RiskBase
 from app.modules.systems import System
 from app.shared.periods import period_sort_key
 from app.modules.dataio.importer import ensure_period_values, get_or_create_metric
+from app.modules.llm import gate as llm_gate
 from app.modules.llm import reasoning as llm_reasoning
 from app.modules.llm import service as llm_service
 
@@ -652,6 +653,43 @@ async def save_judgments(
     return await get_judgments(period_id, db)
 
 
+async def _gate_rules_block(db: AsyncSession, period: AssessmentPeriod) -> str:
+    """Прогоняет детерминированный движок правил (gate) на ПОСЧИТАННЫХ метриках периода.
+
+    Возвращает текст сработавших правил (rules_block) — повод для объяснения LLM. Вердикт
+    Severity/Coverage/Regression выносит Python-движок, а не модель (см. modules/llm/gate.py).
+    """
+    rows = (await db.execute(
+        select(AssessmentValue.calculated_x).where(AssessmentValue.period_id == period.id)
+    )).scalars().all()
+    total = len(rows)
+    measured = [float(v) for v in rows if v is not None]
+    q = (sum(measured) / len(measured)) if measured else None
+
+    # Regression: сравнение с интегральным качеством НЕПОСРЕДСТВЕННО предыдущего периода ИС.
+    delta_pp = None
+    if q is not None:
+        periods = (await db.execute(
+            select(AssessmentPeriod).where(AssessmentPeriod.system_id == period.system_id)
+        )).scalars().all()
+        ordered = sorted(periods, key=lambda p: period_sort_key(p.period))
+        idx = next((i for i, p in enumerate(ordered) if p.id == period.id), None)
+        if idx is not None and idx > 0:
+            prev_vals = (await db.execute(
+                select(AssessmentValue.calculated_x).where(
+                    AssessmentValue.period_id == ordered[idx - 1].id,
+                    AssessmentValue.calculated_x.isnot(None),
+                )
+            )).scalars().all()
+            if prev_vals:
+                prev_q = sum(float(x) for x in prev_vals) / len(prev_vals)
+                delta_pp = (q - prev_q) * 100.0
+
+    return llm_gate.evaluate_gate(
+        q=q, measured_subs=len(measured), total_subs=total, delta_pp=delta_pp,
+    ).as_block()
+
+
 @router.get("/{period_id}/judgment-conclusion")
 async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
     """Заключение по профсуждениям через КОНВЕЙЕР многоаспектного рассуждения (BL-005).
@@ -711,11 +749,14 @@ async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(ge
             f"[{p}] {c} / {s}: {t}" for c, s, t, p in past
         )
 
+    # Rule Engine (детерминированный): решает, ЧТО объяснять; вердикт выносит Python, не LLM.
+    rules_block = await _gate_rules_block(db, period)
+
     result = await asyncio.to_thread(
         llm_reasoning.generate_reasoned_conclusion,
         system_name, period.period, judgments_block, risks_block, history_block,
         "",  # карточки мер живут во фронтовом контуре governance — честно «данные отсутствуют»
-        metrics_block,
+        metrics_block, rules_block,
     )
     return {
         "period_id": str(period_id),
@@ -724,6 +765,8 @@ async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(ge
         "conclusion": result["conclusion"],
         "reasoning": result["trace"],
         "confidence": result["confidence"],
+        "fingerprint": result["fingerprint"],
+        "fired_rules": [ln.lstrip("- ") for ln in rules_block.splitlines() if ln.strip()],
         "mapped_risks": [
             {"title": r.title, "characteristic": r.characteristic, "mitigation": r.mitigation}
             for r in risk_rows
