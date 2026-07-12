@@ -117,11 +117,31 @@ export const ExcelReportsPage: React.FC = () => {
     const canDecide = ['ADMIN', 'CTO', 'CEO', 'CIO', 'EXECUTIVE'].includes(role);
     const [activeTab, setActiveTab] = useState('quality');
     const [proposalFilter, setProposalFilter] = useState<'ALL' | ProposalStatus>('ALL');
+    const [measureSystemFilter, setMeasureSystemFilter] = useState<string>('ALL');
 
     const filteredProposals = useMemo(
-        () => proposals.filter((p) => proposalFilter === 'ALL' || p.status === proposalFilter),
-        [proposals, proposalFilter],
+        () => proposals.filter((p) =>
+            (proposalFilter === 'ALL' || p.status === proposalFilter)
+            && (measureSystemFilter === 'ALL' || p.systemName === measureSystemFilter)),
+        [proposals, proposalFilter, measureSystemFilter],
     );
+    // Уникальные ИС в реестре мер — для фильтра по системе (T-13).
+    const measureSystems = useMemo(
+        () => [...new Set(proposals.map((p) => p.systemName))].sort(),
+        [proposals],
+    );
+    // Статус меры по характеристике для выбранной ИС (T-13: колонка «Статус меры» в плане качества).
+    const normChar = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').trim();
+    const selectedSystemName = (systems?.items || []).find((s) => s.id === systemId)?.name;
+    const measureStatusByChar = useMemo(() => {
+        const map = new Map<string, ProposalStatus>();
+        if (selectedSystemName) {
+            proposals
+                .filter((p) => p.systemName === selectedSystemName)
+                .forEach((p) => map.set(normChar(p.characteristic), p.status));
+        }
+        return map;
+    }, [proposals, selectedSystemName]);
 
     const systemOptions = (systems?.items || []).map((system) => ({
         value: system.id,
@@ -198,6 +218,15 @@ export const ExcelReportsPage: React.FC = () => {
         { title: 'ВНД банка', dataIndex: 'internal_document', width: 160 },
         { title: 'Ответственный', dataIndex: 'assignee_fio', width: 180 },
         { title: 'Срок', dataIndex: 'deadline', width: 130 },
+        {
+            title: 'Статус меры', key: 'measureStatus', width: 150,
+            render: (_: unknown, row: any) => {
+                const st = measureStatusByChar.get(normChar(row.characteristic || ''));
+                return st
+                    ? <Tag color={PROPOSAL_STATUS_TAG[st].color}>{PROPOSAL_STATUS_TAG[st].label}</Tag>
+                    : <Text type="secondary" style={{ fontSize: 12 }}>нет меры</Text>;
+            },
+        },
     ];
 
     const proposalsColumns: ColumnsType<any> = [
@@ -359,16 +388,28 @@ export const ExcelReportsPage: React.FC = () => {
                                         <Text type="secondary">
                                             Меры и профессиональные суждения менеджера по качеству. Топ-менеджмент одобряет/отклоняет.
                                         </Text>
-                                        <Segmented
-                                            value={proposalFilter}
-                                            onChange={(v) => setProposalFilter(v as any)}
-                                            options={[
-                                                { label: 'Все', value: 'ALL' },
-                                                { label: 'Ожидают', value: 'PENDING_APPROVAL' },
-                                                { label: 'Одобрены', value: 'APPROVED' },
-                                                { label: 'Отклонены', value: 'REJECTED' },
-                                            ]}
-                                        />
+                                        <Space wrap>
+                                            <Select
+                                                size="small"
+                                                style={{ minWidth: 180 }}
+                                                value={measureSystemFilter}
+                                                onChange={setMeasureSystemFilter}
+                                                options={[
+                                                    { value: 'ALL', label: 'Все ИС' },
+                                                    ...measureSystems.map((s) => ({ value: s, label: s })),
+                                                ]}
+                                            />
+                                            <Segmented
+                                                value={proposalFilter}
+                                                onChange={(v) => setProposalFilter(v as any)}
+                                                options={[
+                                                    { label: 'Все', value: 'ALL' },
+                                                    { label: 'Ожидают', value: 'PENDING_APPROVAL' },
+                                                    { label: 'Одобрены', value: 'APPROVED' },
+                                                    { label: 'Отклонены', value: 'REJECTED' },
+                                                ]}
+                                            />
+                                        </Space>
                                     </Space>
                                     <Table
                                         columns={proposalsColumns}
