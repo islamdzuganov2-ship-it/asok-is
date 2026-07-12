@@ -15,6 +15,7 @@ import {
     ScheduleOutlined,
     HomeOutlined,
     ThunderboltOutlined,
+    AlertOutlined,
     // ExperimentOutlined — под развитие: иконка пункта «Оценка СИИ» (пока не выведен в меню).
 } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
@@ -59,21 +60,26 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         dispatch(syncProposals());
     }, [dataMode, dispatch]);
 
-    // Статус встроенной LLM (для индикатора рядом с переключателем)
+    // Статус встроенной LLM (для индикатора рядом с переключателем): готовность + паспорт модели.
     const [llmReady, setLlmReady] = useState<boolean | null>(null);
+    const [llmStatus, setLlmStatus] = useState<any>(null);
     useEffect(() => {
         let alive = true;
         fetch(`${VITE_API}/reports/llm-status`)
             .then((r) => (r.ok ? r.json() : null))
-            .then((d) => { if (alive) setLlmReady(d ? !!d.available : false); })
-            .catch(() => { if (alive) setLlmReady(false); });
+            .then((d) => { if (alive) { setLlmStatus(d); setLlmReady(d ? !!d.available : false); } })
+            .catch(() => { if (alive) { setLlmStatus(null); setLlmReady(false); } });
         return () => { alive = false; };
     }, [dataMode]);
 
+    const prof = llmStatus?.profile;
+    const modelDesc = prof
+        ? `${prof.name || prof.file_name}${prof.architecture ? ` · ${prof.architecture}` : ''} · ${prof.n_gpu_layers ? 'GPU' : 'CPU'}`
+        : '';
     const llmStatusColor = llmReady === null ? 'default' : llmReady ? 'green' : 'gold';
     const llmStatusText = llmReady === null
         ? 'Проверка LLM…'
-        : llmReady ? 'LLM загружена и готова' : 'LLM не загружена — будет честный fallback';
+        : llmReady ? `LLM загружена: ${modelDesc || 'модель'}` : 'LLM не загружена — будет честный fallback';
 
     // Ролевые меню. C-level/ADMIN — управленческий слой; менеджер/аналитик — операционный.
     const isExec = ['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN'].includes(userRole);
@@ -85,7 +91,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ...(execAnalytics ? [{ key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' }] : []),
         ...(execDynamics ? [{ key: '/dashboard/manager/dynamics', icon: <LineChartOutlined />, label: 'Динамика качества' }] : []),
         ...(execTaskPlan ? [{ key: '/dashboard/taskplan', icon: <ScheduleOutlined />, label: 'План задач' }] : []),
-        ...(execIncidents ? [{ key: '/dashboard/incidents', icon: <ThunderboltOutlined />, label: 'Аналитика сбоев' }] : []),
+        ...(execIncidents ? [
+            { key: '/dashboard/incidents', icon: <ThunderboltOutlined />, label: 'Аналитика сбоев' },
+            { key: '/dashboard/risk-radar', icon: <AlertOutlined />, label: 'Риск-радар' },
+        ] : []),
         { key: '/admin/flags', icon: <SettingOutlined />, label: 'Настройка' },
     ];
     // ПОД РАЗВИТИЕ: раздел «Оценка СИИ» (ГОСТ Р 59898-2021) и история ИИ-оценок пока НЕ выведены
@@ -102,11 +111,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         {
             type: 'group' as const, label: collapsed ? undefined : groupLabel('Сбор и анализ данных'),
             children: [
-                { key: '/assessments/new', icon: <FormOutlined />, label: 'Оценка ИС' },
+                { key: '/assessments/new', icon: <FormOutlined />, label: 'Внесение данных' },
                 { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
                 { key: '/dashboard/manager/dynamics', icon: <LineChartOutlined />, label: 'Динамика качества' },
                 { key: '/dashboard/incidents', icon: <ThunderboltOutlined />, label: 'Аналитика сбоев' },
                 { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
+                { key: '/dashboard/risk-radar', icon: <AlertOutlined />, label: 'Риск-радар' },
             ],
         },
         {
@@ -116,7 +126,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     ];
     const analystMenu = [
         { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
-        { key: '/assessments/new', icon: <FormOutlined />, label: 'Оценка ИС' },
+        { key: '/assessments/new', icon: <FormOutlined />, label: 'Внесение данных' },
         { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
     ];
 

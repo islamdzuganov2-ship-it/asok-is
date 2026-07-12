@@ -130,6 +130,10 @@ export interface JudgmentConclusion {
     conclusion: string;
     mapped_risks: Array<{ title: string; characteristic?: string; mitigation?: string }>;
     llm: boolean;
+    confidence?: string;
+    fingerprint?: string;
+    fired_rules?: string[];          // сработавшие правила движка (Rule Engine → LLM)
+    reasoning?: { stages?: Array<{ code: string; title: string; content: string; used_llm?: boolean; fell_back?: boolean }> } | null;
 }
 
 /** Сводка по периоду оценки: полнота заполнения подхарактеристик модели. */
@@ -217,6 +221,20 @@ export interface IncidentCreateDto {
     releaseRef?: string;
     occurredAt: string;
     resolvedAt?: string | null;
+}
+
+// ─── Риск-триггеры (T-16): проактивные риски по текущему состоянию ───
+export interface TriggeredRisk {
+    id: string;
+    code: string;
+    title: string;
+    category: string;
+    characteristic?: string | null;
+    severity: string;
+    likelihood: string;
+    consequence?: string | null;
+    mitigation?: string | null;
+    triggered_by: string;   // «техсбои: инфраструктура (3), сеть (1)» / «просевшая характеристика»
 }
 
 export const apiSlice = createApi({
@@ -390,6 +408,18 @@ export const apiSlice = createApi({
             query: ({ id, resolvedAt }) => ({ url: `/incidents/${id}/resolve`, method: 'POST', body: { resolvedAt } }),
             invalidatesTags: ['Incidents'],
         }),
+        // ─── Риск-триггеры (T-16): проактивные риски по техсбоям/просевшим характеристикам ───
+        getTriggeredRisks: builder.query<TriggeredRisk[], { system?: string; characteristics?: string } | void>({
+            query: (p) => {
+                const a = p as { system?: string; characteristics?: string } | undefined;
+                const params = new URLSearchParams();
+                if (a?.system) params.set('system', a.system);
+                if (a?.characteristics) params.set('characteristics', a.characteristics);
+                const qs = params.toString();
+                return `/risks/triggered${qs ? `?${qs}` : ''}`;
+            },
+            providesTags: ['Incidents'],
+        }),
     }),
 });
 
@@ -419,4 +449,5 @@ export const {
     useGetIncidentAnalyticsQuery,
     useCreateIncidentMutation,
     useResolveIncidentMutation,
+    useGetTriggeredRisksQuery,
 } = apiSlice;

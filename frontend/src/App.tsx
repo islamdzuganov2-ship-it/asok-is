@@ -13,6 +13,7 @@ const ManagerDashboard = lazy(() => import('./pages/dashboard/ManagerDashboard')
 const QualityDynamicsPage = lazy(() => import('./pages/dashboard/QualityDynamicsPage'));
 const TaskPlanDashboard = lazy(() => import('./pages/dashboard/TaskPlanDashboard'));
 const IncidentsAnalyticsPage = lazy(() => import('./pages/dashboard/IncidentsAnalyticsPage'));
+const RiskRadarPage = lazy(() => import('./pages/dashboard/RiskRadarPage'));
 const AssessmentWorkspacePage = lazy(() => import('./pages/AssessmentWorkspacePage'));
 const AiAssessmentPage = lazy(() => import('./pages/AiAssessmentPage'));
 const MetricsInputPage = lazy(() => import('./pages/MetricsInputPage'));
@@ -74,6 +75,7 @@ export const App: React.FC = () => {
                             <Route path="dashboard/manager/dynamics" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><QualityDynamicsPage /></RequireRole>} />
                             <Route path="dashboard/taskplan" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><TaskPlanDashboard /></RequireRole>} />
                             <Route path="dashboard/incidents" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><IncidentsAnalyticsPage /></RequireRole>} />
+                            <Route path="dashboard/risk-radar" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><RiskRadarPage /></RequireRole>} />
                             <Route path="assessments/new" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><AssessmentWorkspacePage /></RequireRole>} />
                             {/* ПОД РАЗВИТИЕ: «Оценка СИИ» (ГОСТ Р 59898-2021) и история ИИ-оценок.
                                 Пункт меню и переключатель в «Настройка» намеренно убраны из UI (раздел
