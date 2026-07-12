@@ -17,6 +17,7 @@ import {
   useGetJudgmentsQuery, useSaveJudgmentsMutation, useLazyGetJudgmentConclusionQuery,
   type JudgmentItem,
 } from '../store/api/apiSlice';
+import ConclusionFeedback from './ConclusionFeedback';
 
 const { Text, Paragraph } = Typography;
 
@@ -158,6 +159,21 @@ const ProfessionalJudgmentsPanel: React.FC<Props> = ({ periodId, periodLabel }) 
           <div><Spin /> <Text type="secondary">Генерация заключения на локальной модели (может занять ~1 мин)…</Text></div>
         ) : conclusion ? (
           <>
+            {conclusion.fired_rules && conclusion.fired_rules.length > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 10 }}
+                message="Сработавшие правила (движок решает — LLM объясняет)"
+                description={
+                  <Space direction="vertical" size={2}>
+                    {conclusion.fired_rules.map((r, i) => (
+                      <Text key={i} style={{ fontSize: 12 }}>• {r}</Text>
+                    ))}
+                  </Space>
+                }
+              />
+            )}
             <Paragraph style={{ whiteSpace: 'pre-wrap' }}>{conclusion.conclusion}</Paragraph>
             {conclusion.mapped_risks?.length > 0 && (
               <>
@@ -175,7 +191,9 @@ const ProfessionalJudgmentsPanel: React.FC<Props> = ({ periodId, periodLabel }) 
             )}
             <Text type="secondary" style={{ fontSize: 12 }}>
               Суждений учтено: {conclusion.judgments_count}. LLM: {conclusion.llm ? 'да' : 'fallback'}.
+              {conclusion.confidence ? ` Уверенность: ${conclusion.confidence}.` : ''}
             </Text>
+            <ConclusionFeedback fingerprint={conclusion.fingerprint} currentText={conclusion.conclusion} />
           </>
         ) : <Text type="secondary">Нажмите «Заключение LLM», чтобы сформировать.</Text>}
       </Modal>

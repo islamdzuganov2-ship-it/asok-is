@@ -1,0 +1,36 @@
+# docker-compose.gpu.yml — GPU/CUDA-оверрайд (опционально).
+# Собирает backend и celery_worker с CUDA-рантаймом (dockerfile.cuda) и включает offload
+# всех слоёв модели на GPU (LLM_N_GPU_LAYERS=-1). Практично для крупных моделей (7B–14B).
+#
+# Требуется: NVIDIA GPU + драйвер + nvidia-container-toolkit (на Windows — через WSL2).
+# Запуск:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# Возврат на CPU: поднимать без этого файла (обычный `docker compose up -d`).
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: dockerfile.cuda
+    environment:
+      - LLM_N_GPU_LAYERS=-1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: dockerfile.cuda
+    environment:
+      - LLM_N_GPU_LAYERS=-1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

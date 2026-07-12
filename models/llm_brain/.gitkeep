@@ -1,0 +1,2 @@
+# Каталог «резервного мозга» LLM (writable-том). Данные (memory/corpus/profile/feedback)
+# создаются в рантайме и в git не хранятся (см. .gitignore и backend/app/modules/llm/brain.py).

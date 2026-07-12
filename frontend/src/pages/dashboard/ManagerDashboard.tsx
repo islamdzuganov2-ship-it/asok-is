@@ -279,7 +279,7 @@ const ManagerDashboard: React.FC = () => {
       {isLive && !liveLoading && !liveError && !system && (
         <Alert style={{ marginTop: 16 }} type="info" showIcon
           message="Реальных оценок пока нет"
-          description="Заполните и финализируйте оценку в разделе «Оценка ИС» — система появится здесь." />
+          description="Заполните и финализируйте оценку в разделе «Внесение данных» — система появится здесь." />
       )}
 
       {showData && (

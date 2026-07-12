@@ -57,6 +57,9 @@ services:
     volumes:
       - ./backend:/app
       - ./models/llm:/app/models/llm:ro
+      # «Резервный мозг» LLM — WRITABLE (память/корпус/фидбэк вне файла модели, переносимо
+      # между моделями). Отдельный том от read-only каталога моделей. См. modules/llm/brain.py.
+      - ./models/llm_brain:/app/models/llm_brain
       # Excel-файлы отвязаны от сборки: автосид опционален и пропускается, если файлов нет
       # (seed_project_excel_files проверяет .exists()). Загрузка Excel пользователем — отдельная фича.
       - /app/__pycache__
@@ -81,6 +84,8 @@ services:
     volumes:
       - ./backend:/app
       - ./models/llm:/app/models/llm:ro
+      # «Резервный мозг» LLM — WRITABLE (общий с backend; воркер тоже пишет память рассуждений).
+      - ./models/llm_brain:/app/models/llm_brain
       - /app/__pycache__
     command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=2
     # У воркера нет HTTP-порта, поэтому unhealthy-проверка из Dockerfile (curl :8000) всегда

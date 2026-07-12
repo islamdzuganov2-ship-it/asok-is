@@ -1,10 +1,20 @@
-# QA-артефакт (2026-06-30) — живая демонстрация LLM.
-# Переключает встроенную LLM на РАБОЧУЮ модель Qwen2.5-0.5B-Instruct Q4_K_M (стандартная
-# архитектура GGUF `qwen2`, грузится текущим llama-cpp-python==0.2.90) вместо несовместимой
-# `asok-model.gguf` (Qwen3.5, arch `qwen35` — не загружается, см. дефект DEF-01).
-# Файл модели лежит в models/llm/ (примонтирован в контейнер). Чтобы вернуть исходную
-# конфигурацию — удалите этот файл и выполните `docker compose up -d backend`.
+# docker-compose.override.yml — локальные override'ы (подхватываются `docker compose` автоматически).
+#
+# LLM МОДЕЛЬ-АГНОСТИЧНА. Положите ЛЮБОЙ *.gguf в models/llm/ — система сама его подхватит:
+#   • LOCAL_LLM_MODEL_FILE=auto        → автоподбор новейшего файла;
+#   • LOCAL_LLM_MODEL_FILE=<имя.gguf>  → закрепить конкретную модель (как ниже).
+# Сейчас закреплена Gemma 3 12B (arch gemma3) — грузится рантаймом llama-cpp-python>=0.3.
+# NB: 12B на CPU отвечает медленно; для скорости используйте GPU: docker-compose.gpu.yml.
+#
+# ПЕРЕКЛЮЧЕНИЕ МОДЕЛИ (без пересборки образа):
+#   1) скопировать новый *.gguf в models/llm/ (и при желании поменять имя ниже, либо auto);
+#   2) `docker compose restart backend celery_worker`  (или POST /api/v1/reports/llm-reload — ADMIN);
+#   3) проверить: GET /api/v1/reports/llm-status (имя/архитектура), GET /api/v1/reports/llm-models.
+# Пересборка нужна ОДИН раз — под обновлённый рантайм 0.3.x: `docker compose build backend celery_worker`.
 services:
   backend:
+    environment:
+      - LOCAL_LLM_MODEL_FILE=gemma-3-12b-it-Q4_K_M.gguf
+  celery_worker:
     environment:
       - LOCAL_LLM_MODEL_FILE=gemma-3-12b-it-Q4_K_M.gguf

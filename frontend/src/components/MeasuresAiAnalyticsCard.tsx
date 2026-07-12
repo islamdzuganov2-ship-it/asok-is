@@ -10,6 +10,7 @@ import { Card, Button, Table, Tag, Typography, Alert, Spin, Space, Collapse } fr
 import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { ragToken } from '../theme/ragPalette';
 import type { Proposal } from '../store/slices/governanceSlice';
+import ConclusionFeedback from './ConclusionFeedback';
 
 const { Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -27,6 +28,8 @@ interface AnalyticsResp {
   mapped_risks: Array<{ title: string; characteristic: string }>;
   reasoning?: ReasoningTraceResp | null;
   confidence?: string;
+  fingerprint?: string;
+  fired_rules?: string[];          // сработавшие правила движка (Rule Engine → LLM)
 }
 
 const CONFIDENCE_COLOR: Record<string, string> = { высокая: 'green', средняя: 'gold', низкая: 'red' };
@@ -129,12 +132,21 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
               }
               description={
                 <>
+                  {data.fired_rules && data.fired_rules.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong style={{ fontSize: 12 }}>Сработавшие правила (движок решает — LLM объясняет):</Text>
+                      {data.fired_rules.map((r, i) => (
+                        <div key={i}><Text type="secondary" style={{ fontSize: 12 }}>• {r}</Text></div>
+                      ))}
+                    </div>
+                  )}
                   <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: data.mapped_risks?.length ? 8 : 0 }}>{data.analytics}</Paragraph>
                   {data.mapped_risks?.length > 0 && (
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       Риски: {data.mapped_risks.map((r) => r.title).join('; ')}
                     </Text>
                   )}
+                  <ConclusionFeedback fingerprint={data.fingerprint} currentText={data.analytics} />
                   {data.reasoning?.stages?.length ? (
                     <Collapse
                       ghost

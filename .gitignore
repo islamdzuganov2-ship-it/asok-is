@@ -10,6 +10,11 @@ dist/
 # LLM-модели — большие GGUF-бинарники, в git не хранятся (см. docs/LLM_SETUP.md)
 models/llm/*.gguf
 
+# «Резервный мозг» LLM — рантайм-данные (память/корпус/фидбэк/профиль), в git не хранятся;
+# сам каталог сохраняем через .gitkeep, чтобы bind-mount имел точку монтирования.
+models/llm_brain/*
+!models/llm_brain/.gitkeep
+
 # Windows-артефакт ошибочного перенаправления вывода (> nul)
 nul
 

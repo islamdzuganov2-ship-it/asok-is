@@ -54,17 +54,53 @@ const IncidentsAnalyticsPage: React.FC = () => {
     const isLive = dataMode === 'live';
     const canManage = ['QUALITY_MANAGER', 'ADMIN'].includes(role);
 
-    // Данные: live — из API; mock — демо-набор с локальной агрегацией.
+    // Данные: live — из API (полный список), mock — демо-набор. Аналитика и реестр считаются
+    // клиентски из ОТФИЛЬТРОВАННОГО набора (система T-39 + кварталы T-40) — единообразно в обоих
+    // режимах (computeIncidentAnalytics — зеркало backend-агрегации).
     const liveList = useGetIncidentsQuery(undefined, { skip: !isLive });
-    const liveAnalytics = useGetIncidentAnalyticsQuery(undefined, { skip: !isLive });
     const [createIncident, { isLoading: creating }] = useCreateIncidentMutation();
 
-    const incidents = isLive ? (liveList.data ?? []) : MOCK_INCIDENTS;
-    const analytics = isLive ? liveAnalytics.data : computeIncidentAnalytics(MOCK_INCIDENTS);
-    const loading = isLive && (liveList.isFetching || liveAnalytics.isFetching);
+    const allIncidents = isLive ? (liveList.data ?? []) : MOCK_INCIDENTS;
+    const loading = isLive && liveList.isFetching;
+
+    // Фильтры дашборда.
+    const [systemFilter, setSystemFilter] = useState<string | undefined>(undefined);    // T-39
+    const [quarterFilter, setQuarterFilter] = useState<string[]>([]);                    // T-40
+    const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined); // T-41 (реестр)
+    const [selectedIncident, setSelectedIncident] = useState<TechIncidentDto | null>(null);
 
     const [formOpen, setFormOpen] = useState(false);
     const [form] = Form.useForm();
+
+    // Ключ квартала возникновения (UTC): «Q{1..4}-{год}». Мультивыбор может пересекать границы лет.
+    const quarterKeyOf = (iso: string) => {
+        const d = new Date(iso);
+        return `Q${Math.floor(d.getUTCMonth() / 3) + 1}-${d.getUTCFullYear()}`;
+    };
+    const quarterOrder = (k: string) => { const [q, y] = k.slice(1).split('-'); return Number(y) * 10 + Number(q); };
+
+    const systemOptions = useMemo(
+        () => [...new Set(allIncidents.map((r) => r.systemName))].sort().map((s) => ({ value: s, label: s })),
+        [allIncidents],
+    );
+    const availableQuarters = useMemo(
+        () => [...new Set(allIncidents.map((r) => quarterKeyOf(r.occurredAt)))].sort((a, b) => quarterOrder(a) - quarterOrder(b)),
+        [allIncidents],
+    );
+
+    // Отфильтрованный набор (система + кварталы) — основа KPI/диаграмм/реестра.
+    const filteredIncidents = useMemo(
+        () => allIncidents.filter((r) =>
+            (!systemFilter || r.systemName === systemFilter)
+            && (quarterFilter.length === 0 || quarterFilter.includes(quarterKeyOf(r.occurredAt)))),
+        [allIncidents, systemFilter, quarterFilter],
+    );
+    const analytics = useMemo(() => computeIncidentAnalytics(filteredIncidents), [filteredIncidents]);
+    // Реестр — дополнительно фильтруется по первопричине (T-41).
+    const registryRows = useMemo(
+        () => (categoryFilter ? filteredIncidents.filter((r) => r.category === categoryFilter) : filteredIncidents),
+        [filteredIncidents, categoryFilter],
+    );
 
     const donutOption = useMemo(() => ({
         tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
@@ -85,8 +121,6 @@ const IncidentsAnalyticsPage: React.FC = () => {
         {
             title: 'Первопричина', dataIndex: 'category', width: 180,
             render: (c: string) => <Tag color={CATEGORY_COLOR[c]} style={{ color: '#fff', border: 'none' }}>{CATEGORY_LABEL[c] ?? c}</Tag>,
-            filters: INCIDENT_CATEGORIES.map((c) => ({ text: CATEGORY_LABEL[c], value: c })),
-            onFilter: (v, r) => r.category === v,
         },
         {
             title: 'Критичность', dataIndex: 'severity', width: 120,
@@ -148,10 +182,33 @@ const IncidentsAnalyticsPage: React.FC = () => {
                 </Col>
                 <Col>
                     <Space>
-                        {isLive && <Button icon={<ReloadOutlined />} onClick={() => { liveList.refetch(); liveAnalytics.refetch(); }}>Обновить</Button>}
+                        {isLive && <Button icon={<ReloadOutlined />} onClick={() => liveList.refetch()}>Обновить</Button>}
                         {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setFormOpen(true)}>Зарегистрировать сбой</Button>}
                     </Space>
                 </Col>
+            </Row>
+
+            {/* Фильтры верхнего уровня: система (T-39) и кварталы (T-40) — влияют на KPI, диаграммы и реестр. */}
+            <Row gutter={[12, 12]} align="middle" style={{ marginBottom: 16 }} wrap>
+                <Col><Text type="secondary"><DatabaseOutlined /> Система:</Text></Col>
+                <Col flex="0 1 280px">
+                    <Select
+                        allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+                        placeholder="Все системы" value={systemFilter} onChange={setSystemFilter} options={systemOptions}
+                    />
+                </Col>
+                <Col><Text type="secondary"><CalendarOutlined /> Период (кварталы):</Text></Col>
+                <Col flex="1 1 320px">
+                    <Select
+                        mode="multiple" allowClear style={{ width: '100%' }} maxTagCount="responsive"
+                        placeholder="Все периоды — можно выбрать несколько кварталов разных лет"
+                        value={quarterFilter} onChange={setQuarterFilter}
+                        options={availableQuarters.map((q) => ({ value: q, label: q }))}
+                    />
+                </Col>
+                {(systemFilter || quarterFilter.length > 0) && (
+                    <Col><Button size="small" type="link" onClick={() => { setSystemFilter(undefined); setQuarterFilter([]); }}>Сбросить фильтры</Button></Col>
+                )}
             </Row>
 
             {loading ? <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div> : (
@@ -203,29 +260,70 @@ const IncidentsAnalyticsPage: React.FC = () => {
                         </Col>
                     </Row>
 
-                    <div {...premiumCard()} style={{ padding: 16, marginTop: 16 }}>
-                        <Text strong>Реестр технических сбоев ({incidents.length})</Text>
+                    <CollapsibleCard
+                        accent="ink"
+                        style={{ marginTop: 16 }}
+                        defaultOpen
+                        title={`Реестр технических сбоев (${registryRows.length})`}
+                        subtitle="Клик по строке — карточка сбоя. Свернуть/раскрыть — кнопкой слева."
+                        extra={(
+                            <Space>
+                                <Text type="secondary" style={{ fontSize: 12 }}>Первопричина:</Text>
+                                <Select
+                                    allowClear size="small" style={{ minWidth: 210 }} placeholder="Все первопричины"
+                                    value={categoryFilter} onChange={setCategoryFilter}
+                                    options={INCIDENT_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABEL[c] }))}
+                                />
+                            </Space>
+                        )}
+                    >
                         <Table
-                            style={{ marginTop: 12 }}
                             size="small"
                             rowKey="id"
                             columns={columns}
-                            dataSource={incidents}
+                            dataSource={registryRows}
                             pagination={{ pageSize: 10, hideOnSinglePage: true }}
                             scroll={{ x: 1000 }}
-                            expandable={{
-                                expandedRowRender: (r) => (
-                                    <Space direction="vertical" size={2} style={{ fontSize: 13 }}>
-                                        <Text type="secondary">Первопричина (описание): {r.rootCause || '—'}</Text>
-                                        {r.releaseRef && <Text type="secondary">Релиз: {r.releaseRef}</Text>}
-                                        <Text type="secondary">Восстановлен: {fmtDate(r.resolvedAt)}</Text>
-                                    </Space>
-                                ),
-                            }}
+                            onRow={(r) => ({ onClick: () => setSelectedIncident(r), style: { cursor: 'pointer' } })}
                         />
-                    </div>
+                    </CollapsibleCard>
                 </>
             )}
+
+            {/* Карточка сбоя — открывается кликом по строке реестра (T-41). */}
+            <Modal
+                open={!!selectedIncident}
+                title="Карточка технического сбоя"
+                footer={null}
+                onCancel={() => setSelectedIncident(null)}
+                width={640}
+            >
+                {selectedIncident && (
+                    <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                        <Space wrap>
+                            <Tag color={CATEGORY_COLOR[selectedIncident.category]} style={{ color: '#fff', border: 'none' }}>
+                                {CATEGORY_LABEL[selectedIncident.category] ?? selectedIncident.category}
+                            </Tag>
+                            <Tag color={SEVERITY_COLOR[selectedIncident.severity]}>
+                                {SEVERITY_LABEL[selectedIncident.severity] ?? selectedIncident.severity}
+                            </Tag>
+                            {selectedIncident.resolvedAt ? <Tag color="green">восстановлен</Tag> : <Tag color="red">открыт</Tag>}
+                        </Space>
+                        <Title level={5} style={{ margin: 0 }}>{selectedIncident.title}</Title>
+                        <Row gutter={[12, 8]}>
+                            <Col span={12}><Text type="secondary">ИС: </Text><Text strong>{selectedIncident.systemName}</Text></Col>
+                            <Col span={12}><Text type="secondary">MTTR: </Text><Text strong>{(() => { const m = mttrHours(selectedIncident); return m === null ? '—' : `${m} ч`; })()}</Text></Col>
+                            <Col span={12}><Text type="secondary">Возник: </Text>{fmtDate(selectedIncident.occurredAt)}</Col>
+                            <Col span={12}><Text type="secondary">Восстановлен: </Text>{fmtDate(selectedIncident.resolvedAt)}</Col>
+                            {selectedIncident.releaseRef && <Col span={24}><Text type="secondary">Релиз/версия: </Text>{selectedIncident.releaseRef}</Col>}
+                        </Row>
+                        <div>
+                            <Text type="secondary">Корневая причина (детально):</Text>
+                            <Paragraph style={{ marginBottom: 0 }}>{selectedIncident.rootCause || '—'}</Paragraph>
+                        </div>
+                    </Space>
+                )}
+            </Modal>
 
             <Modal
                 open={formOpen}

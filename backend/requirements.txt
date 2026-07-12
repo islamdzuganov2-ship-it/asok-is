@@ -26,13 +26,14 @@ httpx==0.26.0
 openpyxl==3.1.2
 pandas==2.2.0
 
-# === LLM (in-process, on-prem; читает models/llm/asok-model.gguf) ===
-# CPU-сборка llama.cpp. Модель — Qwen2.5-1.5B-Instruct Q4_K_M (стандартная архитектура GGUF
-# `qwen2`, поддерживается этой версией рантайма; ~1 ГБ, помещается в лимит памяти контейнера).
-# ВНИМАНИЕ: модель с архитектурой `qwen35` (Qwen3.5) этой и любой текущей стабильной сборкой
-# llama.cpp НЕ загружается ("unknown model architecture: 'qwen35'"). Для более новых архитектур
-# (qwen3) требуется llama-cpp-python>=0.3.x; arch `qwen35` нестандартен и непереносим.
-llama-cpp-python==0.2.90
+# === LLM (in-process, on-prem; читает ЛЮБОЙ *.gguf из models/llm/) ===
+# МОДЕЛЬ-АГНОСТИЧНО: рантайм 0.3.x грузит современные архитектуры (qwen2/qwen3, llama, gemma2,
+# phi3, mistral, stablelm и др.). Система сама опрашивает метаданные модели и адаптируется.
+# CPU-сборка ставится готовым wheel (без компиляции). GPU/CUDA — отдельный образ:
+# см. backend/dockerfile.cuda + docker-compose.gpu.yml (колесо с индекса cu124 или сборка из sdist).
+# NB: экзотический экспорт `qwen35` (Qwen3.5) может не грузиться и в 0.3.x — это свойство файла,
+# а не рантайма; mainstream-модели (в т.ч. Qwen3) загружаются.
+llama-cpp-python==0.3.9
 
 # === Dev (опционально для контейнера) ===
 pytest==7.4.4

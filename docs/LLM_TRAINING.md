@@ -7,18 +7,30 @@
 ## 0. Два уровня «обучения»
 | Уровень | Что это | Когда | Код |
 |---|---|---|---|
-| **A. Поведение промптом** | системный промпт + few-shot + параметры (temperature 0.1) | всегда, без GPU | `backend/app/services/llm_service.py`, `backend/llm/Modelfile` |
-| **B. Самообучение (RAG)** | суждения/выводы прошлых периодов передаются модели как контекст → каждый новый ввод обогащает заключение | онлайн, без GPU | `generate_judgment_conclusion(..., history_block=...)` + эндпоинт `/assessments/{id}/judgment-conclusion` |
-| **C. Дообучение (LoRA/QLoRA)** | реальное дообучение весов на корпусе суждений | периодически, на GPU | `backend/llm/train_lora.py` |
+| **A. Поведение промптом** | системный промпт + few-shot + параметры (temperature 0.1) | всегда, без GPU | `backend/app/modules/llm/prompts.py`, `service.py` |
+| **B. Самообучение (RAG) + «резервный мозг»** | заключения копятся во ВНЕШНЕМ хранилище (вне модели) и подаются назад как контекст; переносится между моделями | онлайн, без GPU | `backend/app/modules/llm/brain.py` (`remember`/`recall`), `history_block` |
+| **C. Дообучение (LoRA/QLoRA)** | реальное дообучение весов на корпусе (в т.ч. правки человека) | периодически, на GPU | `backend/llm/train_lora.py`, корпус `models/llm_brain/corpus.jsonl` |
 
 Уровни A и B работают на текущем стенде (CPU). Уровень C — отдельный шаг на GPU.
+
+> **Модель-агностично + «резервный мозг».** Рантайм `llama-cpp-python>=0.3` грузит любую
+> современную GGUF-архитектуру; система сама опрашивает модель (см. `service.ModelProfile`).
+> Накопленное обучение хранится ВНЕ файла модели — в `models/llm_brain/` (память, корпус,
+> обратная связь, настройки). При переключении на более умную/мощную модель новая модель сразу
+> наследует весь мозг. Как переключать модель в Docker — см. `docs/LLM_SETUP.md` §4–5.
+
+> **Модель не решает вместо системы (Rule Engine → LLM).** Вердикты (Severity/Coverage/
+> Regression) выносит детерминированный `backend/app/modules/llm/gate.py`; LLM только ОБЪЯСНЯЕТ
+> их — Объяснение · Причины · Риски · Рекомендации, строго по данным (grounding сохранён).
+> Обратная связь человека (принять/поправить/отклонить) пишется в мозг и влияет на будущий recall
+> и корпус дообучения (эндпоинт `/reports/conclusion-feedback`).
 
 ## 1. Сбор данных (накопление «вводных»)
 Система копит профессиональные суждения (`professional_judgments`) и связывает их с базой рисков.
 Экспорт корпуса в SFT-датасет (JSONL, формат instruction/output):
 ```bash
 docker compose exec backend python -m app.scripts.export_llm_dataset
-# → backend/llm_dataset/judgments_sft.jsonl (растёт с каждым новым суждением)
+# → models/llm_brain/judgments_sft.jsonl (в «резервном мозге»; включает правки эксперта)
 ```
 Каждый пример: `{system, instruction (ИС+период+суждения+риски), output (grounded-заключение)}`.
 
@@ -27,7 +39,7 @@ docker compose exec backend python -m app.scripts.export_llm_dataset
 pip install "transformers>=4.44" peft trl datasets bitsandbytes accelerate
 python backend/llm/train_lora.py \
     --base Qwen/Qwen2.5-1.5B-Instruct \
-    --data backend/llm_dataset/judgments_sft.jsonl \
+    --data models/llm_brain/judgments_sft.jsonl \
     --out models/llm/lora-adapter --epochs 3
 ```
 Результат — LoRA-адаптер в `models/llm/lora-adapter/` (4-bit QLoRA, умещается на ~8 ГБ VRAM).

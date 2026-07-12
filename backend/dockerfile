@@ -1,7 +1,10 @@
-# backend/Dockerfile
+# backend/dockerfile — CPU-сборка бэкенда и рантайма LLM (llama-cpp-python >=0.3).
+# Грузит ЛЮБУЮ современную GGUF-архитектуру. GPU/CUDA-вариант — backend/dockerfile.cuda
+# (+ docker-compose.gpu.yml). Переключение модели рестартом НЕ требует пересборки образа.
 FROM python:3.11-slim
 
-# Установка системных зависимостей
+# Системные зависимости: libpq (psycopg), curl (healthcheck), build-essential+cmake —
+# на случай, если для llama-cpp-python нет готового wheel и нужна сборка из исходников.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev curl build-essential cmake \
     && rm -rf /var/lib/apt/lists/*
@@ -12,16 +15,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копирование requirements.txt
-COPY requirements.txt ./
-
-# Установка зависимостей через pip (проще и надёжнее)
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Копирование кода
 COPY . .
-
-# Права доступа
 RUN pip install --no-cache-dir -e .
 
 RUN chown -R appuser:appuser /app
