@@ -11,6 +11,7 @@ import {
     useGetAssessmentPeriodsQuery,
     useGetExcelMatricesQuery,
     useGetSystemsQuery,
+    useGetSystemDynamicsQuery,
     useImportWorkbookMutation,
     useSaveAssessmentMetricsMutation,
 } from '../store/api/apiSlice';
@@ -107,6 +108,46 @@ export const ExcelReportsPage: React.FC = () => {
         skip: !activePeriodId,
     });
     const [importWorkbook, { isLoading: uploading }] = useImportWorkbookMutation();
+    // T-12: кросс-период — динамика характеристик ИС по всем периодам (backend /reports/system-dynamics).
+    const { data: dynamics, isFetching: dynLoading } = useGetSystemDynamicsQuery(systemId ?? '', { skip: !systemId });
+    const dynamicsView = useMemo(() => {
+        const points = dynamics?.points ?? [];
+        if (!points.length) return { columns: [] as ColumnsType<any>, rows: [] as any[] };
+        const chars: string[] = [];
+        points.forEach((p) => Object.keys(p.characteristics).forEach((c) => { if (!chars.includes(c)) chars.push(c); }));
+        const mkRow = (label: string, get: (p: (typeof points)[number]) => number | undefined) => {
+            const row: any = { key: label, characteristic: label };
+            points.forEach((p) => { row[p.period] = get(p); });
+            return row;
+        };
+        const rows = [
+            mkRow('Интегральный показатель', (p) => p.integral),
+            ...chars.map((c) => mkRow(c, (p) => p.characteristics[c])),
+        ];
+        const columns: ColumnsType<any> = [
+            {
+                title: 'Характеристика', dataIndex: 'characteristic', width: 220, fixed: 'left' as const,
+                render: (v: string) => (v === 'Интегральный показатель' ? <Text strong>{v}</Text> : v),
+            },
+            ...points.map((p) => ({
+                title: p.period, dataIndex: p.period, width: 100,
+                render: (v: number | undefined) => (v == null ? '—' : `${v}%`),
+            })),
+            {
+                title: 'Тренд (перв.→посл.)', key: 'trend', width: 140, fixed: 'right' as const,
+                render: (_: unknown, row: any) => {
+                    const first = row[points[0].period];
+                    const last = row[points[points.length - 1].period];
+                    if (first == null || last == null) return <Text type="secondary">—</Text>;
+                    const d = Math.round((last - first) * 10) / 10;
+                    const color = d > 1 ? '#6F9F86' : d < -1 ? '#C06B5A' : '#8a94a6';
+                    const arrow = d > 1 ? '↑' : d < -1 ? '↓' : '→';
+                    return <Text strong style={{ color }}>{arrow} {d > 0 ? '+' : ''}{d} п.п.</Text>;
+                },
+            },
+        ];
+        return { columns, rows };
+    }, [dynamics]);
 
     const dispatch = useAppDispatch();
     // Реестр мер: в Демо — все, в LLM — только реальные (демо-меры скрыты).
@@ -412,6 +453,24 @@ export const ExcelReportsPage: React.FC = () => {
                             key: 'plan',
                             label: `План обеспечения качества (${data?.plan?.length || 0})`,
                             children: <Table columns={planColumns} dataSource={applyReportFilters(data?.plan || [])} rowKey="id" {...tableProps} />,
+                        },
+                        {
+                            key: 'dynamics',
+                            label: 'Динамика по периодам',
+                            children: !systemId
+                                ? <Alert type="info" showIcon message="Выберите систему — покажем динамику характеристик по всем её периодам оценки (кросс-период, тренд улучшение/ухудшение)." />
+                                : dynLoading
+                                    ? <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
+                                    : <Table
+                                        columns={dynamicsView.columns}
+                                        dataSource={dynamicsView.rows}
+                                        rowKey="key"
+                                        bordered
+                                        size="small"
+                                        pagination={false}
+                                        scroll={{ x: 900 }}
+                                        locale={{ emptyText: <Empty description="Нет данных динамики за периоды этой ИС." /> }}
+                                    />,
                         },
                         {
                             key: 'measures',

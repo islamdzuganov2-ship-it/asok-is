@@ -8,10 +8,12 @@
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
-# CMAKE_ARGS включает CUDA-бэкенд, если llama-cpp-python собирается из исходников (нет колеса).
+# Собираем llama-cpp-python ИЗ ИСХОДНИКОВ с CUDA-бэкендом (готовые колёса abetlen слинкованы с
+# musl и конфликтуют с glibc-библиотеками CUDA). На GPU-хосте памяти под компиляцию достаточно.
 ENV CMAKE_ARGS="-DGGML_CUDA=on"
+ENV FORCE_CMAKE=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-dev libpq-dev curl build-essential cmake \
+    python3 python3-pip python3-dev libpq-dev curl build-essential cmake git \
     && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
@@ -19,11 +21,8 @@ RUN useradd -m -u 1000 appuser
 WORKDIR /app
 
 COPY requirements.txt ./
-# Готовые GPU-колёса llama-cpp-python (CUDA 12.4) — с индекса abetlen; при отсутствии колеса
-# для закреплённой версии pip соберёт из sdist с CMAKE_ARGS выше (nvcc есть в -devel базе).
-RUN pip install --no-cache-dir \
-    --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 \
-    -r requirements.txt
+# llama-cpp-python компилируется из sdist с CUDA (CMAKE_ARGS выше); прочие пакеты — обычные колёса.
+RUN pip install --no-cache-dir --no-binary=llama-cpp-python -r requirements.txt
 
 COPY . .
 RUN pip install --no-cache-dir -e .

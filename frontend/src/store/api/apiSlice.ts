@@ -237,6 +237,25 @@ export interface TriggeredRisk {
     triggered_by: string;   // «техсбои: инфраструктура (3), сеть (1)» / «просевшая характеристика»
 }
 
+// ─── Динамика качества ИС по периодам (T-15/T-12) ───
+export interface DynamicsPoint {
+    period: string;
+    integral: number;                        // интегральный показатель за период, %
+    characteristics: Record<string, number>; // характеристика → средний %
+}
+export interface MeasureMarker {
+    characteristic: string;
+    createdAt: string;
+    title: string;
+    status: string;
+}
+export interface SystemDynamics {
+    systemId: string;
+    systemName: string;
+    points: DynamicsPoint[];
+    measures: MeasureMarker[];
+}
+
 export const apiSlice = createApi({
     reducerPath: 'api',
     baseQuery: fetchBaseQuery({
@@ -420,6 +439,10 @@ export const apiSlice = createApi({
             },
             providesTags: ['Incidents'],
         }),
+        getSystemDynamics: builder.query<SystemDynamics, string>({
+            query: (systemId) => `/reports/system-dynamics?system_id=${systemId}`,
+            providesTags: ['Dashboard'],
+        }),
     }),
 });
 
@@ -450,4 +473,5 @@ export const {
     useCreateIncidentMutation,
     useResolveIncidentMutation,
     useGetTriggeredRisksQuery,
+    useGetSystemDynamicsQuery,
 } = apiSlice;

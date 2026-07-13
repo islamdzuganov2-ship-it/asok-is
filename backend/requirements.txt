@@ -33,7 +33,9 @@ pandas==2.2.0
 # см. backend/dockerfile.cuda + docker-compose.gpu.yml (колесо с индекса cu124 или сборка из sdist).
 # NB: экзотический экспорт `qwen35` (Qwen3.5) может не грузиться и в 0.3.x — это свойство файла,
 # а не рантайма; mainstream-модели (в т.ч. Qwen3) загружаются.
-llama-cpp-python==0.3.9
+# Версия 0.3.19 имеет ГОТОВОЕ CPU-колесо на индексе abetlen (см. dockerfile: --only-binary),
+# поэтому образ собирается без компиляции llama.cpp (иначе сборка из sdist упирается в память).
+llama-cpp-python==0.3.19
 
 # === Dev (опционально для контейнера) ===
 pytest==7.4.4

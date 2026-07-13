@@ -94,8 +94,7 @@ def discover_model_path() -> str | None:
                        configured, directory)
     if not os.path.isdir(directory):
         return None
-    ggufs = sorted(glob.glob(os.path.join(directory, "*.gguf")),
-                   key=os.path.getmtime, reverse=True)
+    ggufs = _list_gguf(directory)
     if not ggufs:
         return None
     chosen = ggufs[0]
@@ -185,8 +184,8 @@ def _load_llm():
             return None
         try:
             from llama_cpp import Llama
-        except ImportError:
-            logger.warning("llama-cpp-python не установлен — используется fallback.")
+        except Exception as exc:  # noqa: BLE001  (ImportError, а также сбой загрузки нативной libllama)
+            logger.warning("llama-cpp-python недоступен (%s) — используется честный fallback.", exc)
             return None
         chat_format = settings.LLM_CHAT_FORMAT
         try:
@@ -226,7 +225,7 @@ def list_models() -> list[dict]:
     selected_abs = os.path.abspath(selected) if selected else None
     out: list[dict] = []
     if os.path.isdir(directory):
-        for p in sorted(glob.glob(os.path.join(directory, "*.gguf")), key=os.path.getmtime, reverse=True):
+        for p in _list_gguf(directory):
             out.append({
                 "file": os.path.basename(p),
                 "size_mb": int(os.path.getsize(p) / (1024 * 1024)),

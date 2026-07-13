@@ -56,6 +56,20 @@ def test_list_models_marks_selected(tmp_path, monkeypatch):
     assert len(selected) == 1 and selected[0]["file"] == "b.gguf"
 
 
+def test_auto_skips_mmproj_projector(tmp_path, monkeypatch):
+    # mmproj-*.gguf — проектор мультимодалки, не самостоятельная LLM: авто-подбор его игнорирует,
+    # даже если он новее (иначе загрузка «модели» упадёт).
+    monkeypatch.setattr(settings, "LOCAL_LLM_MODEL_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "LOCAL_LLM_MODEL_FILE", "auto")
+    model, proj = tmp_path / "qwen2.5-0.5b.gguf", tmp_path / "mmproj-model-f16.gguf"
+    _touch(model)
+    _touch(proj)
+    os.utime(model, (1, 1))
+    os.utime(proj, (10**9, 10**9))  # проектор новее — но должен быть отфильтрован
+    assert svc.discover_model_path() == str(model)
+    assert all("mmproj" not in m["file"] for m in svc.list_models())
+
+
 def test_parse_quant_from_filename_and_metadata():
     assert svc._parse_quant("gemma-3-12b-it-Q4_K_M.gguf", {}) == "Q4_K_M"
     assert svc._parse_quant("model-IQ3_XS.gguf", {}) == "IQ3_XS"
