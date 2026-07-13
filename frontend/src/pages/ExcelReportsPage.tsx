@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, Button, Card, Col, Empty, Input, Row, Segmented, Select, Space, Spin, Table, Tabs, Tag, Typography, Upload, message } from 'antd';
-import { FileExcelOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { FileExcelOutlined, UploadOutlined, DownloadOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
 import { shallowEqual, useSelector } from 'react-redux';
@@ -142,6 +142,24 @@ export const ExcelReportsPage: React.FC = () => {
         }
         return map;
     }, [proposals, selectedSystemName]);
+
+    // T-11: поиск по тексту + фильтр по характеристике для отчётных таблиц (качество/риски/недостатки/план).
+    const [searchText, setSearchText] = useState('');
+    const [charFilter, setCharFilter] = useState<string | undefined>();
+    const applyReportFilters = <T extends Record<string, any>>(rows: T[]): T[] => {
+        const q = searchText.trim().toLowerCase();
+        return rows.filter((r) =>
+            (!charFilter || normChar(r.characteristic || '') === normChar(charFilter))
+            && (!q || Object.values(r).some((v) => v != null && String(v).toLowerCase().includes(q))));
+    };
+    const reportCharacteristics = useMemo(() => {
+        const set = new Set<string>();
+        (qualityMetrics || []).forEach((m: any) => m.characteristic && set.add(m.characteristic));
+        (data?.risks || []).forEach((r: any) => r.characteristic && set.add(r.characteristic));
+        (data?.defects || []).forEach((r: any) => r.characteristic && set.add(r.characteristic));
+        (data?.plan || []).forEach((r: any) => r.characteristic && set.add(r.characteristic));
+        return [...set].sort();
+    }, [qualityMetrics, data]);
 
     const systemOptions = (systems?.items || []).map((system) => ({
         value: system.id,
@@ -324,6 +342,22 @@ export const ExcelReportsPage: React.FC = () => {
                             disabled={!systemId}
                             onChange={setPeriodId}
                         />
+                        <Input
+                            allowClear
+                            placeholder="Поиск по тексту"
+                            prefix={<SearchOutlined />}
+                            style={{ width: 200 }}
+                            value={searchText}
+                            onChange={(e) => setSearchText(e.target.value)}
+                        />
+                        <Select
+                            allowClear
+                            placeholder="Характеристика"
+                            style={{ width: 200 }}
+                            value={charFilter}
+                            onChange={setCharFilter}
+                            options={reportCharacteristics.map((c) => ({ value: c, label: c }))}
+                        />
                         <Button icon={<DownloadOutlined />} onClick={handleExport}>
                             Экспорт CSV
                         </Button>
@@ -356,7 +390,7 @@ export const ExcelReportsPage: React.FC = () => {
                             children: (
                                 <Table<EditableMetric>
                                     columns={qualityColumns}
-                                    dataSource={qualityMetrics || []}
+                                    dataSource={applyReportFilters(qualityMetrics || [])}
                                     rowKey="id"
                                     {...tableProps}
                                     scroll={{ x: 1200 }}
@@ -367,17 +401,17 @@ export const ExcelReportsPage: React.FC = () => {
                         {
                             key: 'risks',
                             label: `Таблица возможных рисков (${data?.risks?.length || 0})`,
-                            children: <Table columns={risksColumns} dataSource={data?.risks || []} rowKey={(_, index = 0) => `risk-${index}`} {...tableProps} />,
+                            children: <Table columns={risksColumns} dataSource={applyReportFilters(data?.risks || [])} rowKey={(_, index = 0) => `risk-${index}`} {...tableProps} />,
                         },
                         {
                             key: 'defects',
                             label: `Перечень недостатков ИС (${data?.defects?.length || 0})`,
-                            children: <Table columns={defectsColumns} dataSource={data?.defects || []} rowKey="id" {...tableProps} />,
+                            children: <Table columns={defectsColumns} dataSource={applyReportFilters(data?.defects || [])} rowKey="id" {...tableProps} />,
                         },
                         {
                             key: 'plan',
                             label: `План обеспечения качества (${data?.plan?.length || 0})`,
-                            children: <Table columns={planColumns} dataSource={data?.plan || []} rowKey="id" {...tableProps} />,
+                            children: <Table columns={planColumns} dataSource={applyReportFilters(data?.plan || [])} rowKey="id" {...tableProps} />,
                         },
                         {
                             key: 'measures',
