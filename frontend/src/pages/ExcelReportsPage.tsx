@@ -461,16 +461,38 @@ export const ExcelReportsPage: React.FC = () => {
                                 ? <Alert type="info" showIcon message="Выберите систему — покажем динамику характеристик по всем её периодам оценки (кросс-период, тренд улучшение/ухудшение)." />
                                 : dynLoading
                                     ? <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
-                                    : <Table
-                                        columns={dynamicsView.columns}
-                                        dataSource={dynamicsView.rows}
-                                        rowKey="key"
-                                        bordered
-                                        size="small"
-                                        pagination={false}
-                                        scroll={{ x: 900 }}
-                                        locale={{ emptyText: <Empty description="Нет данных динамики за периоды этой ИС." /> }}
-                                    />,
+                                    : (
+                                        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                                            <Table
+                                                columns={dynamicsView.columns}
+                                                dataSource={dynamicsView.rows}
+                                                rowKey="key"
+                                                bordered
+                                                size="small"
+                                                pagination={false}
+                                                scroll={{ x: 900 }}
+                                                locale={{ emptyText: <Empty description="Нет данных динамики за периоды этой ИС." /> }}
+                                            />
+                                            {(dynamics?.measures?.length ?? 0) > 0 && (
+                                                <div>
+                                                    <Text strong style={{ fontSize: 13 }}>
+                                                        Меры по характеристикам (T-15: сопоставьте дату меры с трендом характеристики после неё — стало ли лучше):
+                                                    </Text>
+                                                    <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                                        {dynamics!.measures.map((m, i) => (
+                                                            <Tag
+                                                                key={i}
+                                                                color={PROPOSAL_STATUS_TAG[m.status as ProposalStatus]?.color || 'default'}
+                                                                style={{ padding: '4px 10px', fontSize: 12 }}
+                                                            >
+                                                                {m.characteristic} · {m.title} · {m.createdAt.slice(0, 10)} · {PROPOSAL_STATUS_TAG[m.status as ProposalStatus]?.label || m.status}
+                                                            </Tag>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </Space>
+                                    ),
                         },
                         {
                             key: 'measures',
