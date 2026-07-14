@@ -17,6 +17,7 @@ from app.modules.iam import get_current_user, require_role
 from app.modules.incidents import service
 from app.modules.incidents.schemas import (
     IncidentAnalyticsOut,
+    IncidentCategoriesOut,
     ResolveIn,
     TechIncidentCreate,
     TechIncidentOut,
@@ -47,6 +48,15 @@ async def incident_analytics(
     _: dict = Depends(get_current_user),
 ) -> IncidentAnalyticsOut:
     return await service.analytics(db, system=system)
+
+
+@router.get("/categories", response_model=IncidentCategoriesOut)
+async def incident_categories(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> IncidentCategoriesOut:
+    """Справочник первопричин (T-37): базовые + пользовательские «Другое» для выпадающего списка формы."""
+    return await service.list_categories(db)
 
 
 @router.post("", response_model=TechIncidentOut, status_code=201)

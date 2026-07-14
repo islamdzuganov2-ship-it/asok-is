@@ -10,20 +10,22 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-    Alert, Button, Col, DatePicker, Empty, Form, Input, Modal, Row, Select, Space, Spin,
+    Alert, AutoComplete, Button, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Select, Space, Spin,
     Statistic, Table, Tag, Typography, message,
 } from 'antd';
 import { PlusOutlined, ThunderboltOutlined, ReloadOutlined, DatabaseOutlined, CalendarOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import ReactECharts from 'echarts-for-react';
-import { useSelector } from 'react-redux';
+import { useSelector, shallowEqual } from 'react-redux';
 import dayjs from 'dayjs';
 import { RootState } from '../../store';
 import {
     useCreateIncidentMutation,
     useGetIncidentsQuery,
+    useGetIncidentCategoriesQuery,
     type TechIncidentDto,
 } from '../../store/api/apiSlice';
+import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 import { MOCK_INCIDENTS, INCIDENT_CATEGORIES, computeIncidentAnalytics } from '../../data/mockIncidents';
 import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
@@ -37,10 +39,18 @@ const CATEGORY_LABEL: Record<string, string> = {
     PERFORMANCE: 'Производительность',
     NETWORK: 'Сеть',
     POWER: 'Электроснабжение',
+    OTHER: 'Другое',
 };
 const CATEGORY_COLOR: Record<string, string> = {
-    RELEASE: '#7E57C2', INFRASTRUCTURE: '#6E89A6', PERFORMANCE: '#C9A14A', NETWORK: '#6F9F86', POWER: '#C06B5A',
+    RELEASE: '#7E57C2', INFRASTRUCTURE: '#6E89A6', PERFORMANCE: '#C9A14A', NETWORK: '#6F9F86', POWER: '#C06B5A', OTHER: '#8a94a6',
 };
+// Маппинг первопричины → характеристика ISO 25010 (зеркало backend CATEGORY_TO_CHARACTERISTIC) —
+// для умного скоупинга связки «сбой ↔ мера» (T-42): предлагаем меры по связанной характеристике.
+const CATEGORY_TO_CHARACTERISTIC: Record<string, string> = {
+    RELEASE: 'Сопровождаемость', INFRASTRUCTURE: 'Надёжность', PERFORMANCE: 'Производительность',
+    NETWORK: 'Надёжность', POWER: 'Надёжность', OTHER: 'Надёжность',
+};
+const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
 const SEVERITY_LABEL: Record<string, string> = { critical: 'критический', high: 'высокий', medium: 'средний', low: 'низкий' };
 const SEVERITY_COLOR: Record<string, string> = { critical: 'red', high: 'volcano', medium: 'gold', low: 'blue' };
 
@@ -151,9 +161,14 @@ const IncidentsAnalyticsPage: React.FC = () => {
             await createIncident({
                 systemName: v.systemName,
                 category: v.category,
+                categoryCustom: v.category === 'OTHER' ? v.categoryCustom : undefined,
                 severity: v.severity,
                 title: v.title,
                 rootCause: v.rootCause,
+                admissionCause: v.admissionCause,
+                responsibleUnit: v.responsibleUnit,
+                preventiveMeasures: v.preventiveMeasures,
+                linkedMeasureId: v.linkedMeasureId || null,
                 releaseRef: v.releaseRef,
                 occurredAt: (v.occurredAt as dayjs.Dayjs).toISOString(),
                 resolvedAt: v.resolvedAt ? (v.resolvedAt as dayjs.Dayjs).toISOString() : null,
@@ -167,6 +182,40 @@ const IncidentsAnalyticsPage: React.FC = () => {
     };
 
     const category = Form.useWatch('category', form);
+    const formSystem = Form.useWatch('systemName', form);
+
+    // T-37: справочник первопричин (live) — базовые + ранее введённые пользовательские.
+    const catQuery = useGetIncidentCategoriesQuery(undefined, { skip: !isLive });
+    const rawCategoryOptions: { value: string; label: string }[] = catQuery.data?.base?.length
+        ? catQuery.data.base.map((c) => ({ value: c.code, label: c.label }))
+        : INCIDENT_CATEGORIES.map((c) => ({ value: c as string, label: CATEGORY_LABEL[c] }));
+    const baseCategoryOptions = rawCategoryOptions
+        .filter((o) => o.value !== 'OTHER')
+        .concat({ value: 'OTHER', label: 'Другое…' });
+    const customCategoryOptions = (catQuery.data?.custom ?? []).map((v) => ({ value: v }));
+
+    // T-42: связка «сбой ↔ мера по улучшению качества». Скоуп по умолчанию — та же ИС +
+    // характеристика, соответствующая первопричине (CATEGORY_TO_CHARACTERISTIC); поиск снимает скоуп.
+    const proposals = useSelector(selectVisibleProposals, shallowEqual);
+    const measureOptions = useMemo(() => {
+        if (!formSystem) return [];
+        const mappedChar = CATEGORY_TO_CHARACTERISTIC[category] ?? 'Надёжность';
+        const sameSystem = proposals.filter((p) => norm(p.systemName) === norm(formSystem));
+        const toOpt = (p: Proposal) => ({ value: p.id, label: `${p.riskTitle || p.metricName} · ${p.characteristic}` });
+        const scoped = sameSystem.filter((p) => norm(p.characteristic) === norm(mappedChar)).map(toOpt);
+        const rest = sameSystem.filter((p) => norm(p.characteristic) !== norm(mappedChar)).map(toOpt);
+        return [
+            ...(scoped.length ? [{ label: `Рекомендуемые по «${mappedChar}»`, options: scoped }] : []),
+            ...(rest.length ? [{ label: 'Другие меры этой ИС', options: rest }] : []),
+        ];
+    }, [proposals, formSystem, category]);
+
+    // Название связанной меры для карточки сбоя (T-42).
+    const measureTitleById = (id?: string | null) => {
+        if (!id) return null;
+        const p = proposals.find((x) => x.id === id);
+        return p ? `${p.riskTitle || p.metricName} · ${p.characteristic}` : id;
+    };
 
     return (
         <div style={pageContainer}>
@@ -317,9 +366,24 @@ const IncidentsAnalyticsPage: React.FC = () => {
                             <Col span={12}><Text type="secondary">Восстановлен: </Text>{fmtDate(selectedIncident.resolvedAt)}</Col>
                             {selectedIncident.releaseRef && <Col span={24}><Text type="secondary">Релиз/версия: </Text>{selectedIncident.releaseRef}</Col>}
                         </Row>
+                        {selectedIncident.category === 'OTHER' && selectedIncident.categoryCustom && (
+                            <div><Text type="secondary">Первопричина (уточнение): </Text><Text>{selectedIncident.categoryCustom}</Text></div>
+                        )}
                         <div>
-                            <Text type="secondary">Корневая причина (детально):</Text>
+                            <Text type="secondary">Корневая причина:</Text>
                             <Paragraph style={{ marginBottom: 0 }}>{selectedIncident.rootCause || '—'}</Paragraph>
+                        </div>
+                        <div>
+                            <Text type="secondary">Причина допущения:</Text>
+                            <Paragraph style={{ marginBottom: 0 }}>{selectedIncident.admissionCause || '—'}</Paragraph>
+                        </div>
+                        <Row gutter={[12, 8]}>
+                            <Col span={12}><Text type="secondary">Виновное направление: </Text><Text>{selectedIncident.responsibleUnit || '—'}</Text></Col>
+                            <Col span={12}><Text type="secondary">Связанная мера: </Text><Text>{measureTitleById(selectedIncident.linkedMeasureId) || '—'}</Text></Col>
+                        </Row>
+                        <div>
+                            <Text type="secondary">Меры по неповторению:</Text>
+                            <Paragraph style={{ marginBottom: 0 }}>{selectedIncident.preventiveMeasures || '—'}</Paragraph>
                         </div>
                     </Space>
                 )}
@@ -339,16 +403,36 @@ const IncidentsAnalyticsPage: React.FC = () => {
                 <Form form={form} layout="vertical" initialValues={{ severity: 'medium', occurredAt: dayjs() }}>
                     <Row gutter={12}>
                         <Col span={12}><Form.Item name="systemName" label="ИС" rules={[{ required: true, message: 'Укажите систему' }]}><Input placeholder="напр. АБС Core" /></Form.Item></Col>
-                        <Col span={12}><Form.Item name="category" label="Первопричина" rules={[{ required: true }]}>
-                            <Select options={INCIDENT_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABEL[c] }))} placeholder="Категория" />
+                        <Col span={12}><Form.Item name="category" label="Первопричина" rules={[{ required: true, message: 'Выберите первопричину' }]}>
+                            <Select options={baseCategoryOptions} placeholder="Категория" />
                         </Form.Item></Col>
                     </Row>
+                    {category === 'OTHER' && (
+                        <Form.Item name="categoryCustom" label="Новая первопричина" rules={[{ required: true, message: 'Укажите новую первопричину' }]}>
+                            <AutoComplete
+                                options={customCategoryOptions}
+                                placeholder="напр. человеческий фактор"
+                                filterOption={(inp, opt) => String(opt?.value ?? '').toLowerCase().includes(inp.toLowerCase())}
+                            />
+                        </Form.Item>
+                    )}
                     <Row gutter={12}>
                         <Col span={12}><Form.Item name="severity" label="Критичность"><Select options={Object.keys(SEVERITY_LABEL).map((s) => ({ value: s, label: SEVERITY_LABEL[s] }))} /></Form.Item></Col>
                         {category === 'RELEASE' && <Col span={12}><Form.Item name="releaseRef" label="Релиз/версия"><Input placeholder="напр. CRM 4.2.0" /></Form.Item></Col>}
                     </Row>
                     <Form.Item name="title" label="Краткое описание" rules={[{ required: true, message: 'Опишите сбой' }]}><Input placeholder="Что произошло" /></Form.Item>
-                    <Form.Item name="rootCause" label="Первопричина (детально)"><Input.TextArea rows={2} placeholder="Корневая причина сбоя" /></Form.Item>
+
+                    <Divider style={{ margin: '4px 0 12px' }} orientation="left" plain><Text type="secondary" style={{ fontSize: 12 }}>Обязательный разбор</Text></Divider>
+                    <Form.Item name="rootCause" label="Корневая причина" rules={[{ required: true, message: 'Укажите корневую причину' }]}><Input.TextArea rows={2} placeholder="Что стало непосредственной причиной сбоя" /></Form.Item>
+                    <Form.Item name="admissionCause" label="Причина допущения" rules={[{ required: true, message: 'Укажите причину допущения' }]}><Input.TextArea rows={2} placeholder="Почему сбой стал возможен — что не сработало в контроле" /></Form.Item>
+                    <Row gutter={12}>
+                        <Col span={12}><Form.Item name="responsibleUnit" label="Виновное направление производства" rules={[{ required: true, message: 'Укажите направление' }]}><Input placeholder="напр. Разработка CRM" /></Form.Item></Col>
+                        <Col span={12}><Form.Item name="linkedMeasureId" label="Связанная мера по улучшению качества" tooltip="Предлагаются меры этой ИС по характеристике, связанной с первопричиной; поиск ищет среди всех мер ИС">
+                            <Select allowClear showSearch optionFilterProp="label" placeholder={formSystem ? 'Подобрать меру…' : 'Сначала укажите ИС'} options={measureOptions} notFoundContent="Мер по этой ИС нет" />
+                        </Form.Item></Col>
+                    </Row>
+                    <Form.Item name="preventiveMeasures" label="Меры по неповторению" rules={[{ required: true, message: 'Укажите меры по неповторению' }]}><Input.TextArea rows={2} placeholder="Что сделать, чтобы сбой не повторился" /></Form.Item>
+
                     <Row gutter={12}>
                         <Col span={12}><Form.Item name="occurredAt" label="Возник" rules={[{ required: true }]}><DatePicker showTime style={{ width: '100%' }} format="DD.MM.YYYY HH:mm" /></Form.Item></Col>
                         <Col span={12}><Form.Item name="resolvedAt" label="Восстановлен (если закрыт)"><DatePicker showTime style={{ width: '100%' }} format="DD.MM.YYYY HH:mm" /></Form.Item></Col>

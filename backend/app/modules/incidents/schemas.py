@@ -25,6 +25,11 @@ class TechIncidentOut(_CamelModel):
     description: str | None = None
     root_cause: str | None = None
     release_ref: str | None = None
+    admission_cause: str | None = None
+    responsible_unit: str | None = None
+    preventive_measures: str | None = None
+    category_custom: str | None = None
+    linked_measure_id: uuid.UUID | None = None
     occurred_at: datetime
     resolved_at: datetime | None = None
     source: str
@@ -41,6 +46,11 @@ class TechIncidentCreate(_CamelModel):
     description: str | None = None
     root_cause: str | None = None
     release_ref: str | None = None
+    admission_cause: str | None = None
+    responsible_unit: str | None = None
+    preventive_measures: str | None = None
+    category_custom: str | None = None
+    linked_measure_id: uuid.UUID | None = None
     occurred_at: datetime
     resolved_at: datetime | None = None
     source: str = "manual"
@@ -53,12 +63,28 @@ class TechIncidentUpdate(_CamelModel):
     description: str | None = None
     root_cause: str | None = None
     release_ref: str | None = None
+    admission_cause: str | None = None
+    responsible_unit: str | None = None
+    preventive_measures: str | None = None
+    category_custom: str | None = None
+    linked_measure_id: uuid.UUID | None = None
     occurred_at: datetime | None = None
     resolved_at: datetime | None = None
 
 
 class ResolveIn(_CamelModel):
     resolved_at: datetime | None = None  # по умолчанию — «сейчас»
+
+
+# ─── Справочник первопричин (T-37) ───
+class IncidentCategoryOption(_CamelModel):
+    code: str
+    label: str
+
+
+class IncidentCategoriesOut(_CamelModel):
+    base: list[IncidentCategoryOption]   # базовые коды первопричин + русские метки
+    custom: list[str]                    # ранее введённые пользовательские первопричины (category=OTHER)
 
 
 # ─── Аналитика ───

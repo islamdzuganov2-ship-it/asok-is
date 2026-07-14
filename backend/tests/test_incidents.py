@@ -12,7 +12,10 @@ BASE = datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc)
 
 def _new(system="АБС Core", category="INFRASTRUCTURE", severity="high", **kw) -> TechIncidentCreate:
     data = dict(system_name=system, category=category, severity=severity,
-                title="Сбой", occurred_at=BASE)
+                title="Сбой", occurred_at=BASE,
+                # T-36: обязательные поля ручного ввода (source=manual по умолчанию).
+                root_cause="RCA", admission_cause="контроль не сработал",
+                responsible_unit="Эксплуатация", preventive_measures="ввести проверку")
     data.update(kw)
     return TechIncidentCreate(**data)
 
@@ -24,6 +27,27 @@ async def test_create_validates_category_and_severity(db_session):
         await service.create(db_session, _new(severity="urgent"), "manager")
     inc = await service.create(db_session, _new(), "manager")
     assert inc.category == "INFRASTRUCTURE" and inc.created_by == "manager"
+
+
+async def test_create_requires_manual_fields(db_session):
+    # T-36: ручной ввод (source=manual) требует корневую причину, причину допущения,
+    # виновное направление и меры по неповторению.
+    for miss in ("root_cause", "admission_cause", "responsible_unit", "preventive_measures"):
+        with pytest.raises(ValidationError):
+            await service.create(db_session, _new(**{miss: None}), "manager")
+    # Импорт/ITSM — мягкая проверка: те же пропуски допустимы.
+    inc = await service.create(db_session, _new(source="import", root_cause=None,
+                                                admission_cause=None, responsible_unit=None,
+                                                preventive_measures=None), "importer")
+    assert inc.source == "import"
+
+
+async def test_create_other_requires_custom(db_session):
+    # T-37: первопричина «Другое» требует текст новой первопричины.
+    with pytest.raises(ValidationError):
+        await service.create(db_session, _new(category="OTHER"), "manager")
+    inc = await service.create(db_session, _new(category="OTHER", category_custom="человеческий фактор"), "manager")
+    assert inc.category == "OTHER" and inc.category_custom == "человеческий фактор"
 
 
 async def test_list_filters(db_session):

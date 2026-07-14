@@ -185,11 +185,19 @@ export interface TechIncidentDto {
     description?: string;
     rootCause?: string;
     releaseRef?: string;
+    // T-36/T-37/T-42: обязательные поля разбора + пользовательская первопричина + связь с мерой.
+    admissionCause?: string;
+    responsibleUnit?: string;
+    preventiveMeasures?: string;
+    categoryCustom?: string;
+    linkedMeasureId?: string | null;
     occurredAt: string;
     resolvedAt?: string | null;
     source: string;
     createdBy?: string;
 }
+export interface IncidentCategoryOption { code: string; label: string }
+export interface IncidentCategoriesDto { base: IncidentCategoryOption[]; custom: string[] }
 export interface IncidentCategoryStat {
     category: string;
     count: number;
@@ -219,6 +227,11 @@ export interface IncidentCreateDto {
     description?: string;
     rootCause?: string;
     releaseRef?: string;
+    admissionCause?: string;
+    responsibleUnit?: string;
+    preventiveMeasures?: string;
+    categoryCustom?: string;
+    linkedMeasureId?: string | null;
     occurredAt: string;
     resolvedAt?: string | null;
 }
@@ -419,6 +432,10 @@ export const apiSlice = createApi({
             query: (p) => `/incidents/analytics${(p as { system?: string } | undefined)?.system ? `?system=${encodeURIComponent((p as { system?: string }).system!)}` : ''}`,
             providesTags: ['Incidents'],
         }),
+        getIncidentCategories: builder.query<IncidentCategoriesDto, void>({
+            query: () => '/incidents/categories',
+            providesTags: ['Incidents'],
+        }),
         createIncident: builder.mutation<TechIncidentDto, IncidentCreateDto>({
             query: (body) => ({ url: '/incidents', method: 'POST', body }),
             invalidatesTags: ['Incidents'],
@@ -470,6 +487,7 @@ export const {
     useUploadExcelReportMutation,
     useGetIncidentsQuery,
     useGetIncidentAnalyticsQuery,
+    useGetIncidentCategoriesQuery,
     useCreateIncidentMutation,
     useResolveIncidentMutation,
     useGetTriggeredRisksQuery,

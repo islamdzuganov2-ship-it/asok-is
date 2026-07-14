@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.incidents.models import (
     CATEGORIES,
     CATEGORY_LABELS,
+    CATEGORY_OTHER,
     CATEGORY_RELEASE,
     CATEGORY_TO_CHARACTERISTIC,
     SEVERITIES,
@@ -25,6 +26,8 @@ from app.modules.incidents.models import (
 from app.modules.incidents.schemas import (
     CategoryStat,
     IncidentAnalyticsOut,
+    IncidentCategoriesOut,
+    IncidentCategoryOption,
     SystemStat,
     TechIncidentCreate,
     TechIncidentUpdate,
@@ -41,6 +44,27 @@ def _validate(category: str | None, severity: str | None) -> None:
         raise ValidationError(f"Недопустимая категория сбоя: {category}")
     if severity is not None and severity not in SEVERITIES:
         raise ValidationError(f"Недопустимая критичность: {severity}")
+
+
+# T-36: обязательные поля разбора сбоя при РУЧНОМ вводе (source=manual). Для импорта/ITSM проверка
+# мягкая (внешние данные неполны — недостающее дозаполняется при ручной доработке карточки).
+_REQUIRED_MANUAL: dict[str, str] = {
+    "root_cause": "корневая причина",
+    "admission_cause": "причина допущения",
+    "responsible_unit": "виновное направление производства",
+    "preventive_measures": "меры по неповторению",
+}
+
+
+def _validate_manual_required(data: TechIncidentCreate) -> None:
+    if (data.source or "manual") != "manual":
+        return
+    missing = [label for field, label in _REQUIRED_MANUAL.items() if not (getattr(data, field) or "").strip()]
+    if missing:
+        raise ValidationError("Не заполнены обязательные поля: " + ", ".join(missing))
+    # T-37: первопричина «Другое» требует текст новой первопричины.
+    if data.category == CATEGORY_OTHER and not (data.category_custom or "").strip():
+        raise ValidationError("Для первопричины «Другое» укажите новую первопричину (categoryCustom)")
 
 
 def _mttr_hours(inc: TechIncident) -> float | None:
@@ -75,8 +99,17 @@ async def get_or_404(db: AsyncSession, iid: uuid.UUID) -> TechIncident:
     return inc
 
 
+async def list_categories(db: AsyncSession) -> IncidentCategoriesOut:
+    """Справочник первопричин (T-37): базовые коды + ранее введённые пользовательские (category=OTHER)."""
+    base = [IncidentCategoryOption(code=c, label=CATEGORY_LABELS.get(c, c)) for c in CATEGORIES]
+    stmt = select(TechIncident.category_custom).where(TechIncident.category_custom.is_not(None)).distinct()
+    custom = sorted({v.strip() for v in (await db.execute(stmt)).scalars().all() if v and v.strip()})
+    return IncidentCategoriesOut(base=base, custom=custom)
+
+
 async def create(db: AsyncSession, data: TechIncidentCreate, username: str) -> TechIncident:
     _validate(data.category, data.severity)
+    _validate_manual_required(data)
     inc = TechIncident(**data.model_dump(exclude_none=False), created_by=username)
     db.add(inc)
     await db.commit()

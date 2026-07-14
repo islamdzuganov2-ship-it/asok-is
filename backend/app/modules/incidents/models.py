@@ -25,10 +25,11 @@ CATEGORY_INFRASTRUCTURE = "INFRASTRUCTURE"  # инфраструктура (се
 CATEGORY_PERFORMANCE = "PERFORMANCE"        # производительность (деградация, нехватка ресурсов)
 CATEGORY_NETWORK = "NETWORK"                # сеть (связность, каналы, DNS, балансировка)
 CATEGORY_POWER = "POWER"                    # электроснабжение (питание ЦОД, ИБП)
+CATEGORY_OTHER = "OTHER"                    # пользовательская первопричина (текст — в category_custom, T-37)
 
 CATEGORIES = (
     CATEGORY_RELEASE, CATEGORY_INFRASTRUCTURE, CATEGORY_PERFORMANCE,
-    CATEGORY_NETWORK, CATEGORY_POWER,
+    CATEGORY_NETWORK, CATEGORY_POWER, CATEGORY_OTHER,
 )
 
 # Маппинг первопричины сбоя → характеристика качества ISO 25010 (для риск-триггеров T-16):
@@ -39,6 +40,7 @@ CATEGORY_TO_CHARACTERISTIC: dict[str, str] = {
     CATEGORY_PERFORMANCE: "Производительность",   # деградация — время отклика/ресурсы/ёмкость
     CATEGORY_NETWORK: "Надёжность",              # сетевые сбои — доступность
     CATEGORY_POWER: "Надёжность",               # электроснабжение — отказоустойчивость
+    CATEGORY_OTHER: "Надёжность",               # пользовательская — по умолчанию к надёжности
 }
 
 # Русские метки категорий (для сообщений backend, напр. пояснение риск-триггера).
@@ -48,6 +50,7 @@ CATEGORY_LABELS: dict[str, str] = {
     CATEGORY_PERFORMANCE: "производительность",
     CATEGORY_NETWORK: "сеть",
     CATEGORY_POWER: "электроснабжение",
+    CATEGORY_OTHER: "другое",
 }
 
 # Критичность сбоя — та же шкала, что у базы рисков (консистентность).
@@ -74,6 +77,17 @@ class TechIncident(Base, TimestampMixin):
     root_cause: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Ссылка на релиз/версию — для сбоев категории RELEASE (регрессия после развёртывания).
     release_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # T-36: обязательные (для ручного ввода source=manual) поля разбора сбоя. Nullable в БД —
+    # обязательность проверяет сервис (для manual), т.к. импорт/ITSM могут быть неполны.
+    admission_cause: Mapped[str | None] = mapped_column(Text, nullable=True)          # причина допущения
+    responsible_unit: Mapped[str | None] = mapped_column(String(255), nullable=True)  # виновное направление производства
+    preventive_measures: Mapped[str | None] = mapped_column(Text, nullable=True)      # меры по неповторению
+    # T-37: пользовательская первопричина, если category == OTHER.
+    category_custom: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # T-42: связь с мерой по улучшению качества (governance Proposal). Свободная ссылка (без FK —
+    # реестр мер может быть в отдельном хранилище/демо); опциональна (мера может появиться позже).
+    linked_measure_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     # Пока NULL — сбой открыт (не восстановлен). Заполнено → закрыт, для расчёта MTTR.
