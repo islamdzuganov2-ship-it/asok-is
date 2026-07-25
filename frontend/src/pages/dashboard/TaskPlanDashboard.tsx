@@ -77,7 +77,8 @@ const TaskPlanDashboard: React.FC = () => {
   const [due, setDue] = useState('');
   const [filter, setFilter] = useState<string>('Активные');
   const [sysFilter, setSysFilter] = useState<string>(ALL_SYS);
-  const [listOpen, setListOpen] = useState(true);
+  // Все сворачиваемые блоки изначально свёрнуты (по требованию).
+  const [listOpen, setListOpen] = useState(false);
 
   const now = Date.now();
   const kindOf = (t: Proposal): Kind => {

@@ -156,7 +156,13 @@ const ProfessionalJudgmentsPanel: React.FC<Props> = ({ periodId, periodLabel }) 
         title={<span><RobotOutlined /> Заключение LLM по профессиональным суждениям</span>}
       >
         {(concLoading || isFetching) ? (
-          <div><Spin /> <Text type="secondary">Генерация заключения на локальной модели (может занять ~1 мин)…</Text></div>
+          <div>
+            <Spin />{' '}
+            <Text type="secondary">
+              Генерация заключения на локальной модели… На мелкой модели — секунды; на крупной
+              (12–14B, CPU) конвейер делает 3 прохода и может считать несколько минут.
+            </Text>
+          </div>
         ) : conclusion ? (
           <>
             {conclusion.fired_rules && conclusion.fired_rules.length > 0 && (

@@ -11,6 +11,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { FundOutlined } from '@ant-design/icons';
 import type { Proposal } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken } from '../theme/ragPalette';
+import { premiumCard, accentDot, GOLD } from '../theme/premium';
 
 const { Text } = Typography;
 const TODAY = new Date(2026, 5, 26).getTime();
@@ -86,8 +87,9 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
 
   return (
     <Card
-      title={<span style={{ color: BRAND.ink }}><FundOutlined /> Статус технического долга</span>}
-      style={{ borderColor: BRAND.divider, height: '100%' }}
+      title={<span style={{ color: BRAND.ink }}><span style={accentDot(GOLD.base)} /><FundOutlined /> Статус технического долга</span>}
+      {...premiumCard('gold')}
+      style={{ ...premiumCard('gold').style, height: '100%' }}
     >
       {/* Период — отдельной строкой под заголовком, не конкурирует с названием */}
       <Space size={8} style={{ marginBottom: 14 }}>

@@ -9,6 +9,7 @@ import React, { useMemo, useState } from 'react';
 import { Card, Button, Table, Tag, Typography, Alert, Spin, Space, Collapse } from 'antd';
 import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { ragToken } from '../theme/ragPalette';
+import { premiumCard, accentDot } from '../theme/premium';
 import type { Proposal } from '../store/slices/governanceSlice';
 import ConclusionFeedback from './ConclusionFeedback';
 
@@ -89,9 +90,9 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
 
   return (
     <Card
-      title={<span><RobotOutlined /> Топ проблемных ИС — AI-аналитика по мерам</span>}
-      style={{ marginBottom: 16 }}
-      styles={{ body: { paddingTop: 12 } }}
+      title={<span><span style={accentDot('#6E89A6')} /><RobotOutlined /> Топ проблемных ИС — AI-аналитика по мерам</span>}
+      {...premiumCard('slate', { marginBottom: 16 })}
+      styles={{ header: premiumCard('slate').styles.header, body: { padding: 18, paddingTop: 12 } }}
       extra={<Button type="primary" icon={<ThunderboltOutlined />} loading={loading} disabled={agg.length === 0} onClick={run}>
         Собрать AI-аналитику
       </Button>}
@@ -113,7 +114,15 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
                 render: (v: number | null) => v == null ? '—' : <Tag color={ragToken(v).color} style={{ color: '#fff', border: 'none' }}>{v}%</Tag> },
             ]}
           />
-          {loading && <div><Spin size="small" /> <Text type="secondary">LLM собирает аналитику по мерам (~1 мин)…</Text></div>}
+          {loading && (
+            <div>
+              <Spin size="small" />{' '}
+              <Text type="secondary">
+                LLM собирает аналитику по мерам… На мелкой модели — секунды; на крупной (12–14B, CPU)
+                конвейер делает 3 прохода и может считать несколько минут.
+              </Text>
+            </div>
+          )}
           {err && <Alert type="warning" showIcon message="LLM недоступна" description={err} />}
           {data && !loading && (
             <Alert

@@ -198,6 +198,7 @@ export interface TechIncidentDto {
 }
 export interface IncidentCategoryOption { code: string; label: string }
 export interface IncidentCategoriesDto { base: IncidentCategoryOption[]; custom: string[] }
+export interface IncidentImportResultDto { created: number; skipped: number; errors: string[] }
 export interface IncidentCategoryStat {
     category: string;
     count: number;
@@ -440,6 +441,10 @@ export const apiSlice = createApi({
             query: (body) => ({ url: '/incidents', method: 'POST', body }),
             invalidatesTags: ['Incidents'],
         }),
+        importIncidents: builder.mutation<IncidentImportResultDto, Record<string, string>[]>({
+            query: (rows) => ({ url: '/incidents/import', method: 'POST', body: rows }),
+            invalidatesTags: ['Incidents'],
+        }),
         resolveIncident: builder.mutation<TechIncidentDto, { id: string; resolvedAt?: string }>({
             query: ({ id, resolvedAt }) => ({ url: `/incidents/${id}/resolve`, method: 'POST', body: { resolvedAt } }),
             invalidatesTags: ['Incidents'],
@@ -489,6 +494,7 @@ export const {
     useGetIncidentAnalyticsQuery,
     useGetIncidentCategoriesQuery,
     useCreateIncidentMutation,
+    useImportIncidentsMutation,
     useResolveIncidentMutation,
     useGetTriggeredRisksQuery,
     useGetSystemDynamicsQuery,

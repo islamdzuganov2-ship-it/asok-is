@@ -578,6 +578,29 @@ async def finalize_assessment(
             ),
         )
 
+    # T-55: метрика «Невозможно измерить» обязана иметь ПРИЧИНУ (expert_comment). Профессиональное
+    # суждение и меры по таким метрикам ведутся в соответствующих разделах; здесь жёстко гарантируем
+    # причину — без неё завершить оценку нельзя.
+    unmeasured = (
+        await db.execute(
+            select(MetricCatalog.subcharacteristic, AssessmentValue.expert_comment)
+            .join(AssessmentValue, AssessmentValue.metric_id == MetricCatalog.id)
+            .where(
+                AssessmentValue.period_id == period_id,
+                AssessmentValue.unmeasurable.is_(True),
+            )
+        )
+    ).all()
+    missing_reason = sorted({sub for sub, comment in unmeasured if not (comment or "").strip()})
+    if missing_reason:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Неизмеримые метрики без причины: " + ", ".join(missing_reason)
+                + ". Для метрики «Невозможно измерить» обязательна причина (комментарий эксперта)."
+            ),
+        )
+
     period.status = "COMPLETE"
     await db.commit()
     return PeriodSummaryOut(

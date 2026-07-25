@@ -31,7 +31,7 @@ interface Props {
 }
 
 const CollapsibleCard: React.FC<Props> = ({
-  title, extra, subtitle, accent = 'ink', defaultOpen = true, open, onToggle, style, bodyStyle, children,
+  title, extra, subtitle, accent = 'ink', defaultOpen = false, open, onToggle, style, bodyStyle, children,
 }) => {
   const [innerOpen, setInnerOpen] = useState(defaultOpen);
   const isOpen = open ?? innerOpen;

@@ -16,8 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.incidents.models import (
     CATEGORIES,
+    CATEGORY_INFRASTRUCTURE,
     CATEGORY_LABELS,
+    CATEGORY_NETWORK,
     CATEGORY_OTHER,
+    CATEGORY_PERFORMANCE,
+    CATEGORY_POWER,
     CATEGORY_RELEASE,
     CATEGORY_TO_CHARACTERISTIC,
     SEVERITIES,
@@ -28,6 +32,8 @@ from app.modules.incidents.schemas import (
     IncidentAnalyticsOut,
     IncidentCategoriesOut,
     IncidentCategoryOption,
+    IncidentImportResult,
+    IncidentImportRow,
     SystemStat,
     TechIncidentCreate,
     TechIncidentUpdate,
@@ -105,6 +111,89 @@ async def list_categories(db: AsyncSession) -> IncidentCategoriesOut:
     stmt = select(TechIncident.category_custom).where(TechIncident.category_custom.is_not(None)).distinct()
     custom = sorted({v.strip() for v in (await db.execute(stmt)).scalars().all() if v and v.strip()})
     return IncidentCategoriesOut(base=base, custom=custom)
+
+
+# ─── Импорт из внешних источников (T-43): нормализация значений нестандартизированного файла ───
+# Синонимы первопричины (значение файла → код). Базовые коды/метки + распространённые термины ITSM.
+_CATEGORY_BY_ALIAS: dict[str, str] = {
+    **{code.lower(): code for code in CATEGORIES},
+    **{CATEGORY_LABELS[code].lower(): code for code in CATEGORIES if code in CATEGORY_LABELS},
+    "release": CATEGORY_RELEASE, "привнесено релизом": CATEGORY_RELEASE, "регрессия": CATEGORY_RELEASE,
+    "infrastructure": CATEGORY_INFRASTRUCTURE, "инфраструктура": CATEGORY_INFRASTRUCTURE, "схд": CATEGORY_INFRASTRUCTURE,
+    "performance": CATEGORY_PERFORMANCE, "производительность": CATEGORY_PERFORMANCE, "деградация": CATEGORY_PERFORMANCE,
+    "network": CATEGORY_NETWORK, "сеть": CATEGORY_NETWORK, "dns": CATEGORY_NETWORK,
+    "power": CATEGORY_POWER, "электроснабжение": CATEGORY_POWER, "питание": CATEGORY_POWER, "ибп": CATEGORY_POWER,
+}
+_SEVERITY_BY_ALIAS: dict[str, str] = {"p1": "critical", "p2": "high", "p3": "medium", "p4": "low"}
+_DATE_FORMATS = ("%d.%m.%Y %H:%M", "%d.%m.%Y", "%Y-%m-%d %H:%M", "%Y-%m-%d")
+
+
+def _map_category(raw: str | None) -> tuple[str, str | None]:
+    v = (raw or "").strip()
+    if not v:
+        return CATEGORY_OTHER, "не указана"
+    code = _CATEGORY_BY_ALIAS.get(v.lower())
+    return (code, None) if code else (CATEGORY_OTHER, v)
+
+
+def _map_severity(raw: str | None) -> str:
+    v = (raw or "").strip().lower()
+    if v in SEVERITIES:
+        return v
+    return _SEVERITY_BY_ALIAS.get(v, "medium")
+
+
+def _parse_dt(raw: str | None) -> datetime | None:
+    v = (raw or "").strip()
+    if not v:
+        return None
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(v, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    try:
+        d = datetime.fromisoformat(v.replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+async def import_incidents(db: AsyncSession, rows: list[IncidentImportRow], username: str) -> IncidentImportResult:
+    """Импорт распарсенных строк ТС из внешнего ITSM/ЕХД/DWH (source=import). Нормализует первопричину/
+    критичность/даты, дедуплицирует по (система+описание+дата) против БД и внутри пакета. Обязательность
+    полей разбора — мягкая (внешние данные неполны); недостающая корректная дата возникновения → пропуск.
+    """
+    existing = {(r.system_name, r.title, r.occurred_at.isoformat()) for r in await list_incidents(db)}
+    seen: set[tuple[str, str, str]] = set()
+    created = 0
+    skipped = 0
+    errors: list[str] = []
+    for i, row in enumerate(rows, 1):
+        system = (row.system_name or "").strip()
+        title = (row.title or "").strip()
+        occ = _parse_dt(row.occurred_at)
+        if not system or not title or occ is None:
+            skipped += 1
+            errors.append(f"Строка {i}: пропущена — нет системы/описания/корректной даты возникновения")
+            continue
+        key = (system, title, occ.isoformat())
+        if key in existing or key in seen:
+            skipped += 1
+            errors.append(f"Строка {i}: дубль — {system} · {title}")
+            continue
+        seen.add(key)
+        code, custom = _map_category(row.category)
+        db.add(TechIncident(
+            system_name=system, title=title, category=code, category_custom=custom,
+            severity=_map_severity(row.severity), occurred_at=occ, resolved_at=_parse_dt(row.resolved_at),
+            root_cause=row.root_cause, admission_cause=row.admission_cause,
+            responsible_unit=row.responsible_unit, preventive_measures=row.preventive_measures,
+            release_ref=row.release_ref, source="import", created_by=username,
+        ))
+        created += 1
+    await db.commit()
+    return IncidentImportResult(created=created, skipped=skipped, errors=errors[:50])
 
 
 async def create(db: AsyncSession, data: TechIncidentCreate, username: str) -> TechIncident:

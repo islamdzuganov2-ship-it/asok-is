@@ -18,6 +18,8 @@ from app.modules.incidents import service
 from app.modules.incidents.schemas import (
     IncidentAnalyticsOut,
     IncidentCategoriesOut,
+    IncidentImportResult,
+    IncidentImportRow,
     ResolveIn,
     TechIncidentCreate,
     TechIncidentOut,
@@ -66,6 +68,16 @@ async def create_incident(
     user: dict = Depends(require_role(*MANAGER_ROLES)),
 ):
     return await service.create(db, payload, user.get("username") or "—")
+
+
+@router.post("/import", response_model=IncidentImportResult)
+async def import_incidents(
+    rows: list[IncidentImportRow],
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_role(*MANAGER_ROLES)),
+) -> IncidentImportResult:
+    """Импорт ТС из внешнего ITSM/ЕХД/DWH (T-43): распарсенные строки → нормализация + дедуп → БД."""
+    return await service.import_incidents(db, rows, user.get("username") or "import")
 
 
 @router.patch("/{iid}", response_model=TechIncidentOut)

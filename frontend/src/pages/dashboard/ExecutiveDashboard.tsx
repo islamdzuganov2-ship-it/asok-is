@@ -14,6 +14,7 @@ import { RootState } from '../../store';
 import { ExecSystemInsight, ExecutiveDashboardData } from '../../data/mockDashboards';
 import { EXECUTIVE_SCALE, HEATMAP_CHARS_FULL } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND, critTagStyle } from '../../theme/ragPalette';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM } from '../../theme/premium';
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
@@ -224,16 +225,13 @@ const ExecutiveDashboard: React.FC = () => {
   );
 
   return (
-    <div style={{ padding: 24, background: BRAND.canvas, minHeight: '100%' }}>
+    <div style={pageContainer}>
       {/* Заголовок + общий индекс */}
-      <Card
-        styles={{ body: { padding: 20 } }}
-        style={{ marginBottom: 16, borderColor: BRAND.divider }}
-      >
-        <Row align="middle" gutter={16}>
-          <Col flex="auto">
-            <Title level={4} style={{ margin: 0, color: BRAND.ink }}>
-              Управленческий Dashboard
+      <Card {...premiumCard('gold')} style={{ ...premiumCard('gold').style, marginBottom: 16 }}>
+        <Row align="middle" gutter={[16, 12]} wrap>
+          <Col flex="auto" style={{ minWidth: 260 }}>
+            <Title level={4} style={pageTitle}>
+              <span style={accentDot(GOLD.base)} />Управленческий дашборд
             </Title>
             <Text type="secondary">
               Общий индекс качества ИТ-ландшафта:&nbsp;
@@ -252,7 +250,7 @@ const ExecutiveDashboard: React.FC = () => {
             </Badge>
           </Col>
           <Col>
-            <div style={{ width: 200, height: 130 }}>
+            <div style={{ width: 200, height: 130, flex: '0 0 auto' }}>
               <ReactECharts option={gaugeOption} style={{ height: '100%', width: '100%' }} />
             </div>
           </Col>
@@ -261,10 +259,7 @@ const ExecutiveDashboard: React.FC = () => {
 
       {/* Live AI-резюме от встроенной LLM (только в режиме LLM) */}
       {isLive && (
-        <Card
-          style={{ marginBottom: 16, borderColor: BRAND.divider }}
-          styles={{ body: { padding: 16 } }}
-        >
+        <Card {...premiumCard('slate')} style={{ ...premiumCard('slate').style, marginBottom: 16 }}>
           <Space align="start">
             <RobotOutlined style={{ color: BRAND.ink, fontSize: 18, marginTop: 2 }} />
             <div>
@@ -310,7 +305,7 @@ const ExecutiveDashboard: React.FC = () => {
               <Card
                 hoverable
                 onClick={() => setActive(sys)}
-                style={{ borderColor: tok.border, background: tok.soft, height: '100%' }}
+                style={{ borderColor: tok.border, background: tok.soft, height: '100%', borderRadius: PREMIUM.radius, boxShadow: PREMIUM.shadow.card }}
                 styles={{ body: { padding: 16 } }}
               >
                 <Space style={{ marginBottom: 8 }} wrap>
@@ -347,10 +342,10 @@ const ExecutiveDashboard: React.FC = () => {
         {/* Тепловая карта */}
         <Col xs={24} lg={15}>
           <Card
-            title={<span style={{ color: BRAND.ink }}><AppstoreOutlined /> Тепловая карта характеристик</span>}
+            title={<span style={{ color: BRAND.ink }}><span style={accentDot('#6E89A6')} /><AppstoreOutlined /> Тепловая карта характеристик</span>}
             extra={<Button type="link" size="small" onClick={() => navigate('/dashboard/analytics')}>Детали →</Button>}
-            style={{ borderColor: BRAND.divider }}
-            styles={{ body: { overflowX: 'auto' } }}
+            {...premiumCard('slate')}
+            styles={{ header: premiumCard('slate').styles.header, body: { padding: 18, overflowX: 'auto' } }}
           >
             <table style={{ borderCollapse: 'separate', borderSpacing: '0 8px', width: '100%' }}>
               <thead>

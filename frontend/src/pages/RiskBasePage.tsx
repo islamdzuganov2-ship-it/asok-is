@@ -11,6 +11,8 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined, InboxOutlined } from '@ant-design/icons';
+import { Card } from 'antd';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD } from '../theme/premium';
 
 const { Title, Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -126,10 +128,11 @@ const RiskBasePage: React.FC = () => {
   ];
 
   return (
+    <div style={pageContainer}>
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+      <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
         <div>
-          <Title level={3} style={{ margin: 0, color: '#1F3864' }}>База рисков</Title>
+          <Title level={4} style={pageTitle}><span style={accentDot(GOLD.base)} />База рисков</Title>
           <Text type="secondary">
             Накопительный реестр знаний о рисках. Используется LLM для обоснования рекомендаций.
           </Text>
@@ -148,17 +151,18 @@ const RiskBasePage: React.FC = () => {
 
       {error && <Alert type="error" showIcon message="Ошибка загрузки" description={error} closable />}
 
-      <Table<Risk>
-        columns={columns}
-        dataSource={risks}
-        rowKey="id"
-        loading={loading}
-        size="small"
-        bordered
-        scroll={{ x: 1100 }}
-        pagination={{ pageSize: 15, hideOnSinglePage: true }}
-        locale={{ emptyText: 'База пуста. Добавьте риск или импортируйте из периода оценки.' }}
-      />
+      <Card {...premiumCard('terracotta')} styles={{ body: { padding: 0 } }}>
+        <Table<Risk>
+          columns={columns}
+          dataSource={risks}
+          rowKey="id"
+          loading={loading}
+          size="small"
+          scroll={{ x: 1100 }}
+          pagination={{ pageSize: 15, hideOnSinglePage: true }}
+          locale={{ emptyText: 'База пуста. Добавьте риск или импортируйте из периода оценки.' }}
+        />
+      </Card>
 
       <Modal
         title="Новый риск в базу"
@@ -211,6 +215,7 @@ const RiskBasePage: React.FC = () => {
         </Form>
       </Modal>
     </Space>
+    </div>
   );
 };
 

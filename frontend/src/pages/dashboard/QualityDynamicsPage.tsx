@@ -84,8 +84,8 @@ const QualityDynamicsPage: React.FC = () => {
   const dyn = DYNAMICS[system.name];
   const [charFilter, setCharFilter] = useState<string | undefined>();
   const [modalSeries, setModalSeries] = useState<DynSeries | null>(null);
-  // Карточка подхарактеристик — сворачиваемая; выбор фильтра характеристики её авто-раскрывает (T-22).
-  const [subsOpen, setSubsOpen] = useState(true);
+  // Карточка подхарактеристик — сворачиваемая, изначально СВЁРНУТА; выбор фильтра её авто-раскрывает (T-22).
+  const [subsOpen, setSubsOpen] = useState(false);
   const onCharFilter = (v?: string) => { setCharFilter(v); setSubsOpen(true); };
 
   // 0. Карточка «Качество информационной системы»: одна ИС по кварталам или все ИС разом.

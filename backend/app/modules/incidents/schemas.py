@@ -87,6 +87,29 @@ class IncidentCategoriesOut(_CamelModel):
     custom: list[str]                    # ранее введённые пользовательские первопричины (category=OTHER)
 
 
+# ─── Импорт техсбоев из внешних источников (T-43) ───
+class IncidentImportRow(_CamelModel):
+    """Одна строка загрузки (нестандартизированная): значения — как в файле, нормализуются сервисом.
+    Даты — строки (парсятся на сервере: ДД.ММ.ГГГГ[ ЧЧ:ММ] или ISO)."""
+    system_name: str | None = None
+    title: str | None = None
+    occurred_at: str | None = None
+    resolved_at: str | None = None
+    category: str | None = None
+    severity: str | None = None
+    root_cause: str | None = None
+    admission_cause: str | None = None
+    responsible_unit: str | None = None
+    preventive_measures: str | None = None
+    release_ref: str | None = None
+
+
+class IncidentImportResult(_CamelModel):
+    created: int
+    skipped: int
+    errors: list[str]
+
+
 # ─── Аналитика ───
 class CategoryStat(_CamelModel):
     category: str

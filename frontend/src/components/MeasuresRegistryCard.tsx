@@ -14,6 +14,7 @@ import { Card, List, Input, Select, Space, Tag, Button, Typography, Empty, Row, 
 import { AuditOutlined, RightOutlined, ClockCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import type { Proposal, ProposalStatus } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken } from '../theme/ragPalette';
+import { premiumCard, accentDot } from '../theme/premium';
 
 const STATUS_TAG: Record<ProposalStatus, { color: string; label: string }> = {
   PENDING_APPROVAL: { color: 'gold', label: 'Ожидает решения' },
@@ -105,10 +106,10 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
 
   return (
     <Card
-      style={{ marginTop: 16, borderColor: BRAND.divider }}
+      {...premiumCard('ink', { marginTop: 16 })}
       title={
         <span style={{ color: BRAND.ink }}>
-          <AuditOutlined /> Реестр мер качества{' '}
+          <span style={accentDot('#6E89A6')} /><AuditOutlined /> Реестр мер качества{' '}
           <Text type="secondary" style={{ fontSize: 12 }}>(всего: {proposals.length})</Text>
         </span>
       }

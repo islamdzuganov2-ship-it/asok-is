@@ -16,6 +16,7 @@ import {
     useSaveAssessmentMetricsMutation,
 } from '../store/api/apiSlice';
 import { RootState } from '../store';
+import { accentDot, pageTitle, GOLD } from '../theme/premium';
 import {
     approveProposal, rejectProposal, selectVisibleProposals, type ProposalStatus,
 } from '../store/slices/governanceSlice';
@@ -360,7 +361,7 @@ export const ExcelReportsPage: React.FC = () => {
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
             <Row gutter={[16, 16]} align="middle" justify="space-between">
                 <Col>
-                    <Title level={3} style={{ margin: 0, color: '#1F3864' }}>Реестры и отчеты по качеству ИС</Title>
+                    <Title level={4} style={pageTitle}><span style={accentDot(GOLD.base)} />Реестры и отчеты по качеству ИС</Title>
                     <Text type="secondary">Результаты оценки (характеристики качества ИС), риски, недостатки и план обеспечения качества.</Text>
                 </Col>
                 <Col>

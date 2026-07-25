@@ -4,6 +4,7 @@ import { LineChartOutlined, ScheduleOutlined, DashboardOutlined, ThunderboltOutl
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { setExecFeature, type ExecFeatureKey } from '../store/slices/uiSlice';
+import { accentDot, pageContainer, pageTitle, GOLD, PREMIUM } from '../theme/premium';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -95,8 +96,8 @@ const AdminFlagsPage: React.FC = () => {
   const ui = useSelector((s: RootState) => s.ui);
 
   return (
-    <div style={{ padding: 24 }}>
-      <Title level={3}>Настройка</Title>
+    <div style={pageContainer}>
+      <Title level={4} style={pageTitle}><span style={accentDot(GOLD.base)} />Настройка</Title>
       <Text type="secondary">Опциональные дашборды для топ-менеджмента. Включите нужные — они появятся в меню.</Text>
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         {FEATURES.map((f) => {
@@ -107,7 +108,7 @@ const AdminFlagsPage: React.FC = () => {
               <Card
                 hoverable
                 styles={{ body: { padding: 0 } }}
-                style={{ borderColor: on ? '#8FB9A2' : undefined, overflow: 'hidden' }}
+                style={{ borderColor: on ? '#8FB9A2' : PREMIUM.border, overflow: 'hidden', borderRadius: PREMIUM.radius, boxShadow: PREMIUM.shadow.card }}
               >
                 <div style={{ padding: 16, background: on ? '#F5FAF7' : '#FAFBFC', borderBottom: '1px solid #EEF0F2' }}>
                   <Preview on={on} />

@@ -4,7 +4,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.modules.incidents import service
-from app.modules.incidents.schemas import ResolveIn, TechIncidentCreate, TechIncidentUpdate
+from app.modules.incidents.schemas import (
+    IncidentImportRow,
+    ResolveIn,
+    TechIncidentCreate,
+    TechIncidentUpdate,
+)
 from app.shared.exceptions import NotFoundError, ValidationError
 
 BASE = datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc)
@@ -114,3 +119,29 @@ async def test_get_or_404(db_session):
     import uuid
     with pytest.raises(NotFoundError):
         await service.get_or_404(db_session, uuid.uuid4())
+
+
+async def test_import_incidents_normalizes_and_dedups(db_session):
+    # T-43: импорт нестандартизированных строк — нормализация первопричины/критичности/дат,
+    # дедуп по (система+описание+дата), нераспознанная первопричина → OTHER + исходный текст.
+    rows = [
+        IncidentImportRow(system_name="CRM ОПК", title="Сбой A", occurred_at="10.02.2026 09:00",
+                          category="Привнесено релизом", severity="P2", resolved_at="10.02.2026 15:00"),
+        IncidentImportRow(system_name="CRM ОПК", title="Сбой A", occurred_at="10.02.2026 09:00", category="release"),  # дубль
+        IncidentImportRow(system_name="", title="нет системы", occurred_at="2026-01-01"),                              # пропуск
+        IncidentImportRow(system_name="HR", title="Странная причина", occurred_at="2026-03-01",
+                          category="человеческий фактор"),                                                            # OTHER+custom
+    ]
+    res = await service.import_incidents(db_session, rows, "importer")
+    assert res.created == 2 and res.skipped == 2 and len(res.errors) == 2
+
+    items = await service.list_incidents(db_session)
+    crm = next(i for i in items if i.title == "Сбой A")
+    assert crm.category == "RELEASE" and crm.severity == "high" and crm.source == "import"
+    assert crm.resolved_at is not None
+    other = next(i for i in items if i.title == "Странная причина")
+    assert other.category == "OTHER" and other.category_custom == "человеческий фактор"
+
+    # Повторный импорт того же — всё уходит в дубли (0 создано).
+    res2 = await service.import_incidents(db_session, rows[:1], "importer")
+    assert res2.created == 0 and res2.skipped == 1

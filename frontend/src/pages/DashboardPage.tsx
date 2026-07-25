@@ -17,6 +17,7 @@ import { selectVisibleProposals } from '../store/slices/governanceSlice';
 import { ANALYTICS_SCALE } from '../data/mockScaleData';
 import LevelHeatmap, { LEVEL_COLORS } from '../components/LevelHeatmap';
 import { critTagStyle, levelLabel } from '../theme/ragPalette';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM } from '../theme/premium';
 
 const { Title, Text } = Typography;
 
@@ -212,7 +213,7 @@ const DashboardPage: React.FC = () => {
 
   const KpiCard: React.FC<{ k: DetailKey; title: string; value: React.ReactNode; color?: string }> =
     ({ k, title, value, color }) => (
-      <Card size="small" hoverable onClick={() => setDetail(k)} style={{ cursor: 'pointer' }}>
+      <Card size="small" hoverable onClick={() => setDetail(k)} style={{ cursor: 'pointer', borderRadius: PREMIUM.radiusSm, border: `1px solid ${PREMIUM.border}`, boxShadow: PREMIUM.shadow.card, height: '100%' }}>
         {loading ? <Skeleton.Input active /> : (
           <>
             <Statistic title={title} value={value as any} valueStyle={color ? { color, fontWeight: 700 } : undefined} />
@@ -293,9 +294,9 @@ const DashboardPage: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: 24 }}>
-      <Title level={4} style={{ marginBottom: 4 }}>
-        Аналитический дашборд качества ИС{' '}
+    <div style={pageContainer}>
+      <Title level={4} style={{ ...pageTitle, marginBottom: 4 }}>
+        <span style={accentDot(GOLD.base)} />Аналитический дашборд качества ИС{' '}
         <Tag color={isMock ? 'gold' : 'green'}>{isMock ? 'Демо-данные' : 'Live из БД'}</Tag>
       </Title>
       <Text type="secondary" style={{ display: 'block', marginBottom: 20 }}>
@@ -316,12 +317,16 @@ const DashboardPage: React.FC = () => {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={10}>
-          <Card title="Распределение по уровням качества" style={{ height: 380 }}>
+          <Card
+            title={<span><span style={accentDot('#6E89A6')} />Распределение по уровням качества</span>}
+            {...premiumCard('slate')}
+            style={{ ...premiumCard('slate').style, height: 380 }}
+          >
             {loading ? <Skeleton active paragraph={{ rows: 6 }} />
               : data?.totalMetrics === 0
                 ? <Text type="secondary">Нет данных. Создайте период оценки и введите метрики.</Text>
                 : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, minHeight: 220 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, minHeight: 220, flexWrap: 'wrap', justifyContent: 'center' }}>
                     <div ref={donutRef} style={{ width: 200, height: 200, flex: '0 0 200px' }} />
                     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {levelDist.map((r) => (
@@ -339,7 +344,11 @@ const DashboardPage: React.FC = () => {
         </Col>
 
         <Col xs={24} lg={14}>
-          <Card title="Проблемные ИС (наибольшее число низких метрик)" style={{ height: 380 }}>
+          <Card
+            title={<span><span style={accentDot(GOLD.base)} />Проблемные ИС (наибольшее число низких метрик)</span>}
+            {...premiumCard('ink')}
+            style={{ ...premiumCard('ink').style, height: 380 }}
+          >
             {loading ? <Skeleton active /> : (
               <Table
                 dataSource={data?.problematicSystems ?? []} rowKey="id" size="small" pagination={false}
@@ -356,8 +365,11 @@ const DashboardPage: React.FC = () => {
         </Col>
 
         <Col xs={24}>
-          <Card title="Тепловая карта: характеристики качества ИС"
-            styles={{ body: { paddingTop: 12 } }}>
+          <Card
+            title={<span><span style={accentDot('#6E89A6')} />Тепловая карта: характеристики качества ИС</span>}
+            {...premiumCard('slate')}
+            styles={{ header: premiumCard('slate').styles.header, body: { padding: 18, paddingTop: 12 } }}
+          >
             {loading ? <Skeleton active paragraph={{ rows: 8 }} />
               : !data || !data.heatmapData.length
                 ? <Text type="secondary">Нет данных для тепловой карты.</Text>
