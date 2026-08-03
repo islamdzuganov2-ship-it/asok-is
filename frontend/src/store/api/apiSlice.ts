@@ -136,6 +136,20 @@ export interface JudgmentConclusion {
     reasoning?: { stages?: Array<{ code: string; title: string; content: string; used_llm?: boolean; fell_back?: boolean }> } | null;
 }
 
+/** Метрика оценки, по которой НЕ внесено профессиональное суждение (T-48). */
+export interface PendingJudgment {
+    period_id: string;
+    system_id: string;
+    system_name: string;
+    period: string;
+    characteristic: string;
+    subcharacteristic: string;
+    /** Балл подхарактеристики, %; -1 — «Невозможно измерить». */
+    score_pct: number;
+    quality_level?: string | null;
+    expert_comment?: string | null;
+}
+
 /** Сводка по периоду оценки: полнота заполнения подхарактеристик модели. */
 export interface PeriodSummary {
     id: string;
@@ -383,6 +397,26 @@ export const apiSlice = createApi({
             }),
             invalidatesTags: ['Assessment', 'Dashboard'],
         }),
+        /** T-47: открыть завершённую оценку на корректировку (разблокировка периода). */
+        reopenAssessment: builder.mutation<PeriodSummary, string>({
+            query: (id) => ({
+                url: `/assessments/${id}/reopen`,
+                method: 'POST',
+            }),
+            invalidatesTags: ['Assessment', 'Metrics', 'Dashboard'],
+        }),
+        /** T-48: метрики без профессионального суждения (по умолчанию — последний период ИС). */
+        getPendingJudgments: builder.query<PendingJudgment[], { system?: string; all_periods?: boolean } | void>({
+            query: (p) => {
+                const a = p as { system?: string; all_periods?: boolean } | undefined;
+                const params = new URLSearchParams();
+                if (a?.system) params.set('system', a.system);
+                if (a?.all_periods) params.set('all_periods', 'true');
+                const qs = params.toString();
+                return `/assessments/judgments-pending${qs ? `?${qs}` : ''}`;
+            },
+            providesTags: ['Assessment'],
+        }),
         getJudgments: builder.query<JudgmentsStatus, string>({
             query: (id) => `/assessments/${id}/judgments`,
             providesTags: ['Assessment'],
@@ -474,7 +508,9 @@ export const {
     useCreateMetricMutation,
     useCreateSystemMutation,
     useFinalizeAssessmentMutation,
+    useReopenAssessmentMutation,
     useGetJudgmentsQuery,
+    useGetPendingJudgmentsQuery,
     useSaveJudgmentsMutation,
     useLazyGetJudgmentConclusionQuery,
     useGetAssessmentMetricsQuery,

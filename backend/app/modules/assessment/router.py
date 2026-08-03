@@ -36,6 +36,7 @@ from app.modules.assessment.schemas import (
     JudgmentIn,
     JudgmentOut,
     JudgmentsStatusOut,
+    PendingJudgmentOut,
     PeriodCreate,
     PeriodOut,
     PeriodSummaryOut,
@@ -43,7 +44,14 @@ from app.modules.assessment.schemas import (
 )
 from app.modules.risk import RiskBase
 from app.modules.systems import System
-from app.shared.periods import period_sort_key
+from app.shared.periods import (
+    PERIOD_LOCKED_MESSAGE,
+    STATUS_CALCULATED,
+    STATUS_COMPLETE,
+    STATUS_DRAFT,
+    is_period_locked,
+    period_sort_key,
+)
 from app.modules.dataio.importer import ensure_period_values, get_or_create_metric
 from app.modules.llm import gate as llm_gate
 from app.modules.llm import reasoning as llm_reasoning
@@ -261,7 +269,7 @@ async def create_assessment_period(payload: PeriodCreate, db: AsyncSession = Dep
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="Assessment period already exists")
 
-    period = AssessmentPeriod(system_id=payload.system_id, period=payload.period, status="DRAFT")
+    period = AssessmentPeriod(system_id=payload.system_id, period=payload.period, status=STATUS_DRAFT)
     db.add(period)
     await db.flush()
     await ensure_period_values(db, period)
@@ -381,7 +389,9 @@ async def save_assessment_metrics(
     metrics: List[EditableMetricIn],
     db: AsyncSession = Depends(get_db),
 ):
-    await _require_period(db, period_id)
+    # T-47: завершённая оценка заблокирована — правка только после «открытия на корректировку»
+    # (POST /{period_id}/reopen), иначе итоги дашбордов молча менялись бы задним числом.
+    _ensure_editable(await _require_period(db, period_id))
     updated = 0
     errors: list[str] = []
 
@@ -426,7 +436,7 @@ async def save_assessment_metrics(
 
     period = await db.get(AssessmentPeriod, period_id)
     if period is not None:
-        period.status = "CALCULATED" if updated else period.status
+        period.status = STATUS_CALCULATED if updated else period.status
     await db.commit()
     return {"status": "ok", "updated": updated, "errors": errors}
 
@@ -469,7 +479,8 @@ async def add_assessment_value(
     Метрика каталога находится или создаётся по паре; значение для (период, метрика)
     находится или создаётся; X и уровень пересчитываются. Поддерживает бэкофилл пропущенных строк.
     """
-    await _require_period(db, period_id)
+    # Завершённую оценку сначала открывают на корректировку (T-47) — см. _ensure_editable.
+    _ensure_editable(await _require_period(db, period_id))
     formula = FormulaType(payload.formula_type) if payload.formula_type else FormulaType.DIRECT
     metric, _created = await get_or_create_metric(
         db,
@@ -550,25 +561,7 @@ async def finalize_assessment(
     period = await _require_period(db, period_id)
     system = await db.get(System, period.system_id)
 
-    value_rows = (
-        await db.execute(
-            select(MetricCatalog.characteristic, MetricCatalog.subcharacteristic)
-            .join(AssessmentValue, AssessmentValue.metric_id == MetricCatalog.id)
-            .where(
-                AssessmentValue.period_id == period_id,
-                or_(
-                    AssessmentValue.calculated_x.isnot(None),
-                    AssessmentValue.unmeasurable.is_(True),
-                ),
-            )
-        )
-    ).all()
-    filled_pairs = {
-        (characteristic, subcharacteristic)
-        for characteristic, subcharacteristic in value_rows
-        if (characteristic, subcharacteristic) in QUALITY_PAIR_KEYS
-    }
-    filled = len(filled_pairs)
+    filled = len(await _filled_pairs(db, period_id))
     if filled < TOTAL_SUBS:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -601,7 +594,7 @@ async def finalize_assessment(
             ),
         )
 
-    period.status = "COMPLETE"
+    period.status = STATUS_COMPLETE
     await db.commit()
     return PeriodSummaryOut(
         id=period.id,
@@ -612,6 +605,42 @@ async def finalize_assessment(
         filled=filled,
         total=TOTAL_SUBS,
         complete=True,
+    )
+
+
+@router.post("/{period_id}/reopen", response_model=PeriodSummaryOut)
+async def reopen_assessment(
+    period_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_role("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")),
+) -> PeriodSummaryOut:
+    """T-47: открыть ЗАВЕРШЁННУЮ оценку на корректировку (разблокировка периода).
+
+    Завершённый период (COMPLETE) закрыт на правку значений — иначе цифры дашбордов менялись
+    бы задним числом без явного действия. Разблокировка возвращает период в CALCULATED: значения
+    правятся обычными эндпоинтами, после чего оценку завершают заново (POST /finalize).
+    Если период не завершён — 409 (правка и так доступна).
+    """
+    period = await _require_period(db, period_id)
+    system = await db.get(System, period.system_id)
+    if period.status != STATUS_COMPLETE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Оценка не завершена — корректировка доступна без разблокировки.",
+        )
+
+    period.status = STATUS_CALCULATED
+    await db.commit()
+    filled = len(await _filled_pairs(db, period_id))
+    return PeriodSummaryOut(
+        id=period.id,
+        system_id=period.system_id,
+        system_name=system.name if system else str(period.system_id),
+        period=period.period,
+        status=period.status,
+        filled=filled,
+        total=TOTAL_SUBS,
+        complete=filled >= TOTAL_SUBS,
     )
 
 
@@ -849,6 +878,102 @@ async def judgments_status(db: AsyncSession = Depends(get_db)) -> list[dict]:
     return out[:30]
 
 
+@router.get("/judgments-pending", response_model=list[PendingJudgmentOut])
+async def judgments_pending(
+    system: str | None = None,
+    period_id: UUID | None = None,
+    all_periods: bool = False,
+    limit: int = 1000,
+    db: AsyncSession = Depends(get_db),
+) -> list[PendingJudgmentOut]:
+    """T-48: метрики оценки, по которым НЕ внесено профессиональное суждение.
+
+    Строка = пара (характеристика, подхарактеристика) модели, у которой в периоде ЕСТЬ значение
+    (рассчитан X либо «невозможно измерить»), но НЕТ записи в professional_judgments. После
+    внесения суждения (PUT /{period_id}/judgments) строка уходит из выдачи.
+
+    По умолчанию — только ПОСЛЕДНИЙ период с оценкой по каждой ИС (DEF-14: архивные кварталы
+    суждениями не дозаполняют). `all_periods=true` снимает ограничение, `period_id` — точечный
+    выбор периода. Порядок: худший балл первым («невозможно измерить» = -1 — в начале), чтобы
+    менеджер по качеству начинал с проблемных зон.
+    """
+    period_rows = (await db.execute(
+        select(AssessmentPeriod, System)
+        .join(System, AssessmentPeriod.system_id == System.id)
+        .where(System.is_deleted.is_(False))
+    )).all()
+    if system:
+        period_rows = [(p, s) for p, s in period_rows if s.name == system]
+    if period_id is not None:
+        period_rows = [(p, s) for p, s in period_rows if p.id == period_id]
+    if not period_rows:
+        return []
+
+    value_rows = (await db.execute(
+        select(
+            AssessmentValue.period_id,
+            MetricCatalog.characteristic,
+            MetricCatalog.subcharacteristic,
+            AssessmentValue.calculated_x,
+            AssessmentValue.quality_level,
+            AssessmentValue.expert_comment,
+        )
+        .join(MetricCatalog, AssessmentValue.metric_id == MetricCatalog.id)
+        .where(
+            AssessmentValue.period_id.in_([p.id for p, _ in period_rows]),
+            or_(AssessmentValue.calculated_x.isnot(None), AssessmentValue.unmeasurable.is_(True)),
+        )
+    )).all()
+    if not value_rows:
+        return []
+    active = {row[0] for row in value_rows}
+
+    scope = [(p, s) for p, s in period_rows if p.id in active]
+    if period_id is None and not all_periods:
+        latest: dict[str, tuple[AssessmentPeriod, System]] = {}
+        for period, sys_row in scope:
+            key = str(sys_row.id)
+            if key not in latest or period_sort_key(period.period) > period_sort_key(latest[key][0].period):
+                latest[key] = (period, sys_row)
+        scope = list(latest.values())
+    scope_by_id = {p.id: (p, s) for p, s in scope}
+    if not scope_by_id:
+        return []
+
+    judged = {
+        (pid, char, sub)
+        for pid, char, sub in (await db.execute(
+            select(
+                ProfessionalJudgment.period_id,
+                ProfessionalJudgment.characteristic,
+                ProfessionalJudgment.subcharacteristic,
+            ).where(ProfessionalJudgment.period_id.in_(list(scope_by_id.keys())))
+        )).all()
+    }
+
+    out: list[PendingJudgmentOut] = []
+    for pid, char, sub, calculated_x, quality_level, comment in value_rows:
+        if pid not in scope_by_id or (char, sub) not in QUALITY_PAIR_KEYS:
+            continue
+        if (pid, char, sub) in judged:
+            continue
+        period, sys_row = scope_by_id[pid]
+        out.append(PendingJudgmentOut(
+            period_id=str(pid),
+            system_id=str(sys_row.id),
+            system_name=sys_row.name,
+            period=period.period,
+            characteristic=char,
+            subcharacteristic=sub,
+            score_pct=round(float(calculated_x) * 100) if calculated_x is not None else -1,
+            quality_level=quality_level,
+            expert_comment=comment,
+        ))
+
+    out.sort(key=lambda r: (r.score_pct, r.system_name, r.characteristic, r.subcharacteristic))
+    return out[: max(1, limit)]
+
+
 @router.get("/judgments-filled")
 async def judgments_filled(
     system_name: str | None = None,
@@ -882,4 +1007,33 @@ async def _require_period(db: AsyncSession, period_id: UUID) -> AssessmentPeriod
     period = await db.get(AssessmentPeriod, period_id)
     if period is None:
         raise HTTPException(status_code=404, detail="Assessment period not found")
+    return period
+
+
+async def _filled_pairs(db: AsyncSession, period_id: UUID) -> set[tuple[str, str]]:
+    """Пары модели (характеристика, подхарактеристика) периода с заполненной оценкой.
+
+    Заполнена = рассчитан X либо отмечено «невозможно измерить». Легаси-метрики каталога вне
+    эталонной модели в полноту не идут (как в /periods/summary).
+    """
+    rows = (
+        await db.execute(
+            select(MetricCatalog.characteristic, MetricCatalog.subcharacteristic)
+            .join(AssessmentValue, AssessmentValue.metric_id == MetricCatalog.id)
+            .where(
+                AssessmentValue.period_id == period_id,
+                or_(
+                    AssessmentValue.calculated_x.isnot(None),
+                    AssessmentValue.unmeasurable.is_(True),
+                ),
+            )
+        )
+    ).all()
+    return {(char, sub) for char, sub in rows if (char, sub) in QUALITY_PAIR_KEYS}
+
+
+def _ensure_editable(period: AssessmentPeriod) -> AssessmentPeriod:
+    """T-47: завершённая оценка заблокирована на правку — сначала разблокировка (/reopen)."""
+    if is_period_locked(period.status):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PERIOD_LOCKED_MESSAGE)
     return period

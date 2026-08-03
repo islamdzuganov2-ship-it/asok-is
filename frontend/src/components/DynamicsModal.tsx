@@ -43,7 +43,7 @@ export const DynamicsModal: React.FC<Props> = ({ open, system, series, onClose }
             <div key={q} style={{ borderTop: i ? '1px solid #F0F1F3' : 'none', padding: '10px 0' }}>
               <Space wrap>
                 <Tag>{q}</Tag>
-                <Text strong style={{ color: v < 0 ? '#9AA0A6' : ragToken(v).color }}>
+                <Text strong style={{ color: ragToken(v).strong }}>
                   {v < 0 ? 'н/д' : `${v}%`}
                 </Text>
                 {delta != null && (

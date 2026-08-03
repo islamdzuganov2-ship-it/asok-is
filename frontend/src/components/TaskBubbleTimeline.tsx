@@ -13,7 +13,7 @@
 import React, { useMemo, useState } from 'react';
 import { Tooltip } from 'antd';
 import type { Proposal } from '../store/slices/governanceSlice';
-import { BRAND } from '../theme/ragPalette';
+import { BRAND, RAG } from '../theme/ragPalette';
 
 const DAY = 86400000;
 const LABEL_W = 184;
@@ -107,10 +107,10 @@ const TaskBubbleTimeline: React.FC<Props> = ({ tasks, onOpen }) => {
       <div style={{ minWidth: 820 }}>
         {/* Шкала месяцев */}
         <div style={{ display: 'flex', height: 20 }}>
-          <div style={{ width: LABEL_W, flex: '0 0 auto', fontSize: 12, color: '#8a94a6', fontWeight: 500 }}>Ответственный</div>
+          <div style={{ width: LABEL_W, flex: '0 0 auto', fontSize: 12, color: BRAND.inkSoft, fontWeight: 500 }}>Ответственный</div>
           <div style={{ position: 'relative', flex: 1 }}>
             {months.map((m) => (
-              <span key={m.label + m.pct} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: 11, color: '#8a94a6', transform: 'translateX(-50%)' }}>{m.label}</span>
+              <span key={m.label + m.pct} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: 11, color: BRAND.inkSoft, transform: 'translateX(-50%)' }}>{m.label}</span>
             ))}
           </div>
         </div>
@@ -137,8 +137,8 @@ const TaskBubbleTimeline: React.FC<Props> = ({ tasks, onOpen }) => {
             ))}
             {/* «Сегодня» */}
             {todayPct >= 0 && todayPct <= 100 && (
-              <div style={{ position: 'absolute', left: `${todayPct}%`, top: 0, bottom: 0, borderLeft: '2px solid #C06B5A', pointerEvents: 'none' }}>
-                <span style={{ position: 'absolute', top: -16, left: -18, fontSize: 10, color: '#C06B5A', fontWeight: 600 }}>сегодня</span>
+              <div style={{ position: 'absolute', left: `${todayPct}%`, top: 0, bottom: 0, borderLeft: `2px solid ${RAG.bad.strong}`, pointerEvents: 'none' }}>
+                <span style={{ position: 'absolute', top: -16, left: -18, fontSize: 10, color: RAG.bad.strong, fontWeight: 600 }}>сегодня</span>
               </div>
             )}
 

@@ -9,8 +9,17 @@ import type { CSSProperties } from 'react';
 export type RagKey = 'good' | 'medium' | 'bad' | 'muted';
 
 export interface RagToken {
-  /** Насыщенный (но приглушённый) цвет маркера/текста */
+  /**
+   * ГРАФИКА: сектора диаграмм, маркеры, шкалы, точки-акценты.
+   * Держим ≥3:1 с белым (WCAG 2.1, 1.4.11 «Non-text Contrast»).
+   * НЕ использовать для текста и не подкладывать под белый текст — для этого `strong`.
+   */
   color: string;
+  /**
+   * ТЕКСТ и ПЛАШКИ: цвет текста на белом/`soft`-фоне и фон плашки под белым текстом.
+   * Держим ≥4.5:1 и с белым, и с собственным `soft` (WCAG 2.1, 1.4.3 «Contrast (Minimum)»).
+   */
+  strong: string;
   /** Светлая заливка для фона карточек/строк */
   soft: string;
   /** Цвет рамки */
@@ -19,15 +28,25 @@ export interface RagToken {
   label: string;
 }
 
-/** Приглушённая палитра: шалфейный / тёплое золото / терракот / графит. */
+/**
+ * Приглушённая палитра: шалфейный / тёплое золото / терракот / графит.
+ *
+ * Контраст (T-57): пара `color`/`strong` разделена намеренно — приглушённый тон читается
+ * как «дорогой» на графиках, но как текст он не проходил AA (золото давало 2.42:1).
+ * Числа проверяются `npm run check:contrast` (frontend/scripts/check-contrast.mjs).
+ */
 export const RAG: Record<RagKey, RagToken> = {
-  good:   { color: '#6F9F86', soft: '#ECF3EF', border: '#CADDD3', label: 'Высокий' },
-  medium: { color: '#C9A14A', soft: '#F7F1E2', border: '#E7DABB', label: 'Средний' },
-  bad:    { color: '#C06B5A', soft: '#F6EAE6', border: '#E6CCC4', label: 'Низкий'  },
-  muted:  { color: '#9AA0A6', soft: '#F1F2F3', border: '#DEE0E3', label: 'Не измерено' },
+  good:   { color: '#6F9F86', strong: '#47785E', soft: '#ECF3EF', border: '#CADDD3', label: 'Высокий' },
+  medium: { color: '#B88E32', strong: '#886822', soft: '#F7F1E2', border: '#E7DABB', label: 'Средний' },
+  bad:    { color: '#C06B5A', strong: '#AE4C39', soft: '#F6EAE6', border: '#E6CCC4', label: 'Низкий'  },
+  muted:  { color: '#8C96A0', strong: '#62707D', soft: '#F1F2F3', border: '#DEE0E3', label: 'Не измерено' },
 };
 
-/** Базовые «спокойные» цвета бренда. */
+/**
+ * Базовые «спокойные» цвета бренда.
+ * `inkSoft` — рабочий тон вторичного текста: 5.83:1 на белом и 5.29:1 на полотне-градиенте,
+ * в отличие от дефолтного antd `rgba(0,0,0,.45)` (3.05:1 на полотне — ниже AA).
+ */
 export const BRAND = {
   ink:       '#2B3A4B', // основной тёмно-синий графит
   inkSoft:   '#5B6675',
@@ -59,6 +78,17 @@ export function levelLabel(score: number): string {
 
 /** Готовый токен RAG по баллу. */
 export const ragToken = (score: number): RagToken => RAG[ragByScore(score)];
+
+/**
+ * Плашка «сплошной тон + белый текст». Принимает ТОЛЬКО глубокий тон (`strong` или
+ * `LEVEL_TAG_COLORS`), иначе белый текст не проходит AA — ради этого и заведён хелпер:
+ * инвариант «белый текст только на глубоком тоне» виден в месте вызова.
+ */
+export const solidTagStyle = (strong: string): CSSProperties => ({
+  background: strong,
+  color: '#FFFFFF',
+  border: 'none',
+});
 
 /** Пастельные стили тега критичности ИС (без ярких красных/оранжевых). */
 const CRIT: Record<string, { bg: string; fg: string }> = {

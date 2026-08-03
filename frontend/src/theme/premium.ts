@@ -49,6 +49,47 @@ export const PREMIUM = {
   surfaceTint: 'linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)',
 } as const;
 
+/**
+ * Типографическая шкала (T-58) — единственный источник размеров текста.
+ *
+ * Ступени взяты из того, что уже отрисовывалось на дашбордах (20/16/14/13/12), а не придуманы
+ * заново: лестница заголовков была связной. Чинилось другое — дрейф и разнобой:
+ *  · по коду разошлись 14 размеров, включая 9 / 9.5 / 10 / 10.5 / 15 / 17 — шаг меньше пункта
+ *    не читается как иерархия, только как небрежность;
+ *  · на ОДНОЙ ступени встречались три интерлиньяжа (14/400 → 22px, 30px, normal), из-за чего
+ *    строки в соседних карточках стояли по-разному.
+ * Поэтому у каждой ступени `lineHeight` задан явно.
+ *
+ * Правило: новый текст берёт ступень отсюда. Нужен размер, которого нет, — сначала спросить,
+ * действительно ли это новая роль, и только тогда добавлять ступень.
+ *
+ * `metric*` — числовые показатели (центры диаграмм, счётчики карточек). В ECharts CSS-токен
+ * не передать (там `lineHeight` — число), поэтому в графиках берутся поля: `TYPE.metricLg.fontSize`.
+ */
+export const TYPE = {
+  /** Заголовок страницы. Совпадает с antd `Title level={4}`. */
+  pageTitle: { fontSize: 20, fontWeight: 700, lineHeight: '28px' },
+  /** Заголовок карточки. Совпадает с antd Card title (fontSizeLG). */
+  cardTitle: { fontSize: 16, fontWeight: 600, lineHeight: '24px' },
+  /** Подзаголовок внутри карточки, «шапки» блоков. */
+  subTitle: { fontSize: 14, fontWeight: 600, lineHeight: '22px' },
+  /** Основной текст. */
+  body: { fontSize: 14, fontWeight: 400, lineHeight: '22px' },
+  /** Плотный текст: описания в списках, вторая строка строки таблицы. */
+  bodySm: { fontSize: 13, fontWeight: 400, lineHeight: '20px' },
+  /** Подписи, сноски, пояснения под графиками. */
+  caption: { fontSize: 12, fontWeight: 400, lineHeight: '18px' },
+  /** Подпись-заголовок: имя плитки, шапка мини-блока. Отдельная ступень, а не `strong` поверх
+   *  `caption` — иначе вес пришлось бы дописывать в каждом месте (их 30+). */
+  captionStrong: { fontSize: 12, fontWeight: 600, lineHeight: '18px' },
+  /** Легенды графиков, метки осей, служебные метки. Мельче 11px не опускаемся. */
+  micro: { fontSize: 11, fontWeight: 500, lineHeight: '16px' },
+
+  metricLg: { fontSize: 28, fontWeight: 800, lineHeight: '34px' },
+  metricMd: { fontSize: 24, fontWeight: 700, lineHeight: '30px' },
+  metricSm: { fontSize: 18, fontWeight: 700, lineHeight: '24px' },
+} as const satisfies Record<string, CSSProperties>;
+
 export type AccentKey = 'ink' | 'gold' | 'sage' | 'terracotta' | 'slate' | 'none';
 
 const ACCENT_COLOR: Record<Exclude<AccentKey, 'none'>, string> = {
@@ -82,7 +123,8 @@ export function premiumCard(accent: AccentKey = 'none', extra?: CSSProperties) {
     header: {
       borderBottom: `1px solid ${PREMIUM.border}`,
       minHeight: 52,
-      fontWeight: 600,
+      // Ступень задаём явно, чтобы заголовок карточки не «плыл» вслед за токенами antd.
+      ...TYPE.cardTitle,
       color: BRAND.ink,
       // Тонкая тёплая подложка шапки — «дорогой» акцент.
       background: accent === 'gold'
@@ -119,10 +161,10 @@ export const pageContainer: CSSProperties = {
 
 /** Заголовок страницы (H4) — с воздухом и премиальным трекингом. */
 export const pageTitle: CSSProperties = {
+  ...TYPE.pageTitle,
   margin: 0,
   color: BRAND.ink,
   letterSpacing: 0.2,
-  fontWeight: 700,
 };
 
 /** «Стеклянная» подложка для вложенных секций/строк. */

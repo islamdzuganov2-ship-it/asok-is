@@ -12,14 +12,16 @@ import { Alert, Col, Empty, List, Row, Select, Space, Spin, Tag, Typography } fr
 import { AlertOutlined, SafetyCertificateOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useGetSystemsQuery, useGetTriggeredRisksQuery } from '../../store/api/apiSlice';
 import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf } from '../../theme/premium';
+import { RAG, solidTagStyle } from '../../theme/ragPalette';
 
 const { Title, Text, Paragraph } = Typography;
 
+// Плашка критичности — с белым текстом, поэтому тона глубокие (≥4.5:1 с белым, T-57).
 const SEVERITY: Record<string, { label: string; color: string; order: number }> = {
-    critical: { label: 'критический', color: '#C0392B', order: 0 },
-    high: { label: 'высокий', color: '#C06B5A', order: 1 },
-    medium: { label: 'средний', color: '#C9A14A', order: 2 },
-    low: { label: 'низкий', color: '#6E89A6', order: 3 },
+    critical: { label: 'критический', color: '#A32B1F', order: 0 },
+    high: { label: 'высокий', color: RAG.bad.strong, order: 1 },
+    medium: { label: 'средний', color: RAG.medium.strong, order: 2 },
+    low: { label: 'низкий', color: '#56799F', order: 3 },
 };
 
 const RiskRadarPage: React.FC = () => {
@@ -83,12 +85,12 @@ const RiskRadarPage: React.FC = () => {
                         itemLayout="vertical"
                         dataSource={sorted}
                         renderItem={(r) => {
-                            const sev = SEVERITY[r.severity] ?? { label: r.severity, color: '#8a94a6', order: 9 };
+                            const sev = SEVERITY[r.severity] ?? { label: r.severity, color: RAG.muted.strong, order: 9 };
                             return (
                                 <List.Item key={r.id} style={{ borderLeft: `3px solid ${sev.color}`, paddingLeft: 14, marginBottom: 4 }}>
                                     <Space direction="vertical" size={4} style={{ width: '100%' }}>
                                         <Space wrap>
-                                            <Tag color={sev.color} style={{ color: '#fff', border: 'none' }}>{sev.label}</Tag>
+                                            <Tag style={solidTagStyle(sev.color)}>{sev.label}</Tag>
                                             {r.characteristic && <Tag>{r.characteristic}</Tag>}
                                             <Text strong>{r.title}</Text>
                                             <Text type="secondary" style={{ fontSize: 12 }}>({r.code})</Text>

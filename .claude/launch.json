@@ -18,6 +18,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "frontend", "--", "--port", "3105", "--strictPort"],
       "port": 3105
+    },
+    {
+      "name": "asok-frontend-a11y",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend", "--", "--port", "3106", "--strictPort"],
+      "port": 3106
     }
   ]
 }

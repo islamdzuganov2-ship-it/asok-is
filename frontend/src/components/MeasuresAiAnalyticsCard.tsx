@@ -8,7 +8,7 @@
 import React, { useMemo, useState } from 'react';
 import { Card, Button, Table, Tag, Typography, Alert, Spin, Space, Collapse } from 'antd';
 import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { ragToken } from '../theme/ragPalette';
+import { ragToken, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot } from '../theme/premium';
 import type { Proposal } from '../store/slices/governanceSlice';
 import ConclusionFeedback from './ConclusionFeedback';
@@ -111,7 +111,7 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
               { title: 'Мер', dataIndex: 'count', width: 80, render: (v: number) => <Tag color="volcano">{v}</Tag> },
               { title: 'ИС охвачено', dataIndex: 'systems', width: 110 },
               { title: 'Ср. балл', dataIndex: 'avg_score', width: 100,
-                render: (v: number | null) => v == null ? '—' : <Tag color={ragToken(v).color} style={{ color: '#fff', border: 'none' }}>{v}%</Tag> },
+                render: (v: number | null) => v == null ? '—' : <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> },
             ]}
           />
           {loading && (

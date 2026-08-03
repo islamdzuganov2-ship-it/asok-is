@@ -9,7 +9,7 @@
 import React, { useState } from 'react';
 import { Card, Space, Tooltip, Typography } from 'antd';
 import { DownOutlined } from '@ant-design/icons';
-import { premiumCard, accentDot, accentColorOf, type AccentKey } from '../theme/premium';
+import { premiumCard, accentDot, accentColorOf, TYPE, type AccentKey } from '../theme/premium';
 import { BRAND } from '../theme/ragPalette';
 
 const { Text } = Typography;
@@ -61,9 +61,11 @@ const CollapsibleCard: React.FC<Props> = ({
         />
       </Tooltip>
       {accentColor && <span style={accentDot(accentColor)} />}
-      <Space direction="vertical" size={0} style={{ lineHeight: 1.2 }}>
-        <span style={{ color: BRAND.ink, fontWeight: 600 }}>{title}</span>
-        {subtitle && <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>{subtitle}</Text>}
+      {/* Ступени берём из шкалы: своя `lineHeight: 1.2` давала 19.2px там, где остальные
+          заголовки карточек стоят на 24px — на «Динамике» это читалось как сбой ряда (T-58). */}
+      <Space direction="vertical" size={0}>
+        <span style={{ ...TYPE.cardTitle, color: BRAND.ink }}>{title}</span>
+        {subtitle && <Text type="secondary" style={TYPE.caption}>{subtitle}</Text>}
       </Space>
     </div>
   );

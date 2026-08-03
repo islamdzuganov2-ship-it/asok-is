@@ -13,7 +13,7 @@ import { useAppDispatch } from '../store/hooks';
 import dayjs from 'dayjs';
 import { addProposal } from '../store/slices/governanceSlice';
 import { RootState } from '../store';
-import { ragToken, levelLabel } from '../theme/ragPalette';
+import { ragToken, levelLabel, solidTagStyle } from '../theme/ragPalette';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -111,7 +111,7 @@ export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClo
         <Text type="secondary">Метрика</Text>
         <Space>
           <Text strong>{target.metricName}</Text>
-          <Tag color={tok.color} style={{ color: '#fff', border: 'none' }}>
+          <Tag style={solidTagStyle(tok.strong)}>
             {target.score}% · {tok.label}
           </Tag>
         </Space>

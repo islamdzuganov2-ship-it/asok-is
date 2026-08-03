@@ -177,6 +177,37 @@ const SORTED = [...SYSTEMS].sort((a, b) => a.score - b.score);
 const formulaStr = (m: GenMetric) =>
   m.formula === 'DIRECT' ? `Sₓ = A/B = ${m.a}/${m.b}` : `Sₓ = 1 − A/B = 1 − ${m.a}/${m.b}`;
 
+/** Строка оценки: пара «характеристика × подхарактеристика» с исходными A/B и расчётным X. */
+export interface AssessmentPairRow {
+  characteristic: string;
+  subcharacteristic: string;
+  formula: Formula;
+  /** A/B = null → «невозможно измерить» (нет базы измерения). */
+  a: number | null;
+  b: number | null;
+  /** Доля 0..1; -1 — невозможно измерить. */
+  x: number;
+}
+
+/**
+ * Плоский срез оценки по каждой ИС — источник демо-данных для «Внесения данных»
+ * (корректировка оценки T-47, метрики без суждения T-48). Те же A/B/X, что в теплокарте
+ * и реестре мер, поэтому цифры вкладок согласованы с дашбордами.
+ */
+export const SCALE_ASSESSMENT_PAIRS: Record<string, AssessmentPairRow[]> = Object.fromEntries(
+  SYSTEMS.map((sys) => [
+    sys.name,
+    sys.chars.flatMap((c) => c.metrics.map((m): AssessmentPairRow => ({
+      characteristic: c.def.title,
+      subcharacteristic: m.name,
+      formula: m.formula,
+      a: m.x < 0 ? null : m.a,
+      b: m.x < 0 ? null : m.b,
+      x: m.x,
+    }))),
+  ]),
+);
+
 // --- EXECUTIVE_SCALE ---
 const execSystems: ExecSystemInsight[] = SORTED.map((sys) => {
   const rec = REC[sys.weakest.def.title];

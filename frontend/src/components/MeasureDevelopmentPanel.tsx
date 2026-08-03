@@ -14,7 +14,8 @@ import { useAppDispatch } from '../store/hooks';
 import { RootState } from '../store';
 import { addProposal } from '../store/slices/governanceSlice';
 import { ManagerSystem } from '../data/mockDashboards';
-import { ragToken, levelLabel } from '../theme/ragPalette';
+import { ragToken, levelLabel, solidTagStyle, BRAND } from '../theme/ragPalette';
+import { premiumCard, accentDot, accentColorOf, TYPE } from '../theme/premium';
 
 const { Text, Paragraph } = Typography;
 
@@ -112,9 +113,16 @@ const MeasureDevelopmentPanel: React.FC<Props> = ({ systemName, system, characte
 
   return (
     <Card
-      title={<span><RiseOutlined /> Выработка мер (систематические проблемы → топ-менеджмент)</span>}
-      style={{ marginTop: 16 }}
-      styles={{ body: { paddingTop: 12 } }}
+      // Карточка живёт на «Основном» рядом с premium-карточками — держим общий слой,
+      // иначе выпадает и по виду, и по ступени заголовка (T-58).
+      {...premiumCard('terracotta', { marginTop: 16 })}
+      title={
+        <Space>
+          <span style={accentDot(accentColorOf('terracotta')!)} />
+          <span style={{ color: BRAND.ink }}><RiseOutlined /> Выработка мер (систематические проблемы → топ-менеджмент)</span>
+        </Space>
+      }
+      styles={{ ...premiumCard('terracotta').styles, body: { ...premiumCard('terracotta').styles.body, paddingTop: 12 } }}
     >
       <Alert
         type="info"
@@ -140,8 +148,8 @@ const MeasureDevelopmentPanel: React.FC<Props> = ({ systemName, system, characte
               actions={[<Button key="m" type="primary" icon={<BulbOutlined />} onClick={() => openMeasure(z)}>Выработать меру</Button>]}
             >
               <List.Item.Meta
-                title={<Space><Text strong>{z.title}</Text><Tag color={ragToken(z.score).color} style={{ color: '#fff', border: 'none' }}>{z.score}%</Tag><Tag color="volcano">систематически</Tag></Space>}
-                description={<Text type="secondary" style={{ fontSize: 13 }}>{factualBasis(z)}</Text>}
+                title={<Space><Text strong>{z.title}</Text><Tag style={solidTagStyle(ragToken(z.score).strong)}>{z.score}%</Tag><Tag color="volcano">систематически</Tag></Space>}
+                description={<Text type="secondary" style={TYPE.bodySm}>{factualBasis(z)}</Text>}
               />
             </List.Item>
           )}

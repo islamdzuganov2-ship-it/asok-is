@@ -14,7 +14,7 @@ import {
 } from '@ant-design/icons';
 import { useSelector, shallowEqual } from 'react-redux';
 import { selectVisibleProposals, type Proposal } from '../store/slices/governanceSlice';
-import { ragToken, levelLabel } from '../theme/ragPalette';
+import { ragToken, levelLabel, solidTagStyle } from '../theme/ragPalette';
 import { guidanceFor } from '../constants/characteristicGuidance';
 import type { ExecSystemInsight } from '../data/mockDashboards';
 import { MeasureDecisionModal } from './MeasureDecisionModal';
@@ -75,11 +75,11 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
       <Space align="center" style={{ marginBottom: 4 }} wrap>
         <Title level={5} style={{ margin: 0 }}>{system.name}</Title>
         {characteristic && charTok ? (
-          <Tag color={charTok.color} style={{ color: '#fff', border: 'none' }}>
+          <Tag style={solidTagStyle(charTok.strong)}>
             {characteristicScore}% · {charTok.label}
           </Tag>
         ) : (
-          <Tag color={tok.color} style={{ color: '#fff', border: 'none' }}>
+          <Tag style={solidTagStyle(tok.strong)}>
             {system.score}% · {tok.label}
           </Tag>
         )}

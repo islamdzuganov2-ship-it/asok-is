@@ -22,6 +22,7 @@ from app.modules.dataio.importer import import_matrices_from_workbook, import_me
 from app.modules.dataio.tasks import parse_excel_task
 from app.modules.iam import require_role
 from app.modules.quality import MetricCatalog, calculate_metric, map_to_level
+from app.shared.periods import PERIOD_LOCKED_MESSAGE, STATUS_CALCULATED, is_period_locked
 
 router = APIRouter()
 
@@ -151,6 +152,10 @@ async def import_assessment_excel(
     period = await db.get(AssessmentPeriod, period_uuid)
     if period is None:
         raise HTTPException(status_code=404, detail="Assessment period not found")
+    # T-47: импорт не обходит блокировку завершённой оценки — иначе загрузка файла молча
+    # переписала бы учтённые значения и вернула период в расчёт.
+    if is_period_locked(period.status):
+        raise HTTPException(status_code=409, detail=PERIOD_LOCKED_MESSAGE)
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     safe_name = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
@@ -232,7 +237,7 @@ async def import_assessment_excel(
                     errors.append(f"{worksheet.title}:{row_index}: {exc}")
 
             sheets.append({"name": worksheet.title, "imported": sheet_imported, "skipped": sheet_skipped})
-        period.status = "CALCULATED"
+        period.status = STATUS_CALCULATED
         await db.commit()
     finally:
         workbook.close()
@@ -265,6 +270,9 @@ async def import_workbook(
     period = await db.get(AssessmentPeriod, period_uuid)
     if period is None:
         raise HTTPException(status_code=404, detail="Assessment period not found")
+    # T-47: та же блокировка, что и у построчного импорта — завершённую оценку сначала разблокируют.
+    if is_period_locked(period.status):
+        raise HTTPException(status_code=409, detail=PERIOD_LOCKED_MESSAGE)
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     safe_name = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"

@@ -15,8 +15,8 @@ import { useSelector, shallowEqual } from 'react-redux';
 import { RootState } from '../store';
 import { selectVisibleProposals } from '../store/slices/governanceSlice';
 import { ANALYTICS_SCALE } from '../data/mockScaleData';
-import LevelHeatmap, { LEVEL_COLORS } from '../components/LevelHeatmap';
-import { critTagStyle, levelLabel } from '../theme/ragPalette';
+import LevelHeatmap, { LEVEL_COLORS, LEVEL_TAG_COLORS } from '../components/LevelHeatmap';
+import { critTagStyle, levelLabel, solidTagStyle, ragToken, RAG, BRAND } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM } from '../theme/premium';
 
 const { Title, Text } = Typography;
@@ -201,7 +201,8 @@ const DashboardPage: React.FC = () => {
   }
 
   const healthPct = data ? Math.round(data.globalHealthScore * 100) : 0;
-  const healthColor = healthPct >= 81 ? '#7FA98C' : healthPct >= 41 ? '#D8BE7E' : '#CC8B81';
+  // Крупная цифра KPI — это ТЕКСТ, поэтому берём глубокие тона (пастель давала 1.81:1).
+  const healthColor = ragToken(healthPct).strong;
   const lowTotal = data?.problematicSystems.reduce((s, p) => s + p.lowMetricsCount, 0) ?? 0;
 
   const levelDist = data
@@ -238,7 +239,7 @@ const DashboardPage: React.FC = () => {
             dataSource={levelDist} rowKey="level" size="small" pagination={false}
             columns={[
               { title: 'Уровень', dataIndex: 'level',
-                render: (v: string) => <Tag color={LEVEL_COLORS[v]} style={{ color: '#fff', border: 'none' }}>{v}</Tag> },
+                render: (v: string) => <Tag style={solidTagStyle(LEVEL_TAG_COLORS[v])}>{v}</Tag> },
               { title: 'Метрик', dataIndex: 'count' },
               { title: 'Доля', dataIndex: 'pct', render: (v: number) => `${v}%` },
             ]}
@@ -263,7 +264,7 @@ const DashboardPage: React.FC = () => {
               { title: 'Метрика', dataIndex: 'metric', ellipsis: true },
               {
                 title: 'Мер', dataIndex: 'measures', width: 70,
-                render: (v: number) => <Tag color="#6F9F86" style={{ color: '#fff', border: 'none' }}>{v}</Tag>,
+                render: (v: number) => <Tag style={solidTagStyle(RAG.good.strong)}>{v}</Tag>,
               },
             ]}
           />
@@ -311,8 +312,8 @@ const DashboardPage: React.FC = () => {
         <Col flex="1 1 168px"><KpiCard k="global" title="Глобальный балл" value={`${healthPct}%`} color={healthColor} /></Col>
         <Col flex="1 1 168px"><KpiCard k="systems" title="ИС в мониторинге" value={data?.yAxisLabels.length ?? 0} /></Col>
         <Col flex="1 1 168px"><KpiCard k="metrics" title="Всего метрик" value={data?.totalMetrics ?? 0} /></Col>
-        <Col flex="1 1 168px"><KpiCard k="low" title="Низких метрик" value={lowTotal} color="#f5222d" /></Col>
-        <Col flex="1 1 168px"><KpiCard k="measures" title="Метрик имеющих меры" value={measureLinks.count} color="#6F9F86" /></Col>
+        <Col flex="1 1 168px"><KpiCard k="low" title="Низких метрик" value={lowTotal} color={RAG.bad.strong} /></Col>
+        <Col flex="1 1 168px"><KpiCard k="measures" title="Метрик имеющих меры" value={measureLinks.count} color={RAG.good.strong} /></Col>
       </Row>
 
       <Row gutter={[16, 16]}>
@@ -334,7 +335,7 @@ const DashboardPage: React.FC = () => {
                           <span style={{ width: 10, height: 10, borderRadius: 3, background: LEVEL_COLORS[r.level], flex: '0 0 auto' }} />
                           <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.level}</span>
                           <b style={{ color: '#2B3A4B' }}>{r.count}</b>
-                          <span style={{ color: '#9AA0A6', width: 38, textAlign: 'right' }}>{r.pct}%</span>
+                          <span style={{ color: BRAND.inkSoft, width: 38, textAlign: 'right' }}>{r.pct}%</span>
                         </span>
                       ))}
                     </div>
@@ -452,7 +453,7 @@ const DashboardPage: React.FC = () => {
                 render: (v: number) => {
                   const lvl = levelLabel(v < 0 ? -1 : v);
                   return (
-                    <Tag color={LEVEL_COLORS[lvl]} style={{ color: '#fff', border: 'none' }}>
+                    <Tag style={solidTagStyle(LEVEL_TAG_COLORS[lvl])}>
                       {v < 0 ? 'н/д' : `${v}%`} · {lvl}
                     </Tag>
                   );

@@ -21,8 +21,8 @@ import { RootState } from '../../store';
 import {
   MANAGER_SCALE_SYSTEMS, DYNAMICS, QUARTERS, detectAnomalies, type DynSeries,
 } from '../../data/mockScaleData';
-import { BRAND, ragToken } from '../../theme/ragPalette';
-import { premiumCard, accentDot, pageContainer, pageTitle, GOLD } from '../../theme/premium';
+import { BRAND, ragToken, solidTagStyle } from '../../theme/ragPalette';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE } from '../../theme/premium';
 import Sparkline from '../../components/Sparkline';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import { DynamicsModal } from '../../components/DynamicsModal';
@@ -107,7 +107,7 @@ const QualityDynamicsPage: React.FC = () => {
             return lines.length ? `<b>${QUARTERS[qIdx]}</b><br/>${lines.join('<br/>')}` : '';
           },
         },
-        legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 } },
+        legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: TYPE.micro.fontSize } },
         grid: { top: 16, left: 44, right: 16, bottom: 52 },
         xAxis: { type: 'category', data: QUARTERS, boundaryGap: false },
         yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
@@ -151,7 +151,7 @@ const QualityDynamicsPage: React.FC = () => {
   // открываются по клику (модалка) — этого достаточно.
   const charChartOption = useMemo(() => ({
     tooltip: { show: false },
-    legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 } },
+    legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: TYPE.micro.fontSize } },
     grid: { top: 16, left: 44, right: 16, bottom: 52 },
     xAxis: { type: 'category', data: QUARTERS, boundaryGap: false },
     yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
@@ -226,13 +226,13 @@ const QualityDynamicsPage: React.FC = () => {
               Качество информационной системы{isAll ? ' — все системы' : ` — «${system.name}»`}
             </span>
             {!isAll && sysCur >= 0 && (
-              <Tag style={{ color: '#fff', border: 'none', background: ragToken(sysCur).color }}>{sysCur}%</Tag>
+              <Tag style={solidTagStyle(ragToken(sysCur).strong)}>{sysCur}%</Tag>
             )}
           </Space>
         }
         {...premiumCard('gold', { marginTop: 16 })}
         extra={
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={TYPE.caption}>
             {isAll ? 'клик по линии — перейти к системе' : 'клик по точке — причины изменения по кварталам'}
           </Text>
         }
@@ -268,7 +268,7 @@ const QualityDynamicsPage: React.FC = () => {
           </Space>
         }
         {...premiumCard('slate', { marginTop: 16 })}
-        extra={<Text type="secondary" style={{ fontSize: 12 }}>клик по линии или точке — причины изменения</Text>}
+        extra={<Text type="secondary" style={TYPE.caption}>клик по линии или точке — причины изменения</Text>}
       >
         <ReactECharts
           option={charChartOption}
@@ -326,12 +326,12 @@ const QualityDynamicsPage: React.FC = () => {
                   style={{ borderColor: BRAND.divider, height: '100%', borderRadius: 12 }}
                   styles={{ body: { padding: 12 } }}
                 >
-                  <Text strong style={{ fontSize: 12, display: 'block', minHeight: 32 }}>{s.name}</Text>
+                  <Text style={{ ...TYPE.captionStrong, display: 'block', minHeight: 32 }}>{s.name}</Text>
                   <Space style={{ justifyContent: 'space-between', width: '100%', marginTop: 4 }}>
-                    <Tag style={{ marginInlineEnd: 0, color: '#fff', border: 'none', background: cur < 0 ? '#9AA0A6' : ragToken(cur).color }}>
+                    <Tag style={{ ...solidTagStyle(ragToken(cur).strong), marginInlineEnd: 0 }}>
                       {cur < 0 ? 'н/д' : `${cur}%`}
                     </Tag>
-                    <Text type="secondary" style={{ fontSize: 10 }}>{s.char}</Text>
+                    <Text type="secondary" style={TYPE.micro}>{s.char}</Text>
                   </Space>
                   <div style={{ marginTop: 6 }}><Sparkline series={s.series} /></div>
                 </Card>

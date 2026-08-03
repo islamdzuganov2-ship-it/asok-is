@@ -5,6 +5,7 @@ import ruRU from 'antd/locale/ru_RU';
 import { useSelector } from 'react-redux';
 import { RootState } from './store';
 import { AppLayout } from './components/AppLayout';
+import { BRAND } from './theme/ragPalette';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -60,6 +61,19 @@ export const App: React.FC = () => {
                     colorWarning: '#C9A14A',
                     colorError: '#C06B5A',
                     colorInfo: '#6E89A6',
+                    // T-57: дефолтный вторичный текст antd — rgba(0,0,0,.45) ≈ 3.05:1 на полотне
+                    // дашбордов, ниже WCAG AA. Подписи `type="secondary"` встречаются повсеместно
+                    // (счётчики, сноски под графиками), поэтому чиним токеном, а не по местам.
+                    colorTextSecondary: BRAND.inkSoft,
+                    colorTextDescription: BRAND.inkSoft,
+                    colorTextPlaceholder: '#6E7787',
+                    // Ссылки/кнопки-ссылки наследуют colorInfo (#6E89A6 = 3.63:1) — поднимаем.
+                    colorLink: '#50749B',
+                    colorLinkHover: '#3F5F82',
+                    colorLinkActive: '#33506F',
+                    // Заливку info-Alert antd выводит из приглушённого colorInfo, получается
+                    // необычно тёмный тон (#D8E1E6): описание на нём давало 4.40:1. Задаём явно.
+                    colorInfoBg: '#EAF0F4',
                 },
             }}
         >

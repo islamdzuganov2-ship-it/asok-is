@@ -14,7 +14,10 @@
  */
 import React, { useState } from 'react';
 import { Alert, Button, Card, Space, Table, Tag, Typography, Upload, message } from 'antd';
-import { DownloadOutlined, InboxOutlined, FileTextOutlined } from '@ant-design/icons';
+import { DownloadOutlined, InboxOutlined, FileTextOutlined, CloudUploadOutlined } from '@ant-design/icons';
+import { useSelector } from 'react-redux';
+import { RootState } from '../store';
+import { useImportIncidentsMutation } from '../store/api/apiSlice';
 import { matchColumn, type UploadSpec } from '../constants/uploadSpecs';
 
 const { Text, Paragraph, Title } = Typography;
@@ -55,6 +58,22 @@ interface PreviewState {
 
 const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const isLive = useSelector((s: RootState) => s.ui.dataMode === 'live');
+  const [importIncidents, { isLoading: importing }] = useImportIncidentsMutation();
+  const [importResult, setImportResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+
+  // T-43: импорт распознанных строк ТС в БД (режим LLM). Ключи строк — snake_case (system_name…),
+  // бэкенд-схема принимает их через populate_by_name.
+  const doImport = async () => {
+    if (!preview) return;
+    try {
+      const res = await importIncidents(preview.rows).unwrap();
+      setImportResult(res);
+      message.success(`Импортировано: ${res.created}, пропущено: ${res.skipped}`);
+    } catch (e: any) {
+      message.error(e?.data?.detail || 'Не удалось импортировать в БД');
+    }
+  };
 
   const downloadTemplate = () => {
     const headers = spec.columns.map((c) => c.label);
@@ -97,6 +116,7 @@ const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
           mappedCols.forEach((mc) => { obj[mc.key] = r[colIndex[mc.key]] ?? ''; });
           return obj;
         });
+        setImportResult(null);
         setPreview({ fileName: file.name, total: rows.length, mappedCols, unmatchedHeaders, missingRequired, rows });
         if (missingRequired.length) message.warning(`Не сопоставлены обязательные колонки: ${missingRequired.join(', ')}`);
         else message.success(`Распознано строк: ${rows.length}. Обязательные колонки сопоставлены.`);
@@ -173,6 +193,29 @@ const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
             <Paragraph type="secondary" style={{ fontSize: 12 }}>
               Не распознаны (будут проигнорированы): {preview.unmatchedHeaders.join(', ')}
             </Paragraph>
+          )}
+          {spec.kind === 'incidents' && preview.missingRequired.length === 0 && (
+            <Space style={{ marginBottom: 12 }} wrap>
+              <Button type="primary" icon={<CloudUploadOutlined />} loading={importing} disabled={!isLive} onClick={doImport}>
+                Импортировать в БД ({preview.total})
+              </Button>
+              {!isLive && <Text type="secondary" style={{ fontSize: 12 }}>Импорт в БД доступен в режиме LLM (реальная БД)</Text>}
+            </Space>
+          )}
+          {spec.kind === 'assessments' && preview.missingRequired.length === 0 && (
+            <Alert type="info" showIcon style={{ marginBottom: 12 }}
+              message="Импорт оценок в БД — в разработке (T-50). Сейчас доступны предпросмотр и проверка формата." />
+          )}
+          {importResult && (
+            <Alert
+              type={importResult.created > 0 ? 'success' : 'warning'} showIcon style={{ marginBottom: 12 }}
+              message={`Импортировано: ${importResult.created}, пропущено: ${importResult.skipped}`}
+              description={importResult.errors.length ? (
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {importResult.errors.slice(0, 10).map((e, i) => <li key={i}><Text type="secondary" style={{ fontSize: 12 }}>{e}</Text></li>)}
+                </ul>
+              ) : undefined}
+            />
           )}
           <Table
             size="small"

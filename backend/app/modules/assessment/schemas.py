@@ -121,6 +121,20 @@ class JudgmentsStatusOut(BaseModel):
     items: list[JudgmentOut]
 
 
+class PendingJudgmentOut(BaseModel):
+    """Метрика оценки, по которой НЕ внесено профессиональное суждение (ТЗ v16, T-48)."""
+    period_id: str
+    system_id: str
+    system_name: str
+    period: str
+    characteristic: str
+    subcharacteristic: str
+    # Балл подхарактеристики в процентах; -1 — «Невозможно измерить» (данные не собираются).
+    score_pct: int
+    quality_level: str | None = None
+    expert_comment: str | None = None
+
+
 class PeriodSummaryOut(BaseModel):
     """Сводка по периоду оценки: сколько подхарактеристик заполнено и полна ли оценка."""
     id: UUID

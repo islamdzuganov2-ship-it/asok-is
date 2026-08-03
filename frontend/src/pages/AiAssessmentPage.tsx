@@ -21,7 +21,7 @@ import type { ColumnsType } from 'antd/es/table';
 import {
   CheckCircleOutlined, ExperimentOutlined, FileDoneOutlined, PlusOutlined, RobotOutlined,
 } from '@ant-design/icons';
-import { ragToken } from '../theme/ragPalette';
+import { ragToken, solidTagStyle } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -267,7 +267,7 @@ const AiAssessmentPage: React.FC = () => {
     {
       title: 'X', dataIndex: 'normalized_x', width: 80,
       render: (v: number | null) => v == null ? '—'
-        : <Tag color={ragToken(v * 100).color} style={{ color: '#fff', border: 'none' }}>{v.toFixed(3)}</Tag>,
+        : <Tag style={solidTagStyle(ragToken(v * 100).strong)}>{v.toFixed(3)}</Tag>,
     },
     {
       title: 'Вердикт', key: 'verdict', width: 140,
@@ -356,7 +356,7 @@ const AiAssessmentPage: React.FC = () => {
               showIcon icon={<RobotOutlined />}
               message={<Space size="large">
                 <Text strong>Интегральный показатель Q = {calc.q != null ? calc.q.toFixed(3) : '—'} ({qPct ?? '—'}%)</Text>
-                <Tag color={qPct != null ? ragToken(qPct).color : 'default'} style={{ color: '#fff', border: 'none' }}>{calc.level}</Tag>
+                <Tag style={qPct != null ? solidTagStyle(ragToken(qPct).strong) : undefined}>{calc.level}</Tag>
                 <Tag>{calc.weighted ? 'взвешенная свёртка (ф. 3–8)' : 'равные веса'}</Tag>
               </Space>}
               description={(

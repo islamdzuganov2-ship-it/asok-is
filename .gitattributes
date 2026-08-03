@@ -1,2 +1,15 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Файлы, которые исполняются/читаются ВНУТРИ Linux-контейнеров и на CI, обязаны иметь LF.
+# На регистрозависимой ФС и в shell смешанные CRLF/LF ломают сборку и скрипты, поэтому
+# фиксируем окончания строк явно (не полагаемся на авто-детект при checkout на Windows).
+dockerfile      text eol=lf
+dockerfile.*    text eol=lf
+*.sh            text eol=lf
+*.mjs           text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+Caddyfile       text eol=lf
+.env.example    text eol=lf
+.dockerignore   text eol=lf

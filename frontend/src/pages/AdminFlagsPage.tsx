@@ -5,6 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { setExecFeature, type ExecFeatureKey } from '../store/slices/uiSlice';
 import { accentDot, pageContainer, pageTitle, GOLD, PREMIUM } from '../theme/premium';
+import { RAG } from '../theme/ragPalette';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -119,7 +120,7 @@ const AdminFlagsPage: React.FC = () => {
                       <span style={{
                         width: 40, height: 40, borderRadius: 10, fontSize: 20, display: 'inline-flex',
                         alignItems: 'center', justifyContent: 'center',
-                        background: on ? '#E5F2EA' : '#F0F1F3', color: on ? '#6F9F86' : '#8a94a6',
+                        background: on ? '#E5F2EA' : '#F0F1F3', color: on ? RAG.good.strong : RAG.muted.strong,
                       }}>{f.icon}</span>
                       <div>
                         <Text strong>{f.title}</Text><br />

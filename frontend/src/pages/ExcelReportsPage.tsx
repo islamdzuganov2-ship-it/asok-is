@@ -17,6 +17,7 @@ import {
 } from '../store/api/apiSlice';
 import { RootState } from '../store';
 import { accentDot, pageTitle, GOLD } from '../theme/premium';
+import { BRAND, RAG } from '../theme/ragPalette';
 import {
     approveProposal, rejectProposal, selectVisibleProposals, type ProposalStatus,
 } from '../store/slices/governanceSlice';
@@ -141,7 +142,7 @@ export const ExcelReportsPage: React.FC = () => {
                     const last = row[points[points.length - 1].period];
                     if (first == null || last == null) return <Text type="secondary">—</Text>;
                     const d = Math.round((last - first) * 10) / 10;
-                    const color = d > 1 ? '#6F9F86' : d < -1 ? '#C06B5A' : '#8a94a6';
+                    const color = d > 1 ? RAG.good.strong : d < -1 ? RAG.bad.strong : BRAND.inkSoft;
                     const arrow = d > 1 ? '↑' : d < -1 ? '↓' : '→';
                     return <Text strong style={{ color }}>{arrow} {d > 0 ? '+' : ''}{d} п.п.</Text>;
                 },

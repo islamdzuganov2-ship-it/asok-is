@@ -13,8 +13,8 @@ import { useNavigate } from 'react-router-dom';
 import { RootState } from '../../store';
 import { ExecSystemInsight, ExecutiveDashboardData } from '../../data/mockDashboards';
 import { EXECUTIVE_SCALE, HEATMAP_CHARS_FULL } from '../../data/mockScaleData';
-import { RAG, ragToken, levelLabel, BRAND, critTagStyle } from '../../theme/ragPalette';
-import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM } from '../../theme/premium';
+import { RAG, ragToken, levelLabel, BRAND, critTagStyle, solidTagStyle } from '../../theme/ragPalette';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, TYPE } from '../../theme/premium';
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
@@ -212,8 +212,8 @@ const ExecutiveDashboard: React.FC = () => {
           detail: {
             valueAnimation: true,
             formatter: '{value}%',
-            fontSize: 30,
-            fontWeight: 700,
+            fontSize: TYPE.metricLg.fontSize,
+            fontWeight: TYPE.metricLg.fontWeight,
             color: idxTok.color,
             offsetCenter: [0, '32%'],
           },
@@ -235,7 +235,7 @@ const ExecutiveDashboard: React.FC = () => {
             </Title>
             <Text type="secondary">
               Общий индекс качества ИТ-ландшафта:&nbsp;
-              <Text strong style={{ color: idxTok.color }}>
+              <Text strong style={{ color: idxTok.strong }}>
                 {globalIndex}% · {levelLabel(globalIndex)}
               </Text>
               &nbsp;
@@ -312,7 +312,7 @@ const ExecutiveDashboard: React.FC = () => {
                   <Tag icon={<RobotOutlined />} color="default" style={{ borderRadius: 12 }}>
                     AI-резюме
                   </Tag>
-                  <Tag color={tok.color} style={{ color: '#fff', border: 'none' }}>
+                  <Tag style={solidTagStyle(tok.strong)}>
                     {sys.score}%
                   </Tag>
                   <Tag style={critTagStyle(sys.criticality)}>
@@ -476,7 +476,7 @@ const ExecutiveDashboard: React.FC = () => {
               { title: 'Мера', dataIndex: 'riskTitle', render: (v: string, r) => v || r.metricName },
               { title: 'ИС', dataIndex: 'systemName', width: 180 },
               { title: '%', dataIndex: 'calculatedScore', width: 70,
-                render: (v: number) => <Tag color={ragToken(v).color} style={{ color: '#fff', border: 'none' }}>{v}%</Tag>,
+                render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag>,
                 sorter: (a, b) => a.calculatedScore - b.calculatedScore },
               { title: 'Срок', dataIndex: 'dueDate', width: 110 },
             ] as ColumnsType<Proposal>}
@@ -510,7 +510,7 @@ const ExecutiveDashboard: React.FC = () => {
             {
               title: 'Балл', dataIndex: 'score', width: 110,
               sorter: (a, b) => a.score - b.score,
-              render: (v: number) => <Tag color={ragToken(v).color} style={{ color: '#fff', border: 'none' }}>{v}%</Tag>,
+              render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag>,
             },
             { title: 'Просевшая характеристика', dataIndex: 'weakCharacteristic', width: 220 },
           ] as ColumnsType<ExecSystemInsight>}

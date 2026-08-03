@@ -27,12 +27,14 @@ import { setDataMode } from '../store/slices/uiSlice';
 import { syncProposals } from '../store/slices/governanceSlice';
 import { roleLabel } from '../constants/roles';
 import NotificationBell from './NotificationBell';
-import { PREMIUM, GOLD } from '../theme/premium';
+import { PREMIUM, GOLD, TYPE } from '../theme/premium';
 import { BRAND } from '../theme/ragPalette';
 
 // Приглушённый заголовок группы меню (капитель/трекинг) — премиум, не «кричащий».
+// Альфа 0.7 (было 0.55): на самом светлом стопе градиента сайдбара 0.55 давало 3.84:1 —
+// ниже WCAG AA для 10.5px (T-57). Приглушённость сохраняется, читаемость — нет.
 const groupLabel = (text: string) => (
-    <span style={{ fontSize: 10.5, letterSpacing: 1.4, textTransform: 'uppercase', color: 'rgba(233,220,190,0.55)', fontWeight: 600 }}>{text}</span>
+    <span style={{ ...TYPE.micro, fontWeight: 600, letterSpacing: 1.4, textTransform: 'uppercase', color: 'rgba(233,220,190,0.7)' }}>{text}</span>
 );
 
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -156,8 +158,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     </div>
                     {!collapsed && (
                         <div style={{ lineHeight: 1.15 }}>
-                            <div style={{ color: '#fff', fontWeight: 700, letterSpacing: 1.2, fontSize: 15 }}>АСОК ИС</div>
-                            <div style={{ color: 'rgba(233,220,190,0.6)', fontSize: 9.5, letterSpacing: 1.8, textTransform: 'uppercase' }}>оценка качества</div>
+                            <div style={{ ...TYPE.cardTitle, color: '#fff', fontWeight: 700, letterSpacing: 1.2 }}>АСОК ИС</div>
+                            <div style={{ ...TYPE.micro, fontWeight: 400, color: 'rgba(233,220,190,0.7)', letterSpacing: 1.8, textTransform: 'uppercase' }}>оценка качества</div>
                         </div>
                     )}
                 </div>

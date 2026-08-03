@@ -13,7 +13,7 @@ import React, { useMemo, useState } from 'react';
 import { Card, List, Input, Select, Space, Tag, Button, Typography, Empty, Row, Col } from 'antd';
 import { AuditOutlined, RightOutlined, ClockCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import type { Proposal, ProposalStatus } from '../store/slices/governanceSlice';
-import { BRAND, RAG, ragToken } from '../theme/ragPalette';
+import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot } from '../theme/premium';
 
 const STATUS_TAG: Record<ProposalStatus, { color: string; label: string }> = {
@@ -160,7 +160,7 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
                       <Space wrap>
                         <Text strong>{p.riskTitle || p.metricName}</Text>
                         <Tag color={st.color}>{st.label}</Tag>
-                        <Tag color={tok.color} style={{ color: '#fff', border: 'none' }}>{p.calculatedScore}%</Tag>
+                        <Tag style={solidTagStyle(tok.strong)}>{p.calculatedScore}%</Tag>
                         {p.execution === 'DONE' && <Tag color="green">выполнено</Tag>}
                         {p.execution === 'NOT_DONE' && <Tag color="red">не выполнено</Tag>}
                         {p.status === 'APPROVED' && !p.execution && <Tag color="blue">ждёт выполнения</Tag>}

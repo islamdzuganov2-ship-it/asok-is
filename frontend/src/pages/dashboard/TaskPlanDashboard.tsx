@@ -26,7 +26,7 @@ import { RootState } from '../../store';
 import {
   selectVisibleProposals, updateTask, setExecution, escalateTask, decideEscalation, resolveEscalation, type Proposal,
 } from '../../store/slices/governanceSlice';
-import { BRAND } from '../../theme/ragPalette';
+import { BRAND, RAG } from '../../theme/ragPalette';
 import { pageContainer, pageTitle, GOLD, accentDot } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import TaskBubbleTimeline from '../../components/TaskBubbleTimeline';
@@ -45,12 +45,14 @@ const parseRu = (d?: string): Date | null => {
 const fmt = (d: Date) => d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 
 type Kind = 'done' | 'overdue' | 'escalated' | 'progress' | 'pending';
-const KIND_META: Record<Kind, { color: string; light: string; label: string }> = {
-  progress:  { color: '#6E89A6', light: '#A9BDD1', label: 'в работе' },
-  done:      { color: '#6F9F86', light: '#A9CBB8', label: 'выполнено' },
-  overdue:   { color: '#C06B5A', light: '#DDA095', label: 'просрочено' },
-  escalated: { color: '#7E57C2', light: '#B39DDB', label: 'эскалация' },
-  pending:   { color: '#C9A14A', light: '#E0C589', label: 'ожидает решения' },
+// `color`/`light` — маркеры и легенда (графика, ≥3:1). `bar`/`barEnd` — заливка полосы Ганта,
+// на которой лежит БЕЛЫЙ текст: прежний градиент шёл от пастели (≈1.8:1) и текст пропадал (T-57).
+const KIND_META: Record<Kind, { color: string; light: string; bar: string; barEnd: string; label: string }> = {
+  progress:  { color: '#6E89A6', light: '#A9BDD1', bar: '#56799F', barEnd: '#47678B', label: 'в работе' },
+  done:      { color: '#6F9F86', light: '#A9CBB8', bar: '#4C8165', barEnd: '#3E6C54', label: 'выполнено' },
+  overdue:   { color: '#C06B5A', light: '#DDA095', bar: '#C0553F', barEnd: '#A64733', label: 'просрочено' },
+  escalated: { color: '#7E57C2', light: '#B39DDB', bar: '#7E57C2', barEnd: '#6A45AB', label: 'эскалация' },
+  pending:   { color: '#C9A14A', light: '#E0C589', bar: '#947125', barEnd: '#7C5E1E', label: 'ожидает решения' },
 };
 
 // 3-цветная «зона» задачи для пузырьков (T-24).
@@ -216,7 +218,8 @@ const TaskPlanDashboard: React.FC = () => {
       render: (_: unknown, r: { p: Proposal }) => {
         const d = parseRu(r.p.dueDate);
         const daysLeft = d ? Math.round((d.getTime() - now) / DAY) : null;
-        const color = daysLeft == null ? '#8a94a6' : daysLeft < 0 ? '#C06B5A' : daysLeft <= RISK_DAYS ? '#C9A14A' : '#6F9F86';
+        const color = daysLeft == null ? BRAND.inkSoft
+          : daysLeft < 0 ? RAG.bad.strong : daysLeft <= RISK_DAYS ? RAG.medium.strong : RAG.good.strong;
         return <Text style={{ color }}>{r.p.dueDate || 'без срока'}</Text>;
       },
     },
@@ -258,10 +261,10 @@ const TaskPlanDashboard: React.FC = () => {
           <div style={{ minWidth: 900 }}>
             {/* Шкала месяцев */}
             <div style={{ display: 'flex', height: 22 }}>
-              <div style={{ width: LABEL_W, flex: '0 0 auto', fontSize: 12, color: '#8a94a6', fontWeight: 500 }}>Задача · ответственный</div>
+              <div style={{ width: LABEL_W, flex: '0 0 auto', fontSize: 12, color: BRAND.inkSoft, fontWeight: 500 }}>Задача · ответственный</div>
               <div style={{ position: 'relative', flex: 1 }}>
                 {months.map((m) => (
-                  <span key={m.label + m.pct} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: 11, color: '#8a94a6', transform: 'translateX(-50%)' }}>{m.label}</span>
+                  <span key={m.label + m.pct} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: 11, color: BRAND.inkSoft, transform: 'translateX(-50%)' }}>{m.label}</span>
                 ))}
               </div>
             </div>
@@ -273,8 +276,8 @@ const TaskPlanDashboard: React.FC = () => {
                   <div key={m.pct} style={{ position: 'absolute', left: `${m.pct}%`, top: 0, bottom: 0, borderLeft: '1px dashed #EAECEF' }} />
                 ))}
                 {todayPct >= 0 && todayPct <= 100 && (
-                  <div style={{ position: 'absolute', left: `${todayPct}%`, top: -2, bottom: 0, borderLeft: '2px solid #C06B5A' }}>
-                    <span style={{ position: 'absolute', top: -16, left: -20, fontSize: 10, color: '#C06B5A', fontWeight: 600 }}>сегодня</span>
+                  <div style={{ position: 'absolute', left: `${todayPct}%`, top: -2, bottom: 0, borderLeft: `2px solid ${RAG.bad.strong}` }}>
+                    <span style={{ position: 'absolute', top: -16, left: -20, fontSize: 10, color: RAG.bad.strong, fontWeight: 600 }}>сегодня</span>
                   </div>
                 )}
               </div>
@@ -288,9 +291,9 @@ const TaskPlanDashboard: React.FC = () => {
                 const meta = KIND_META[kind];
                 const daysLeft = dueDate ? Math.round((dueDate.getTime() - now) / DAY) : null;
                 const dl = daysLeft == null ? null
-                  : daysLeft < 0 ? { t: `−${-daysLeft}д`, c: '#C06B5A' }
-                  : daysLeft <= 7 ? { t: `${daysLeft}д`, c: '#C9A14A' }
-                  : { t: `${daysLeft}д`, c: '#8a94a6' };
+                  : daysLeft < 0 ? { t: `−${-daysLeft}д`, c: RAG.bad.strong }
+                  : daysLeft <= 7 ? { t: `${daysLeft}д`, c: RAG.medium.strong }
+                  : { t: `${daysLeft}д`, c: BRAND.inkSoft };
                 return (
                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', height: rowH, background: idx % 2 ? '#FAFBFC' : '#fff' }}>
                     <div style={{ width: LABEL_W, flex: '0 0 auto', paddingRight: 12, overflow: 'hidden' }}>
@@ -299,7 +302,7 @@ const TaskPlanDashboard: React.FC = () => {
                           {p.escalated && <RiseOutlined style={{ color: '#7E57C2', marginRight: 4 }} />}{p.riskTitle || p.metricName}
                         </div>
                       </Tooltip>
-                      <div style={{ fontSize: 11, color: '#8a94a6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: 11, color: BRAND.inkSoft, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {p.owner || 'ответственный не назначен'}
                       </div>
                     </div>
@@ -309,7 +312,7 @@ const TaskPlanDashboard: React.FC = () => {
                           onClick={() => openTask(p)}
                           style={{
                             position: 'absolute', top: (rowH - 26) / 2, left: `${left}%`, width: `${width}%`, height: 26,
-                            background: `linear-gradient(180deg, ${meta.light}, ${meta.color})`, borderRadius: 13, cursor: 'pointer',
+                            background: `linear-gradient(180deg, ${meta.bar}, ${meta.barEnd})`, borderRadius: 13, cursor: 'pointer',
                             display: 'flex', alignItems: 'center', paddingLeft: 10, paddingRight: 10, color: '#fff', fontSize: 11, gap: 6,
                             boxShadow: '0 1px 3px rgba(0,0,0,.15)', border: kind === 'escalated' ? '1.5px solid #5E35B1' : 'none',
                           }}

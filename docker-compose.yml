@@ -39,7 +39,11 @@ services:
       - asok_net
 
   backend:
-    build: ./backend
+    # Явный dockerfile (строчными): на регистрозависимой ФС Linux сокращённая форма
+    # `build: ./backend` искала бы `Dockerfile` и падала бы «Dockerfile not found».
+    build:
+      context: ./backend
+      dockerfile: dockerfile
     container_name: asok_backend
     restart: unless-stopped
     ports:
@@ -68,7 +72,9 @@ services:
       - asok_net
 
   celery_worker:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: dockerfile
     container_name: asok_celery
     restart: unless-stopped
     env_file:
@@ -100,7 +106,9 @@ services:
       - asok_net
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: dockerfile
     container_name: asok_frontend
     restart: unless-stopped
     ports:

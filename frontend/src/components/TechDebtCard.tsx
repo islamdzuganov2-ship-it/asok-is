@@ -10,8 +10,8 @@ import { Card, Modal, Progress, Select, Space, Table, Tag, Typography } from 'an
 import type { ColumnsType } from 'antd/es/table';
 import { FundOutlined } from '@ant-design/icons';
 import type { Proposal } from '../store/slices/governanceSlice';
-import { BRAND, RAG, ragToken } from '../theme/ragPalette';
-import { premiumCard, accentDot, GOLD } from '../theme/premium';
+import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
+import { premiumCard, accentDot, GOLD, TYPE } from '../theme/premium';
 
 const { Text } = Typography;
 const TODAY = new Date(2026, 5, 26).getTime();
@@ -79,7 +79,7 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
     { title: 'Мера', dataIndex: 'riskTitle', render: (v: string, r) => v || r.metricName },
     { title: 'ИС', dataIndex: 'systemName', width: 170 },
     { title: '%', dataIndex: 'calculatedScore', width: 64,
-      render: (v: number) => <Tag color={ragToken(v).color} style={{ color: '#fff', border: 'none' }}>{v}%</Tag> },
+      render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> },
     { title: 'Срок', dataIndex: 'dueDate', width: 104 },
   ];
 
@@ -122,7 +122,7 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
               <span style={{ width: 9, height: 9, borderRadius: '50%', background: r.color, flex: '0 0 auto' }} />
               <Text style={{ fontSize: 13, color: BRAND.ink }}>{r.label}</Text>
             </span>
-            <Text strong style={{ fontSize: 17, color: r.color, marginLeft: 8 }}>{lists[r.b].length}</Text>
+            <Text strong style={{ ...TYPE.metricSm, color: r.color, marginLeft: 8 }}>{lists[r.b].length}</Text>
           </div>
         ))}
       </div>

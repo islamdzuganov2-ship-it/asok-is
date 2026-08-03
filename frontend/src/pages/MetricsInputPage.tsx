@@ -106,12 +106,13 @@ const MetricsInputPage: React.FC = () => {
   const handleSaveAll = async () => {
     if (!periodId || dirtyIds.size === 0) return;
     const dirtyMetrics = metrics.filter((m) => dirtyIds.has(m.id));
-    // «Невозможно измерить» требует обязательного комментария с причиной.
+    // «Невозможно измерить» требует обязательной причины (T-55). Проф. суждение и мера —
+    // тоже обязательны, но вносятся в других разделах; их наличие проверяет финализация на бэкенде.
     const missingComment = dirtyMetrics.filter((m) => m.unmeasurable && !(m.expert_comment || '').trim());
     if (missingComment.length > 0) {
       message.error(
-        `Для «Невозможно измерить» обязателен комментарий (строк: ${missingComment.length}). `
-        + 'Опишите, почему нет возможности собрать данные.',
+        `Для «Невозможно измерить» обязательна причина (строк: ${missingComment.length}). `
+        + 'Опишите, почему нет возможности собрать данные. Также потребуются проф. суждение и мера.',
       );
       return;
     }
@@ -270,6 +271,10 @@ const MetricsInputPage: React.FC = () => {
     return <Alert type="error" message="period_id не указан в URL" />;
   }
 
+  // T-55: неизмеримые метрики — обязательный разбор (причина + проф. суждение + мера).
+  const unmeasurable = metrics.filter((m) => m.unmeasurable);
+  const unmeasurableNoCause = unmeasurable.filter((m) => !(m.expert_comment || '').trim());
+
   return (
     <div style={{ padding: 24 }}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -305,6 +310,26 @@ const MetricsInputPage: React.FC = () => {
 
         {/* Excel Upload блок */}
         <ExcelUploadBlock periodId={periodId} onImported={fetchMetrics} />
+
+        {/* T-55: обязательный разбор неизмеримых метрик (причина + проф. суждение + мера). */}
+        {unmeasurable.length > 0 && (
+          <Alert
+            type={unmeasurableNoCause.length ? 'error' : 'warning'}
+            showIcon
+            message={`Неизмеримых метрик: ${unmeasurable.length} — обязательный разбор`}
+            description={(
+              <div>
+                Каждая метрика «Невозможно измерить» обязана иметь три условия:{' '}
+                <b>причину</b> (комментарий в этой таблице —{' '}
+                {unmeasurableNoCause.length
+                  ? <Text type="danger">не заполнена у {unmeasurableNoCause.length}</Text>
+                  : <Text type="success">заполнена у всех</Text>}),{' '}
+                <b>профессиональное суждение</b> и <b>меру</b> (вносятся в разделах «Экспертиза» и «Основное»).
+                Без всех трёх период <b>нельзя финализировать</b> — проверка выполняется на бэкенде.
+              </div>
+            )}
+          />
+        )}
 
         {loading
           ? <Spin size="large" style={{ display: 'block', marginTop: 40 }} />

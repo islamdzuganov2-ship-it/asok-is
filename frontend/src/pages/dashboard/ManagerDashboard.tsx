@@ -25,8 +25,8 @@ import { useSelector, shallowEqual } from 'react-redux';
 import { RootState } from '../../store';
 import { ManagerMetric, ManagerSystem } from '../../data/mockDashboards';
 import { MANAGER_SCALE_SYSTEMS as MANAGER_MOCK_SYSTEMS } from '../../data/mockScaleData';
-import { RAG, ragToken, levelLabel, BRAND } from '../../theme/ragPalette';
-import { premiumCard, accentDot, pageContainer, pageTitle, GOLD } from '../../theme/premium';
+import { RAG, ragToken, levelLabel, BRAND, solidTagStyle } from '../../theme/ragPalette';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE } from '../../theme/premium';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import MeasureDevelopmentPanel from '../../components/MeasureDevelopmentPanel';
@@ -36,15 +36,17 @@ import { ProposalStatus, selectVisibleProposals, type Proposal } from '../../sto
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
+// Плашки статуса — с белым текстом, поэтому берём глубокий тон `strong` (T-57).
 const STATUS_META: Record<ProposalStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  PENDING_APPROVAL: { label: 'Ожидает одобрения', color: RAG.medium.color, icon: <ClockCircleOutlined /> },
-  APPROVED:         { label: 'Одобрено',          color: RAG.good.color,   icon: <CheckCircleOutlined /> },
-  REJECTED:         { label: 'Отклонено',         color: RAG.bad.color,    icon: <CloseCircleOutlined /> },
+  PENDING_APPROVAL: { label: 'Ожидает одобрения', color: RAG.medium.strong, icon: <ClockCircleOutlined /> },
+  APPROVED:         { label: 'Одобрено',          color: RAG.good.strong,   icon: <CheckCircleOutlined /> },
+  REJECTED:         { label: 'Отклонено',         color: RAG.bad.strong,    icon: <CloseCircleOutlined /> },
 };
 
 // score -1 = «невозможно измерить» → серый/нулевой gauge, честная подпись.
 const scoreLevel = (s: number) => (s < 0 ? 'Невозможно измерить' : levelLabel(s));
-const scoreTok = (s: number) => (s < 0 ? { color: '#AAB0B6', soft: '#F1F2F3', border: '#D9DBDE' } : ragToken(s));
+// ragByScore уже отдаёт `muted` на отрицательный балл — отдельный «серый» литерал не нужен.
+const scoreTok = ragToken;
 // Нормализация названий характеристик/подхарактеристик (ё/е, регистр, пробелы) — как в теплокарте.
 const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
 
@@ -164,7 +166,8 @@ const ManagerDashboard: React.FC = () => {
         anchor: { show: true, size: 8, itemStyle: { color: BRAND.ink } },
         detail: {
           formatter: (characteristic?.score ?? -1) < 0 ? 'н/д' : '{value}%',
-          fontSize: 24, fontWeight: 700, color: charTok.color, offsetCenter: [0, '34%'],
+          fontSize: TYPE.metricMd.fontSize, fontWeight: TYPE.metricMd.fontWeight,
+          color: charTok.strong, offsetCenter: [0, '34%'],
         },
         data: [{ value: Math.max(0, characteristic?.score ?? 0) }],
       }],
@@ -186,8 +189,8 @@ const ManagerDashboard: React.FC = () => {
         text: integral < 0 ? 'н/д' : `${integral}%`,
         subtext: 'интегральный балл',
         left: 'center', top: '42%',
-        textStyle: { color: BRAND.ink, fontSize: 28, fontWeight: 800 },
-        subtextStyle: { color: '#8a94a6', fontSize: 11 },
+        textStyle: { color: BRAND.ink, fontSize: TYPE.metricLg.fontSize, fontWeight: TYPE.metricLg.fontWeight },
+        subtextStyle: { color: BRAND.inkSoft, fontSize: TYPE.micro.fontSize },
       },
       series: [{
         type: 'pie', radius: ['56%', '82%'], center: ['50%', '50%'], avoidLabelOverlap: true,
@@ -211,14 +214,14 @@ const ManagerDashboard: React.FC = () => {
     { title: 'Метрика (подхарактеристика)', dataIndex: 'name', key: 'name', width: '46%' },
     {
       title: 'Расчётный %', dataIndex: 'score', key: 'score', width: '20%',
-      render: (v: number) => <Text strong style={{ color: scoreTok(v).color }}>{v < 0 ? 'н/д' : `${v}%`}</Text>,
+      render: (v: number) => <Text strong style={{ color: scoreTok(v).strong }}>{v < 0 ? 'н/д' : `${v}%`}</Text>,
       sorter: (a: ManagerMetric, b: ManagerMetric) => a.score - b.score,
     },
     {
       title: 'Уровень', key: 'level', width: '20%',
       render: (_: unknown, r: ManagerMetric) => {
         const t = scoreTok(r.score);
-        return <Tag color={t.color} style={{ color: '#fff', border: 'none' }}>{scoreLevel(r.score)}</Tag>;
+        return <Tag style={solidTagStyle(t.strong)}>{scoreLevel(r.score)}</Tag>;
       },
     },
     {
@@ -294,7 +297,7 @@ const ManagerDashboard: React.FC = () => {
                 <span style={{ color: BRAND.ink }}>Профиль качества по характеристикам</span>
               </Space>
             }
-            extra={<Text type="secondary" style={{ fontSize: 12 }}>клик по сектору или строке справа — выбрать характеристику</Text>}
+            extra={<Text type="secondary" style={TYPE.caption}>клик по сектору или строке справа — выбрать характеристику</Text>}
           >
             <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
               {/* Бублик — левая колонка фиксированной ширины (совпадает со спидометром ниже) */}
@@ -336,7 +339,7 @@ const ManagerDashboard: React.FC = () => {
                         <span style={{ width: 10, height: 10, borderRadius: '50%', background: tok.color, flex: '0 0 auto', boxShadow: `0 0 0 3px ${tok.soft}` }} />
                         <span style={{ color: BRAND.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: active ? 600 : 400 }}>{c.title}</span>
                       </span>
-                      <b style={{ color: tok.color, flex: '0 0 auto', fontVariantNumeric: 'tabular-nums' }}>{c.score < 0 ? 'н/д' : `${c.score}%`}</b>
+                      <b style={{ color: tok.strong, flex: '0 0 auto', fontVariantNumeric: 'tabular-nums' }}>{c.score < 0 ? 'н/д' : `${c.score}%`}</b>
                     </div>
                   );
                 })}
@@ -352,7 +355,7 @@ const ManagerDashboard: React.FC = () => {
                 <Space wrap>
                   <span style={accentDot(charTok.color)} />
                   <span style={{ color: BRAND.ink }}>Метрики характеристики «{characteristic!.title}»</span>
-                  <Tag color={charTok.color} style={{ color: '#fff', border: 'none' }}>
+                  <Tag style={solidTagStyle(charTok.strong)}>
                     {characteristic!.score < 0 ? 'н/д' : `${characteristic!.score}%`}
                   </Tag>
                 </Space>
@@ -379,7 +382,7 @@ const ManagerDashboard: React.FC = () => {
                     })}
                     locale={{ emptyText: <Empty description="Нет метрик" /> }}
                   />
-                  <Text type="secondary" style={{ fontSize: 12 }}>
+                  <Text type="secondary" style={TYPE.caption}>
                     Клик по строке — выбрать подхарактеристику (уточняет меры и суждения по ней).
                   </Text>
                 </div>
@@ -437,23 +440,23 @@ const ManagerDashboard: React.FC = () => {
                     <Space direction="vertical" size={2} style={{ width: '100%' }}>
                       <Space wrap>
                         <Text strong>{p.riskTitle || p.metricName}</Text>
-                        <Tag icon={meta.icon} color={meta.color} style={{ color: '#fff', border: 'none' }}>
+                        <Tag icon={meta.icon} style={solidTagStyle(meta.color)}>
                           {meta.label}
                         </Tag>
                         {p.execution === 'DONE' && <Tag color="green">выполнено</Tag>}
                         {p.execution === 'NOT_DONE' && <Tag color="red">не выполнено</Tag>}
                         {p.status === 'APPROVED' && !p.execution && <Tag color="blue">отчитаться о выполнении</Tag>}
-                        <Text type="secondary" style={{ fontSize: 12 }}>{p.characteristic}</Text>
+                        <Text type="secondary" style={TYPE.caption}>{p.characteristic}</Text>
                       </Space>
-                      <Text type="secondary" style={{ fontSize: 13 }}>{p.rationale}</Text>
+                      <Text type="secondary" style={TYPE.bodySm}>{p.rationale}</Text>
                       {(p.owner || p.dueDate) && (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={TYPE.caption}>
                           {p.owner && <>Ответственный: {p.owner}{p.ownerRole ? ` (${p.ownerRole})` : ''}. </>}
                           {p.dueDate && <>Срок: {p.dueDate}.</>}
                         </Text>
                       )}
                       {p.decidedBy && (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={TYPE.caption}>
                           Решение: {meta.label.toLowerCase()} ({p.decidedBy})
                         </Text>
                       )}

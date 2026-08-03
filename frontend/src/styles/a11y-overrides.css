@@ -1,0 +1,60 @@
+/*
+ * a11y-overrides.css — точечные правки контраста для встроенной палитры Ant Design (T-57).
+ *
+ * Пресетные «светлые» плашки antd (<Tag color="gold"> и т.п.) берут текст из color-6 палитры
+ * на фоне color-1. Часть пар не добирает WCAG 2.1 AA (1.4.3, ≥4.5:1) на мелком шрифте:
+ *   gold 2.76:1 · orange 3.34:1 · green 3.37:1 · volcano 4.37:1   (red/blue/purple проходят)
+ * Плашки такого вида расставлены по всему интерфейсу (32 места), поэтому чиним палитру,
+ * а не места вызова: правим ТОЛЬКО цвет текста, фон и рамка antd остаются.
+ *
+ * Специфичность: antd v5 печатает правила через `:where(...)` (нулевой вклад), поэтому
+ * `.ant-tag.ant-tag-gold` (0,2,0) выигрывает независимо от порядка внедрения CSS-in-JS.
+ *
+ * Значения проверяются `npm run check:contrast`.
+ */
+
+.ant-tag.ant-tag-gold {
+  color: #9e6604; /* было #d48806 — 2.76:1 → 4.64:1 */
+}
+
+.ant-tag.ant-tag-orange {
+  color: #af5807; /* было #d46b08 — 3.34:1 → 4.67:1 */
+}
+
+.ant-tag.ant-tag-green {
+  color: #2f840b; /* было #389e0d — 3.37:1 → 4.62:1 */
+}
+
+.ant-tag.ant-tag-volcano {
+  color: #cc360d; /* было #d4380d — 4.37:1 → 4.66:1 */
+}
+
+/*
+ * Смысловой текст antd (<Text type="danger|success|warning">) красится семенами темы
+ * colorError/colorSuccess/colorWarning. Семена намеренно приглушённые (нужны для заливок
+ * и графики), но как ТЕКСТ они не проходят AA: 3.82 / 3.01 / 2.42:1.
+ * Правим только текстовые классы — заливки, рамки и кнопки остаются на семенах темы.
+ * Значения = RAG.*.strong из src/theme/ragPalette.ts.
+ */
+.ant-typography.ant-typography-danger,
+.ant-typography .ant-typography-danger {
+  color: #ae4c39; /* RAG.bad.strong — 5.39:1 */
+}
+
+.ant-typography.ant-typography-success,
+.ant-typography .ant-typography-success {
+  color: #47785e; /* RAG.good.strong — 5.10:1 */
+}
+
+.ant-typography.ant-typography-warning,
+.ant-typography .ant-typography-warning {
+  color: #886822; /* RAG.medium.strong — 5.19:1 */
+}
+
+/*
+ * Подпись прогресса (<Progress status="success" format={…}>, например «31/31») красится
+ * семенем colorSuccess — как текст это 3.01:1. Заливку самой полосы не трогаем: она графика.
+ */
+.ant-progress.ant-progress-status-success .ant-progress-text {
+  color: #47785e; /* RAG.good.strong — 5.10:1 */
+}

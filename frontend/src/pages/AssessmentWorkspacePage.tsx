@@ -4,15 +4,15 @@
  * 7 вкладок (содержимое неактивной вкладки монтируется по первому открытию — тяжёлые запросы не
  * выполняются заранее):
  *   1. Новая оценка              — создание ИС/метрик и инициация периода (NewAssessmentPage);
- *   2. Корректировка оценки      — правка завершённых оценок (T-47, бэкенд — в очереди);
- *   3. Внесение проф. суждения   — оценки без суждения (T-48, бэкенд — в очереди);
+ *   2. Корректировка оценки      — разблокировка и правка завершённых оценок (T-47, AssessmentCorrectionPanel);
+ *   3. Внесение проф. суждения   — метрики без суждения (T-48, JudgmentEntryPanel);
  *   4. Формирование отчётов (CSV)— выгрузка готовых оценок с проф. суждением (ExcelReportsPage);
  *   5. Загрузка оценок           — Excel/CSV + инструкция + шаблон + предпросмотр (T-50, DataUploadPanel);
  *   6. Загрузка ТС               — Excel/CSV техсбоев + инструкция + шаблон (T-51/T-43, DataUploadPanel);
  *   7. Реестры мер               — полный реестр мер за весь период со статусами (T-52, MeasuresRegistryCard).
  */
 import React, { useState } from 'react';
-import { Alert, Button, Space, Tabs, Typography, message } from 'antd';
+import { Button, Space, Tabs, Typography, message } from 'antd';
 import {
   FormOutlined, EditOutlined, CommentOutlined, FileExcelOutlined,
   UploadOutlined, ThunderboltOutlined, UnorderedListOutlined, DownloadOutlined,
@@ -21,25 +21,14 @@ import { shallowEqual, useSelector } from 'react-redux';
 import NewAssessmentPage from './NewAssessmentPage';
 import ExcelReportsPage from './ExcelReportsPage';
 import DataUploadPanel from '../components/DataUploadPanel';
+import AssessmentCorrectionPanel from '../components/AssessmentCorrectionPanel';
+import JudgmentEntryPanel from '../components/JudgmentEntryPanel';
 import { ASSESSMENT_UPLOAD_SPEC, INCIDENT_UPLOAD_SPEC } from '../constants/uploadSpecs';
 import { MeasuresRegistryCard } from '../components/MeasuresRegistryCard';
 import { MeasureDecisionModal } from '../components/MeasureDecisionModal';
 import { selectVisibleProposals, type Proposal } from '../store/slices/governanceSlice';
 
 const { Title, Text } = Typography;
-
-/** Заготовка бэкенд-зависимой вкладки — честно описывает назначение и статус. */
-const PlannedTab: React.FC<{ title: string; task: string; children: React.ReactNode }> = ({ title, task, children }) => (
-  <div style={{ maxWidth: 900 }}>
-    <Title level={4} style={{ marginTop: 0 }}>{title}</Title>
-    <Alert
-      type="info"
-      showIcon
-      message={`Раздел в реализации (${task})`}
-      description={children}
-    />
-  </div>
-);
 
 // Выгрузка реестра мер в CSV-документ (T-52; задел под ЕХД/DWH). UTF-8 c BOM, разделитель «;».
 const STATUS_RU: Record<string, string> = { PENDING_APPROVAL: 'Ожидает решения', APPROVED: 'Одобрена', REJECTED: 'Отклонена' };
@@ -119,26 +108,12 @@ const AssessmentWorkspacePage: React.FC = () => {
           {
             key: 'edit',
             label: <span><EditOutlined /> Корректировка оценки</span>,
-            children: (
-              <PlannedTab title="Корректировка оценки" task="ТЗ v16, T-47">
-                <Space direction="vertical" size={4}>
-                  <Text>Здесь отображаются все <b>завершённые</b> оценки с возможностью открыть период на редактирование значений и комментариев.</Text>
-                  <Text type="secondary">Требует бэкенд-эндпоинт разблокировки/патча завершённого периода. Пока правка доступна из «Новой оценки» и «Отчётов».</Text>
-                </Space>
-              </PlannedTab>
-            ),
+            children: <AssessmentCorrectionPanel />,
           },
           {
             key: 'judgment',
             label: <span><CommentOutlined /> Внесение проф. суждения</span>,
-            children: (
-              <PlannedTab title="Внесение профессионального суждения" task="ТЗ v16, T-48">
-                <Space direction="vertical" size={4}>
-                  <Text>Показывает <b>только</b> оценки/метрики <b>без внесённого</b> профессионального суждения; ввод/правка суждения со связкой «оценка ↔ суждение».</Text>
-                  <Text type="secondary">Требует бэкенд-фильтр «без суждения». Внесение суждений по метрикам сейчас доступно на дашборде «Основное» и в «Экспертизе».</Text>
-                </Space>
-              </PlannedTab>
-            ),
+            children: <JudgmentEntryPanel />,
           },
           {
             key: 'reports',

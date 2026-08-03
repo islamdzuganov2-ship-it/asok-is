@@ -29,7 +29,7 @@ import { selectVisibleProposals, type Proposal } from '../../store/slices/govern
 import { MOCK_INCIDENTS, INCIDENT_CATEGORIES, computeIncidentAnalytics } from '../../data/mockIncidents';
 import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
-import { BRAND } from '../../theme/ragPalette';
+import { BRAND, RAG, solidTagStyle } from '../../theme/ragPalette';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -41,8 +41,13 @@ const CATEGORY_LABEL: Record<string, string> = {
     POWER: 'Электроснабжение',
     OTHER: 'Другое',
 };
+// Цвет первопричины в ГРАФИКЕ (сектора/столбцы) — ≥3:1 с белым (WCAG 1.4.11).
 const CATEGORY_COLOR: Record<string, string> = {
-    RELEASE: '#7E57C2', INFRASTRUCTURE: '#6E89A6', PERFORMANCE: '#C9A14A', NETWORK: '#6F9F86', POWER: '#C06B5A', OTHER: '#8a94a6',
+    RELEASE: '#7E57C2', INFRASTRUCTURE: '#6E89A6', PERFORMANCE: '#B88E32', NETWORK: '#6F9F86', POWER: '#C06B5A', OTHER: '#8C96A0',
+};
+// Тот же оттенок для ПЛАШКИ с белым текстом — углублён до ≥4.5:1 (T-57).
+const CATEGORY_TAG_COLOR: Record<string, string> = {
+    RELEASE: '#7E57C2', INFRASTRUCTURE: '#56799F', PERFORMANCE: '#947125', NETWORK: '#4C8165', POWER: '#C0553F', OTHER: '#667797',
 };
 // Маппинг первопричины → характеристика ISO 25010 (зеркало backend CATEGORY_TO_CHARACTERISTIC) —
 // для умного скоупинга связки «сбой ↔ мера» (T-42): предлагаем меры по связанной характеристике.
@@ -121,7 +126,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
             label: { show: false }, labelLine: { show: false },
             data: (analytics?.byCategory ?? []).map((c) => ({
                 name: CATEGORY_LABEL[c.category] ?? c.category, value: c.count,
-                itemStyle: { color: CATEGORY_COLOR[c.category] ?? '#8a94a6' },
+                itemStyle: { color: CATEGORY_COLOR[c.category] ?? RAG.muted.color },
             })),
         }],
     }), [analytics]);
@@ -130,7 +135,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
         { title: 'ИС', dataIndex: 'systemName', width: 160, fixed: 'left' as const },
         {
             title: 'Первопричина', dataIndex: 'category', width: 180,
-            render: (c: string) => <Tag color={CATEGORY_COLOR[c]} style={{ color: '#fff', border: 'none' }}>{CATEGORY_LABEL[c] ?? c}</Tag>,
+            render: (c: string) => <Tag style={solidTagStyle(CATEGORY_TAG_COLOR[c])}>{CATEGORY_LABEL[c] ?? c}</Tag>,
         },
         {
             title: 'Критичность', dataIndex: 'severity', width: 120,
@@ -288,7 +293,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
                                     rowKey="category"
                                     dataSource={analytics?.byCategory ?? []}
                                     columns={[
-                                        { title: 'Первопричина', dataIndex: 'category', render: (c: string) => <Tag color={CATEGORY_COLOR[c]} style={{ color: '#fff', border: 'none' }}>{CATEGORY_LABEL[c] ?? c}</Tag> },
+                                        { title: 'Первопричина', dataIndex: 'category', render: (c: string) => <Tag style={solidTagStyle(CATEGORY_TAG_COLOR[c])}>{CATEGORY_LABEL[c] ?? c}</Tag> },
                                         { title: 'Сбоев', dataIndex: 'count', width: 80 },
                                         { title: 'Доля', dataIndex: 'share', width: 90, render: (v: number) => `${v}%` },
                                         { title: 'Открыто', dataIndex: 'openCount', width: 90 },
@@ -300,7 +305,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
                                     <Space wrap style={{ marginTop: 8 }}>
                                         {(analytics?.topSystems ?? []).map((s) => (
                                             <Tag key={s.systemName} style={{ padding: '4px 10px', fontSize: 13 }}>
-                                                {s.systemName}: <b>{s.count}</b>{s.openCount > 0 && <span style={{ color: '#C06B5A' }}> · открыто {s.openCount}</span>}
+                                                {s.systemName}: <b>{s.count}</b>{s.openCount > 0 && <span style={{ color: RAG.bad.strong }}> · открыто {s.openCount}</span>}
                                             </Tag>
                                         ))}
                                     </Space>
@@ -350,7 +355,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
                 {selectedIncident && (
                     <Space direction="vertical" size={10} style={{ width: '100%' }}>
                         <Space wrap>
-                            <Tag color={CATEGORY_COLOR[selectedIncident.category]} style={{ color: '#fff', border: 'none' }}>
+                            <Tag style={solidTagStyle(CATEGORY_TAG_COLOR[selectedIncident.category])}>
                                 {CATEGORY_LABEL[selectedIncident.category] ?? selectedIncident.category}
                             </Tag>
                             <Tag color={SEVERITY_COLOR[selectedIncident.severity]}>

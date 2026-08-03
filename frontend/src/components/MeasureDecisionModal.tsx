@@ -20,7 +20,7 @@ import {
   approveProposal, rejectProposal, setExecution, updateProposalMeta, editProposal,
   type EditableProposalFields, type Proposal, type ProposalStatus,
 } from '../store/slices/governanceSlice';
-import { ragToken } from '../theme/ragPalette';
+import { ragToken, solidTagStyle } from '../theme/ragPalette';
 
 const { Text, Paragraph } = Typography;
 
@@ -169,7 +169,7 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
       <Space wrap style={{ marginBottom: 8 }}>
         <Tag>{p.systemName}</Tag>
         <Tag>{p.characteristic}</Tag>
-        <Tag color={tok.color} style={{ color: '#fff', border: 'none' }}>{p.calculatedScore}%</Tag>
+        <Tag style={solidTagStyle(tok.strong)}>{p.calculatedScore}%</Tag>
       </Space>
 
       {editing ? (
