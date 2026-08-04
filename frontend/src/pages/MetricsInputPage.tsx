@@ -15,6 +15,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import ExcelUploadBlock from '../components/ExcelUploadBlock';
 import { subDescription, subArtifacts } from '../constants/subDescriptions';
+import { SPACE } from '../theme/premium';
 import { apiSlice } from '../store/api/apiSlice';
 
 const { Text, Title } = Typography;
@@ -123,7 +124,15 @@ const MetricsInputPage: React.FC = () => {
         headers,
         body: JSON.stringify(dirtyMetrics),
       });
-      if (!resp.ok) throw new Error(await resp.text());
+      if (!resp.ok) {
+        // Достаём читаемый текст ошибки бэкенда: при 409 (период завершён и закрыт на правку,
+        // T-47) тело — JSON {detail}. Без разбора пользователь увидел бы сырой JSON вместо
+        // подсказки «откройте на корректировку».
+        const body = await resp.text();
+        let detail = body;
+        try { detail = JSON.parse(body).detail ?? body; } catch { /* тело не JSON */ }
+        throw new Error(detail);
+      }
       const result = await resp.json();
       message.success(`Сохранено: ${result.updated} метрик. Backend пересчитал X.`);
       // Перечитываем локальную таблицу — получаем calculated_x и quality_level.
@@ -160,7 +169,7 @@ const MetricsInputPage: React.FC = () => {
             title={(
               <div style={{ maxWidth: 340 }}>
                 <div>{subDescription(rec.characteristic, sub)}</div>
-                <div style={{ marginTop: 6, opacity: 0.85 }}>{subArtifacts(sub)}</div>
+                <div style={{ marginTop: SPACE.snug, opacity: 0.85 }}>{subArtifacts(sub)}</div>
               </div>
             )}
           >

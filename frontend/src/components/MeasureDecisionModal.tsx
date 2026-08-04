@@ -21,6 +21,7 @@ import {
   type EditableProposalFields, type Proposal, type ProposalStatus,
 } from '../store/slices/governanceSlice';
 import { ragToken, solidTagStyle } from '../theme/ragPalette';
+import { SPACE } from '../theme/premium';
 
 const { Text, Paragraph } = Typography;
 
@@ -48,7 +49,7 @@ interface Props {
 }
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div style={{ marginBottom: 10 }}>
+  <div style={{ marginBottom: SPACE.cozy }}>
     <Text type="secondary" style={{ fontSize: 12 }}>{label}</Text>
     <div>{children}</div>
   </div>

@@ -22,7 +22,7 @@ import {
   MANAGER_SCALE_SYSTEMS, DYNAMICS, QUARTERS, detectAnomalies, type DynSeries,
 } from '../../data/mockScaleData';
 import { BRAND, ragToken, solidTagStyle } from '../../theme/ragPalette';
-import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE } from '../../theme/premium';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE, SPACE } from '../../theme/premium';
 import Sparkline from '../../components/Sparkline';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import { DynamicsModal } from '../../components/DynamicsModal';
@@ -333,7 +333,7 @@ const QualityDynamicsPage: React.FC = () => {
                     </Tag>
                     <Text type="secondary" style={TYPE.micro}>{s.char}</Text>
                   </Space>
-                  <div style={{ marginTop: 6 }}><Sparkline series={s.series} /></div>
+                  <div style={{ marginTop: SPACE.snug }}><Sparkline series={s.series} /></div>
                 </Card>
               </Col>
             );

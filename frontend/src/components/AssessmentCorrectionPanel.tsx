@@ -37,6 +37,7 @@ import {
 import { DEMO_PERIOD_SUMMARIES, computeX, demoMetricsOf } from '../data/mockAssessments';
 import { formulaFor, TOTAL_SUBS } from '../constants/qualityModel';
 import { levelLabel } from '../theme/ragPalette';
+import { SPACE } from '../theme/premium';
 
 const { Title, Text } = Typography;
 
@@ -376,7 +377,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
           </Space>
 
           <Alert
-            style={{ marginTop: 10 }}
+            style={{ marginTop: SPACE.cozy }}
             type={locked ? 'info' : 'warning'}
             showIcon
             message={locked
@@ -390,7 +391,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
           />
 
           <Table<EditableMetric>
-            style={{ marginTop: 10 }}
+            style={{ marginTop: SPACE.cozy }}
             columns={metricColumns}
             dataSource={metricRows}
             rowKey="id"

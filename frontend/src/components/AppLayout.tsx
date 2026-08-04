@@ -27,7 +27,7 @@ import { setDataMode } from '../store/slices/uiSlice';
 import { syncProposals } from '../store/slices/governanceSlice';
 import { roleLabel } from '../constants/roles';
 import NotificationBell from './NotificationBell';
-import { PREMIUM, GOLD, TYPE } from '../theme/premium';
+import { PREMIUM, GOLD, TYPE, SPACE } from '../theme/premium';
 import { BRAND } from '../theme/ragPalette';
 
 // Приглушённый заголовок группы меню (капитель/трекинг) — премиум, не «кричащий».
@@ -152,7 +152,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 style={{ background: PREMIUM.gradient.sider, boxShadow: '2px 0 24px -12px rgba(16,24,40,0.45)' }}
             >
                 {/* Премиальный логотип: графит-плашка с золотым акцентом */}
-                <div style={{ height: 56, margin: '16px 14px 10px', display: 'flex', alignItems: 'center', gap: 11, justifyContent: collapsed ? 'center' : 'flex-start' }}>
+                <div style={{ height: 56, margin: `${SPACE.base}px ${SPACE.base}px ${SPACE.cozy}px`, display: 'flex', alignItems: 'center', gap: SPACE.cozy, justifyContent: collapsed ? 'center' : 'flex-start' }}>
                     <div style={{ width: 32, height: 32, borderRadius: 9, background: PREMIUM.gradient.ink, border: `1px solid ${GOLD.line}`, boxShadow: `0 0 0 3px ${GOLD.glow}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
                         <span style={{ color: GOLD.soft, fontWeight: 800, fontSize: 14 }}>А</span>
                     </div>

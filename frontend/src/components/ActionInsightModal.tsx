@@ -15,6 +15,7 @@ import {
 import { useSelector, shallowEqual } from 'react-redux';
 import { selectVisibleProposals, type Proposal } from '../store/slices/governanceSlice';
 import { ragToken, levelLabel, solidTagStyle } from '../theme/ragPalette';
+import { SPACE } from '../theme/premium';
 import { guidanceFor } from '../constants/characteristicGuidance';
 import type { ExecSystemInsight } from '../data/mockDashboards';
 import { MeasureDecisionModal } from './MeasureDecisionModal';
@@ -36,7 +37,7 @@ interface Props {
 const Block: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode }> = ({
   icon, title, children,
 }) => (
-  <div style={{ marginBottom: 14 }}>
+  <div style={{ marginBottom: SPACE.base }}>
     <Text type="secondary" style={{ fontSize: 12 }}>
       {icon} {title}
     </Text>
@@ -108,7 +109,7 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
           dataSource={actionsList}
           split={false}
           renderItem={(a, i) => (
-            <List.Item style={{ padding: '2px 0', border: 'none' }}>
+            <List.Item style={{ padding: `${SPACE.tight}px 0`, border: 'none' }}>
               <Text>{i + 1}. {a}</Text>
             </List.Item>
           )}

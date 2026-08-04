@@ -27,7 +27,7 @@ import {
   selectVisibleProposals, updateTask, setExecution, escalateTask, decideEscalation, resolveEscalation, type Proposal,
 } from '../../store/slices/governanceSlice';
 import { BRAND, RAG } from '../../theme/ragPalette';
-import { pageContainer, pageTitle, GOLD, accentDot } from '../../theme/premium';
+import { pageContainer, pageTitle, GOLD, accentDot, SPACE, TYPE } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import TaskBubbleTimeline from '../../components/TaskBubbleTimeline';
 
@@ -313,7 +313,8 @@ const TaskPlanDashboard: React.FC = () => {
                           style={{
                             position: 'absolute', top: (rowH - 26) / 2, left: `${left}%`, width: `${width}%`, height: 26,
                             background: `linear-gradient(180deg, ${meta.bar}, ${meta.barEnd})`, borderRadius: 13, cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', paddingLeft: 10, paddingRight: 10, color: '#fff', fontSize: 11, gap: 6,
+                            display: 'flex', alignItems: 'center', paddingLeft: SPACE.cozy, paddingRight: SPACE.cozy,
+                            color: '#fff', fontSize: TYPE.micro.fontSize, gap: SPACE.snug,
                             boxShadow: '0 1px 3px rgba(0,0,0,.15)', border: kind === 'escalated' ? '1.5px solid #5E35B1' : 'none',
                           }}
                         >
@@ -328,7 +329,7 @@ const TaskPlanDashboard: React.FC = () => {
                         <span style={{
                           position: 'absolute', top: (rowH - 18) / 2, left: `calc(${left + width}% + 6px)`, height: 18,
                           fontSize: 10, fontWeight: 600, color: dl.c, background: '#fff', border: `1px solid ${dl.c}`,
-                          borderRadius: 9, padding: '0 7px', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap',
+                          borderRadius: 8, padding: `0 ${SPACE.snug}px`, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap',
                         }}>{dl.t}</span>
                       )}
                     </div>
@@ -337,7 +338,7 @@ const TaskPlanDashboard: React.FC = () => {
               })}
             </div>
 
-            <Space size={16} style={{ marginTop: 14 }} wrap>
+            <Space size={SPACE.base} style={{ marginTop: SPACE.base }} wrap>
               {(Object.keys(KIND_META) as Kind[]).map((k) => (
                 <Space key={k} size={5}><span style={{ width: 14, height: 10, background: `linear-gradient(180deg, ${KIND_META[k].light}, ${KIND_META[k].color})`, borderRadius: 5, display: 'inline-block' }} /><Text type="secondary" style={{ fontSize: 12 }}>{KIND_META[k].label}</Text></Space>
               ))}
@@ -359,7 +360,7 @@ const TaskPlanDashboard: React.FC = () => {
             <TaskBubbleTimeline tasks={tasks} onOpen={openTask} />
 
             {/* Сворачиваемый список задач под диаграммой */}
-            <div style={{ marginTop: 8, borderTop: '1px solid #EEF0F2', paddingTop: 10 }}>
+            <div style={{ marginTop: SPACE.snug, borderTop: '1px solid #EEF0F2', paddingTop: SPACE.cozy }}>
               <div
                 role="button"
                 tabIndex={0}

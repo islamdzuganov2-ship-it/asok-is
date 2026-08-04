@@ -50,6 +50,40 @@ export const PREMIUM = {
 } as const;
 
 /**
+ * Модульная сетка отступов (T-59). База — 4px, основной шаг между блоками — 16px.
+ *
+ * Сетка не выдумана: по коду и так преобладали 8 / 12 / 16 / 24. Чинился дрейф — рядом с ними
+ * жили 5, 6, 9, 11, 14, 18, из-за чего одинаковые по смыслу зазоры отличались на 1–2px и ряд
+ * «плыл». Такие значения сняты на ближайшую ступень.
+ *
+ * ЧТО НЕ ЯВЛЯЕТСЯ дрейфом и на сетку НЕ снимается:
+ *  · оптическая подгонка иконки под базовую линию текста (`marginTop: 2…3` рядом с иконкой) —
+ *    сетка здесь именно РАСКОСИТ иконку;
+ *  · графические зазоры внутри визуализаций (например `padding: 2` между ячейками теплокарты —
+ *    это плотность мозаики, а не отступ макета).
+ * Правило: сетка управляет РАСКЛАДКОЙ, а не оптикой и не графикой.
+ */
+export const GRID = 4;
+
+/** Отступ в шагах сетки: `space(4)` → 16px. */
+export const space = (steps: number): number => steps * GRID;
+
+export const SPACE = {
+  /** 4 — внутри строки: иконка↔подпись, чип↔чип. */
+  tight: space(1),
+  /** 8 — между связанными элементами одного блока. */
+  snug: space(2),
+  /** 12 — внутри карточки: заголовок↔содержимое. */
+  cozy: space(3),
+  /** 16 — ОСНОВНОЙ шаг: между карточками и секциями. */
+  base: space(4),
+  /** 20 — «воздух» premium-карточки (padding тела). */
+  airy: space(5),
+  /** 24 — поля страницы, крупные разделители. */
+  page: space(6),
+} as const;
+
+/**
  * Типографическая шкала (T-58) — единственный источник размеров текста.
  *
  * Ступени взяты из того, что уже отрисовывалось на дашбордах (20/16/14/13/12), а не придуманы
@@ -131,7 +165,7 @@ export function premiumCard(accent: AccentKey = 'none', extra?: CSSProperties) {
         ? 'linear-gradient(180deg, #FCFBF6 0%, #FFFFFF 100%)'
         : PREMIUM.gradient.header,
     } as CSSProperties,
-    body: { padding: 18 } as CSSProperties,
+    body: { padding: SPACE.airy } as CSSProperties,
   };
   return { style, styles };
 }
@@ -144,7 +178,7 @@ export function accentDot(color: string): CSSProperties {
     height: 16,
     borderRadius: 3,
     background: `linear-gradient(180deg, ${color}, ${color}CC)`,
-    marginRight: 10,
+    marginRight: SPACE.snug,
     verticalAlign: 'text-bottom',
     boxShadow: `0 0 0 3px ${color}14`,
   };

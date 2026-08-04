@@ -26,7 +26,7 @@ import { RootState } from '../../store';
 import { ManagerMetric, ManagerSystem } from '../../data/mockDashboards';
 import { MANAGER_SCALE_SYSTEMS as MANAGER_MOCK_SYSTEMS } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND, solidTagStyle } from '../../theme/ragPalette';
-import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE } from '../../theme/premium';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE, SPACE, PREMIUM } from '../../theme/premium';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import MeasureDevelopmentPanel from '../../components/MeasureDevelopmentPanel';
@@ -328,14 +328,14 @@ const ManagerDashboard: React.FC = () => {
                       onClick={() => selectChar(c.key)}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectChar(c.key); } }}
                       style={{
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-                        padding: '7px 12px', borderRadius: 10,
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SPACE.cozy,
+                        padding: `${SPACE.snug}px ${SPACE.cozy}px`, borderRadius: PREMIUM.radiusSm,
                         background: active ? tok.soft : 'transparent',
                         border: `1px solid ${active ? tok.border : 'transparent'}`,
                         transition: 'all .15s ease', userSelect: 'none',
                       }}
                     >
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: SPACE.snug, minWidth: 0 }}>
                         <span style={{ width: 10, height: 10, borderRadius: '50%', background: tok.color, flex: '0 0 auto', boxShadow: `0 0 0 3px ${tok.soft}` }} />
                         <span style={{ color: BRAND.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: active ? 600 : 400 }}>{c.title}</span>
                       </span>

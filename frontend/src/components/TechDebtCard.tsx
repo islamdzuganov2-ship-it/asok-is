@@ -11,7 +11,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { FundOutlined } from '@ant-design/icons';
 import type { Proposal } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
-import { premiumCard, accentDot, GOLD, TYPE } from '../theme/premium';
+import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
 
 const { Text } = Typography;
 const TODAY = new Date(2026, 5, 26).getTime();
@@ -92,7 +92,7 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
       style={{ ...premiumCard('gold').style, height: '100%' }}
     >
       {/* Период — отдельной строкой под заголовком, не конкурирует с названием */}
-      <Space size={8} style={{ marginBottom: 14 }}>
+      <Space size={SPACE.snug} style={{ marginBottom: SPACE.base }}>
         <Text type="secondary" style={{ fontSize: 12 }}>Период:</Text>
         <Select allowClear placeholder="Год" size="small" style={{ width: 92 }} value={year} onChange={setYear}
           options={years.map((y) => ({ value: String(y), label: String(y) }))} />
@@ -107,14 +107,14 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
       <Progress percent={resolvedPct} strokeColor={RAG.medium.color} trailColor={BRAND.divider} />
 
       {/* Счётчики статусов — читаемым списком строк */}
-      <div style={{ marginTop: 10 }}>
+      <div style={{ marginTop: SPACE.cozy }}>
         {STATUS_ROWS.map((r, i) => (
           <div
             key={r.b}
             onClick={() => lists[r.b].length && setDetail(r.b)}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '8px 2px', borderTop: i ? `1px solid ${BRAND.divider}` : 'none',
+              padding: `${SPACE.snug}px ${SPACE.tight}px`, borderTop: i ? `1px solid ${BRAND.divider}` : 'none',
               cursor: lists[r.b].length ? 'pointer' : 'default',
             }}
           >

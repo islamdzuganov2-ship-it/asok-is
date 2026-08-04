@@ -18,6 +18,7 @@ import {
   type JudgmentItem,
 } from '../store/api/apiSlice';
 import ConclusionFeedback from './ConclusionFeedback';
+import { SPACE } from '../theme/premium';
 
 const { Text, Paragraph } = Typography;
 
@@ -169,7 +170,7 @@ const ProfessionalJudgmentsPanel: React.FC<Props> = ({ periodId, periodLabel }) 
               <Alert
                 type="warning"
                 showIcon
-                style={{ marginBottom: 10 }}
+                style={{ marginBottom: SPACE.cozy }}
                 message="Сработавшие правила (движок решает — LLM объясняет)"
                 description={
                   <Space direction="vertical" size={2}>

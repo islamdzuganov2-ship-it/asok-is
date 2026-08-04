@@ -22,6 +22,7 @@ import {
   CheckCircleOutlined, ExperimentOutlined, FileDoneOutlined, PlusOutlined, RobotOutlined,
 } from '@ant-design/icons';
 import { ragToken, solidTagStyle } from '../theme/ragPalette';
+import { SPACE } from '../theme/premium';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -360,7 +361,7 @@ const AiAssessmentPage: React.FC = () => {
                 <Tag>{calc.weighted ? 'взвешенная свёртка (ф. 3–8)' : 'равные веса'}</Tag>
               </Space>}
               description={(
-                <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 6 }}>
+                <Space direction="vertical" size={SPACE.tight} style={{ width: '100%', marginTop: SPACE.snug }}>
                   {calc.characteristics.map((c) => (
                     <div key={c.title} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Text style={{ width: 260, fontSize: 12 }} ellipsis>{c.title}</Text>
@@ -494,7 +495,7 @@ const AiAssessmentPage: React.FC = () => {
         />
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           {allCharacteristics.map((c) => (
-            <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div key={c} style={{ display: 'flex', alignItems: 'center', gap: SPACE.cozy }}>
               <Text style={{ flex: 1, fontSize: 13 }} ellipsis title={c}>{c}</Text>
               <InputNumber
                 min={0} max={1} step={0.05} style={{ width: 120 }}

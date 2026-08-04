@@ -7,6 +7,7 @@ import React from 'react';
 import { Modal, Typography, Tag, Space, Input } from 'antd';
 import { useDispatch, useSelector } from 'react-redux';
 import { ragToken } from '../theme/ragPalette';
+import { SPACE } from '../theme/premium';
 import { QUARTERS, detectAnomalies, type DynSeries } from '../data/mockScaleData';
 import { reasonKey, selectReasons, setReason } from '../store/slices/dynamicsSlice';
 
@@ -40,7 +41,7 @@ export const DynamicsModal: React.FC<Props> = ({ open, system, series, onClose }
           const isAnomaly = anomalies.has(i);
           const missingReason = isAnomaly && !(reasons[key] || '').trim();
           return (
-            <div key={q} style={{ borderTop: i ? '1px solid #F0F1F3' : 'none', padding: '10px 0' }}>
+            <div key={q} style={{ borderTop: i ? '1px solid #F0F1F3' : 'none', padding: `${SPACE.cozy}px 0` }}>
               <Space wrap>
                 <Tag>{q}</Tag>
                 <Text strong style={{ color: ragToken(v).strong }}>
@@ -65,7 +66,7 @@ export const DynamicsModal: React.FC<Props> = ({ open, system, series, onClose }
                 defaultValue={reasons[key] || ''}
                 onBlur={(e) => dispatch(setReason({ key, text: e.target.value }))}
                 status={missingReason ? 'error' : undefined}
-                style={{ marginTop: 6 }}
+                style={{ marginTop: SPACE.snug }}
               />
             </div>
           );

@@ -27,7 +27,7 @@ import {
 } from '../../store/api/apiSlice';
 import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 import { MOCK_INCIDENTS, INCIDENT_CATEGORIES, computeIncidentAnalytics } from '../../data/mockIncidents';
-import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf } from '../../theme/premium';
+import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import { BRAND, RAG, solidTagStyle } from '../../theme/ragPalette';
 
@@ -304,7 +304,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
                                     <Text strong>Топ нестабильных ИС</Text>
                                     <Space wrap style={{ marginTop: 8 }}>
                                         {(analytics?.topSystems ?? []).map((s) => (
-                                            <Tag key={s.systemName} style={{ padding: '4px 10px', fontSize: 13 }}>
+                                            <Tag key={s.systemName} style={{ padding: `${SPACE.tight}px ${SPACE.cozy}px`, fontSize: 13 }}>
                                                 {s.systemName}: <b>{s.count}</b>{s.openCount > 0 && <span style={{ color: RAG.bad.strong }}> · открыто {s.openCount}</span>}
                                             </Tag>
                                         ))}

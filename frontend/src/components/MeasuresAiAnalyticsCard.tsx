@@ -9,7 +9,7 @@ import React, { useMemo, useState } from 'react';
 import { Card, Button, Table, Tag, Typography, Alert, Spin, Space, Collapse } from 'antd';
 import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { ragToken, solidTagStyle } from '../theme/ragPalette';
-import { premiumCard, accentDot } from '../theme/premium';
+import { premiumCard, accentDot, SPACE } from '../theme/premium';
 import type { Proposal } from '../store/slices/governanceSlice';
 import ConclusionFeedback from './ConclusionFeedback';
 
@@ -92,7 +92,7 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
     <Card
       title={<span><span style={accentDot('#6E89A6')} /><RobotOutlined /> Топ проблемных ИС — AI-аналитика по мерам</span>}
       {...premiumCard('slate', { marginBottom: 16 })}
-      styles={{ header: premiumCard('slate').styles.header, body: { padding: 18, paddingTop: 12 } }}
+      styles={{ header: premiumCard('slate').styles.header, body: { padding: SPACE.airy, paddingTop: SPACE.cozy } }}
       extra={<Button type="primary" icon={<ThunderboltOutlined />} loading={loading} disabled={agg.length === 0} onClick={run}>
         Собрать AI-аналитику
       </Button>}

@@ -17,7 +17,7 @@ import { selectVisibleProposals } from '../store/slices/governanceSlice';
 import { ANALYTICS_SCALE } from '../data/mockScaleData';
 import LevelHeatmap, { LEVEL_COLORS, LEVEL_TAG_COLORS } from '../components/LevelHeatmap';
 import { critTagStyle, levelLabel, solidTagStyle, ragToken, RAG, BRAND } from '../theme/ragPalette';
-import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM } from '../theme/premium';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
 
 const { Title, Text } = Typography;
 
@@ -369,7 +369,7 @@ const DashboardPage: React.FC = () => {
           <Card
             title={<span><span style={accentDot('#6E89A6')} />Тепловая карта: характеристики качества ИС</span>}
             {...premiumCard('slate')}
-            styles={{ header: premiumCard('slate').styles.header, body: { padding: 18, paddingTop: 12 } }}
+            styles={{ header: premiumCard('slate').styles.header, body: { padding: SPACE.airy, paddingTop: SPACE.cozy } }}
           >
             {loading ? <Skeleton active paragraph={{ rows: 8 }} />
               : !data || !data.heatmapData.length
@@ -406,9 +406,9 @@ const DashboardPage: React.FC = () => {
                         />
                       )}
                     />
-                    <div style={{ display: 'flex', gap: 14, marginTop: 10, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: SPACE.base, marginTop: SPACE.cozy, flexWrap: 'wrap' }}>
                       {LEVEL_ORDER.map((lvl) => (
-                        <span key={lvl} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#5B6675' }}>
+                        <span key={lvl} style={{ display: 'flex', alignItems: 'center', gap: SPACE.tight, ...TYPE.micro, fontWeight: 400, color: BRAND.inkSoft }}>
                           <span style={{ width: 11, height: 11, borderRadius: 3, background: LEVEL_COLORS[lvl], display: 'inline-block' }} />
                           {lvl}
                         </span>

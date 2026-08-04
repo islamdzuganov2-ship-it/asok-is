@@ -14,7 +14,7 @@ import { RootState } from '../../store';
 import { ExecSystemInsight, ExecutiveDashboardData } from '../../data/mockDashboards';
 import { EXECUTIVE_SCALE, HEATMAP_CHARS_FULL } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND, critTagStyle, solidTagStyle } from '../../theme/ragPalette';
-import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, TYPE } from '../../theme/premium';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, TYPE, SPACE } from '../../theme/premium';
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
@@ -345,7 +345,7 @@ const ExecutiveDashboard: React.FC = () => {
             title={<span style={{ color: BRAND.ink }}><span style={accentDot('#6E89A6')} /><AppstoreOutlined /> Тепловая карта характеристик</span>}
             extra={<Button type="link" size="small" onClick={() => navigate('/dashboard/analytics')}>Детали →</Button>}
             {...premiumCard('slate')}
-            styles={{ header: premiumCard('slate').styles.header, body: { padding: 18, overflowX: 'auto' } }}
+            styles={{ header: premiumCard('slate').styles.header, body: { padding: SPACE.airy, overflowX: 'auto' } }}
           >
             <table style={{ borderCollapse: 'separate', borderSpacing: '0 8px', width: '100%' }}>
               <thead>
@@ -433,7 +433,7 @@ const ExecutiveDashboard: React.FC = () => {
           onClick={() => setShowRegistry((v) => !v)}
         >
           {showRegistry ? 'Скрыть реестр мер качества' : 'Показать реестр мер качества'}
-          {showRegistry ? <DownOutlined style={{ marginLeft: 6 }} /> : <RightOutlined style={{ marginLeft: 6 }} />}
+          {showRegistry ? <DownOutlined style={{ marginLeft: SPACE.snug }} /> : <RightOutlined style={{ marginLeft: SPACE.snug }} />}
         </Button>
         {showRegistry && (
           <div style={{ marginTop: 12 }}>

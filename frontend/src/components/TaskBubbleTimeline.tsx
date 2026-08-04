@@ -14,6 +14,7 @@ import React, { useMemo, useState } from 'react';
 import { Tooltip } from 'antd';
 import type { Proposal } from '../store/slices/governanceSlice';
 import { BRAND, RAG } from '../theme/ragPalette';
+import { SPACE } from '../theme/premium';
 
 const DAY = 86400000;
 const LABEL_W = 184;
@@ -119,7 +120,7 @@ const TaskBubbleTimeline: React.FC<Props> = ({ tasks, onOpen }) => {
           {/* Подписи ответственных */}
           <div style={{ width: LABEL_W, flex: '0 0 auto' }}>
             {owners.map((o, i) => (
-              <div key={o} style={{ height: ROW_H, display: 'flex', alignItems: 'center', fontSize: 13, color: BRAND.ink, borderTop: i ? '1px solid #F0F2F4' : 'none', paddingRight: 10, overflow: 'hidden' }}>
+              <div key={o} style={{ height: ROW_H, display: 'flex', alignItems: 'center', fontSize: 13, color: BRAND.ink, borderTop: i ? '1px solid #F0F2F4' : 'none', paddingRight: SPACE.cozy, overflow: 'hidden' }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o}</span>
               </div>
             ))}

@@ -16,7 +16,7 @@ import {
     useSaveAssessmentMetricsMutation,
 } from '../store/api/apiSlice';
 import { RootState } from '../store';
-import { accentDot, pageTitle, GOLD } from '../theme/premium';
+import { accentDot, pageTitle, GOLD, SPACE } from '../theme/premium';
 import { BRAND, RAG } from '../theme/ragPalette';
 import {
     approveProposal, rejectProposal, selectVisibleProposals, type ProposalStatus,
@@ -485,7 +485,7 @@ export const ExcelReportsPage: React.FC = () => {
                                                             <Tag
                                                                 key={i}
                                                                 color={PROPOSAL_STATUS_TAG[m.status as ProposalStatus]?.color || 'default'}
-                                                                style={{ padding: '4px 10px', fontSize: 12 }}
+                                                                style={{ padding: `${SPACE.tight}px ${SPACE.cozy}px`, fontSize: 12 }}
                                                             >
                                                                 {m.characteristic} · {m.title} · {m.createdAt.slice(0, 10)} · {PROPOSAL_STATUS_TAG[m.status as ProposalStatus]?.label || m.status}
                                                             </Tag>

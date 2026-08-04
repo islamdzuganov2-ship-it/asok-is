@@ -78,7 +78,7 @@ const short = (c: string) => ABBR[c] ?? c;
 const thBase: React.CSSProperties = {
   position: 'sticky', top: 0, zIndex: 2, background: '#fff',
   fontWeight: 500, fontSize: 11, color: '#5B6675',
-  padding: '8px 6px', borderBottom: '1px solid #E8EAED', textAlign: 'center',
+  padding: '8px', borderBottom: '1px solid #E8EAED', textAlign: 'center',
   width: 86, minWidth: 86, whiteSpace: 'nowrap', verticalAlign: 'middle',
 };
 
