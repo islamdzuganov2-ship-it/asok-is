@@ -34,6 +34,8 @@ class System(Base, TimestampMixin):
     # Тип системы: CLASSIC → контур ISO 25010; AI → контур ГОСТ Р 59898-2021 (BL-001).
     system_kind = Column(String(10), nullable=False, default="CLASSIC", server_default="CLASSIC")
     owner = Column(String(255), nullable=True)
+    # Вендор ИС (BL-007, RE-01) — для разреза дашборда стоимости и пересмотра контрактов (§2.4).
+    vendor = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_deleted = Column(Boolean, default=False, nullable=False)
 
