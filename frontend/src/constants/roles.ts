@@ -11,6 +11,7 @@ export const ROLE_LABELS: Record<string, string> = {
   EXECUTIVE: 'Топ-менеджмент',
   QUALITY_MANAGER: 'Менеджер по качеству',
   TEST_ANALYST: 'Аналитик',
+  ASSIGNEE: 'Исполнитель',
   GUEST: 'Гость',
 };
 

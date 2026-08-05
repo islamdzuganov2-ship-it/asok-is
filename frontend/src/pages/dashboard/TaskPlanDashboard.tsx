@@ -18,18 +18,20 @@ import React, { useMemo, useState } from 'react';
 import { Typography, Tag, Space, Input, Button, Modal, message, Alert, Tooltip, Empty, Segmented, Select, Table } from 'antd';
 import {
   LinkOutlined, WarningOutlined, CheckOutlined, CloseOutlined, RiseOutlined, StopOutlined,
-  ScheduleOutlined, DatabaseOutlined, DownOutlined, UnorderedListOutlined,
+  ScheduleOutlined, DatabaseOutlined, DownOutlined, UnorderedListOutlined, CommentOutlined, FieldTimeOutlined,
 } from '@ant-design/icons';
 import { useSelector, shallowEqual } from 'react-redux';
 import { useAppDispatch } from '../../store/hooks';
 import { RootState } from '../../store';
 import {
-  selectVisibleProposals, updateTask, setExecution, escalateTask, decideEscalation, resolveEscalation, type Proposal,
+  selectVisibleProposals, updateTask, setExecution, escalateTask, decideEscalation, resolveEscalation,
+  decideDueChange, type Proposal,
 } from '../../store/slices/governanceSlice';
 import { BRAND, RAG } from '../../theme/ragPalette';
 import { pageContainer, pageTitle, GOLD, accentDot, SPACE, TYPE } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import TaskBubbleTimeline from '../../components/TaskBubbleTimeline';
+import { EmployeeEffectivenessCard } from '../../components/EmployeeEffectivenessCard';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -70,6 +72,8 @@ const TaskPlanDashboard: React.FC = () => {
   const proposals = useSelector(selectVisibleProposals, shallowEqual);
   const canManage = role === 'QUALITY_MANAGER';
   const isExec = ['ADMIN', 'CTO', 'CEO', 'CIO', 'EXECUTIVE'].includes(role);
+  // Обращения исполнителей (req 6): ожидающие переносы сроков — «падают» менеджеру по качеству.
+  const dueRequests = useMemo(() => proposals.filter((p) => p.dueChangeRequest?.status === 'PENDING'), [proposals]);
 
   const [sel, setSel] = useState<Proposal | null>(null);
   const [comment, setComment] = useState('');
@@ -249,6 +253,21 @@ const TaskPlanDashboard: React.FC = () => {
         </Space>
       </div>
 
+      {/* Обращения исполнителей по срокам (req 6) — баннер для менеджера по качеству. */}
+      {canManage && dueRequests.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 16 }}
+          message={`Запросы исполнителей на перенос срока: ${dueRequests.length}`}
+          description="Откройте задачу с пометкой запроса — примите или отклоните новый срок с учётом обоснования."
+        />
+      )}
+
+      {/* Эффективность сотрудников (ТЗ v17, req 7) — та же карточка, что на управленческом дашборде,
+          в самом верху плана задач. */}
+      <EmployeeEffectivenessCard proposals={proposals} style={{ marginTop: 16 }} />
+
       {/* 1. Читаемая временная диаграмма (Ганта) */}
       <CollapsibleCard
         accent="slate"
@@ -413,6 +432,55 @@ const TaskPlanDashboard: React.FC = () => {
                     {sel.escalationDecision && <div style={{ marginTop: 4 }}>Указание топ-менеджмента: {sel.escalationDecisionComment || '—'} ({sel.escalationDecidedBy})</div>}
                   </>
                 }
+              />
+            )}
+
+            {/* ── От исполнителя (req 6): уточнения и запрос переноса срока «падают» менеджеру по качеству ── */}
+            {(sel.clarifications?.length ?? 0) > 0 && (
+              <Alert
+                type="info"
+                showIcon
+                icon={<CommentOutlined />}
+                message={`Уточнения исполнителя (${sel.clarifications!.length})`}
+                description={(
+                  <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                    {sel.clarifications!.map((c, i) => (
+                      <div key={i}>
+                        <Text>{c.text}</Text>
+                        <div style={{ fontSize: 11, color: BRAND.inkSoft }}>{new Date(c.at).toLocaleString('ru-RU')} · {c.by}</div>
+                      </div>
+                    ))}
+                  </Space>
+                )}
+              />
+            )}
+            {sel.dueChangeRequest && (
+              <Alert
+                type={sel.dueChangeRequest.status === 'PENDING' ? 'warning' : sel.dueChangeRequest.status === 'ACCEPTED' ? 'success' : 'info'}
+                showIcon
+                icon={<FieldTimeOutlined />}
+                message={`Запрос исполнителя на перенос срока → ${sel.dueChangeRequest.proposedDate}`}
+                description={(
+                  <div>
+                    <div>Обоснование: {sel.dueChangeRequest.justification}</div>
+                    <div style={{ fontSize: 11, color: BRAND.inkSoft, marginTop: 2 }}>от {sel.dueChangeRequest.by}</div>
+                    {sel.dueChangeRequest.status !== 'PENDING' && (
+                      <div style={{ marginTop: 4 }}>Решение МК: <b>{sel.dueChangeRequest.status === 'ACCEPTED' ? 'принято' : 'отклонено'}</b>{sel.dueChangeRequest.decidedBy ? ` (${sel.dueChangeRequest.decidedBy})` : ''}</div>
+                    )}
+                    {canManage && sel.dueChangeRequest.status === 'PENDING' && (
+                      <Space style={{ marginTop: 10 }}>
+                        <Button type="primary" size="small" icon={<CheckOutlined />}
+                          onClick={() => { dispatch(decideDueChange({ id: sel.id, accept: true, by: fullName })); message.success(`Срок перенесён на ${sel.dueChangeRequest!.proposedDate}`); setSel(null); }}>
+                          Принять срок
+                        </Button>
+                        <Button danger size="small" icon={<CloseOutlined />}
+                          onClick={() => { dispatch(decideDueChange({ id: sel.id, accept: false, by: fullName })); message.info('Перенос срока отклонён'); setSel(null); }}>
+                          Отклонить
+                        </Button>
+                      </Space>
+                    )}
+                  </div>
+                )}
               />
             )}
 

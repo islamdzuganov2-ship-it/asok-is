@@ -171,12 +171,16 @@ def judgment_text(system_name: str, characteristic: str, sub: str, pct: int,
 
 async def seed_data() -> None:
     async with AsyncSessionLocal() as db:
-        # --- Пользователи (все роли: аналитик, МК, топ-менеджмент) ---
+        # --- Пользователи (все роли: аналитик, МК, топ-менеджмент, исполнитель) ---
+        # ТЗ v17 (req 6): исполнитель. full_name = ФИО ответственного из демо-мер («Петрова А.С.»),
+        # чтобы в демо-режиме исполнитель сразу видел назначенные на него поручения (сопоставление
+        # по owner). В LLM-режиме поручения приходят из БД по тому же ФИО.
         users_data = [
             {"username": "admin", "email": "admin@example.com", "password": "Admin123!", "role": "ADMIN"},
             {"username": "analyst", "email": "analyst@example.com", "password": "Analyst123!", "role": "TEST_ANALYST"},
             {"username": "manager", "email": "manager@example.com", "password": "Manager123!", "role": "QUALITY_MANAGER"},
             {"username": "cto", "email": "cto@example.com", "password": "Cto12345!", "role": "CTO"},
+            {"username": "assignee", "email": "assignee@example.com", "password": "Assignee123!", "role": "ASSIGNEE", "full_name": "Петрова А.С."},
         ]
         for item in users_data:
             result = await db.execute(select(User).where(User.username == item["username"]))
@@ -186,7 +190,7 @@ async def seed_data() -> None:
                         username=item["username"],
                         email=item["email"],
                         password_hash=get_password_hash(item["password"]),
-                        full_name=item["username"].title(),
+                        full_name=item.get("full_name") or item["username"].title(),
                         role=item["role"],
                     )
                 )

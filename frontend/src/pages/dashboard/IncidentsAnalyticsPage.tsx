@@ -10,26 +10,26 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-    Alert, AutoComplete, Button, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Select, Space, Spin,
-    Statistic, Table, Tag, Typography, message,
+    Alert, Button, Col, Empty, Modal, Row, Select, Space, Spin,
+    Statistic, Table, Tag, Typography,
 } from 'antd';
-import { PlusOutlined, ThunderboltOutlined, ReloadOutlined, DatabaseOutlined, CalendarOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined, ReloadOutlined, DatabaseOutlined, CalendarOutlined, UploadOutlined, ApiOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import ReactECharts from 'echarts-for-react';
 import { useSelector, shallowEqual } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { RootState } from '../../store';
 import {
-    useCreateIncidentMutation,
     useGetIncidentsQuery,
-    useGetIncidentCategoriesQuery,
     type TechIncidentDto,
 } from '../../store/api/apiSlice';
-import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
+import { selectVisibleProposals } from '../../store/slices/governanceSlice';
 import { MOCK_INCIDENTS, INCIDENT_CATEGORIES, computeIncidentAnalytics } from '../../data/mockIncidents';
 import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import { BRAND, RAG, solidTagStyle } from '../../theme/ragPalette';
+import { useChartTokens } from '../../theme/useThemeTokens';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -49,13 +49,6 @@ const CATEGORY_COLOR: Record<string, string> = {
 const CATEGORY_TAG_COLOR: Record<string, string> = {
     RELEASE: '#7E57C2', INFRASTRUCTURE: '#56799F', PERFORMANCE: '#947125', NETWORK: '#4C8165', POWER: '#C0553F', OTHER: '#667797',
 };
-// Маппинг первопричины → характеристика ISO 25010 (зеркало backend CATEGORY_TO_CHARACTERISTIC) —
-// для умного скоупинга связки «сбой ↔ мера» (T-42): предлагаем меры по связанной характеристике.
-const CATEGORY_TO_CHARACTERISTIC: Record<string, string> = {
-    RELEASE: 'Сопровождаемость', INFRASTRUCTURE: 'Надёжность', PERFORMANCE: 'Производительность',
-    NETWORK: 'Надёжность', POWER: 'Надёжность', OTHER: 'Надёжность',
-};
-const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
 const SEVERITY_LABEL: Record<string, string> = { critical: 'критический', high: 'высокий', medium: 'средний', low: 'низкий' };
 const SEVERITY_COLOR: Record<string, string> = { critical: 'red', high: 'volcano', medium: 'gold', low: 'blue' };
 
@@ -73,7 +66,8 @@ const IncidentsAnalyticsPage: React.FC = () => {
     // клиентски из ОТФИЛЬТРОВАННОГО набора (система T-39 + кварталы T-40) — единообразно в обоих
     // режимах (computeIncidentAnalytics — зеркало backend-агрегации).
     const liveList = useGetIncidentsQuery(undefined, { skip: !isLive });
-    const [createIncident, { isLoading: creating }] = useCreateIncidentMutation();
+    const navigate = useNavigate();
+    const chart = useChartTokens();
 
     const allIncidents = isLive ? (liveList.data ?? []) : MOCK_INCIDENTS;
     const loading = isLive && liveList.isFetching;
@@ -83,9 +77,6 @@ const IncidentsAnalyticsPage: React.FC = () => {
     const [quarterFilter, setQuarterFilter] = useState<string[]>([]);                    // T-40
     const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined); // T-41 (реестр)
     const [selectedIncident, setSelectedIncident] = useState<TechIncidentDto | null>(null);
-
-    const [formOpen, setFormOpen] = useState(false);
-    const [form] = Form.useForm();
 
     // Ключ квартала возникновения (UTC): «Q{1..4}-{год}». Мультивыбор может пересекать границы лет.
     const quarterKeyOf = (iso: string) => {
@@ -119,7 +110,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
 
     const donutOption = useMemo(() => ({
         tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-        legend: { bottom: 0, icon: 'circle', textStyle: { color: BRAND.ink } },
+        legend: { bottom: 0, icon: 'circle', textStyle: { color: chart.ink } },
         series: [{
             type: 'pie', radius: ['52%', '78%'], center: ['50%', '44%'], avoidLabelOverlap: true,
             itemStyle: { borderColor: '#fff', borderWidth: 2 },
@@ -129,7 +120,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
                 itemStyle: { color: CATEGORY_COLOR[c.category] ?? RAG.muted.color },
             })),
         }],
-    }), [analytics]);
+    }), [analytics, chart.ink]);
 
     const columns: ColumnsType<TechIncidentDto> = [
         { title: 'ИС', dataIndex: 'systemName', width: 160, fixed: 'left' as const },
@@ -155,65 +146,9 @@ const IncidentsAnalyticsPage: React.FC = () => {
         },
     ];
 
-    const submit = async () => {
-        try {
-            const v = await form.validateFields();
-            if (!isLive) {
-                message.info('Ввод сбоев доступен в режиме LLM (реальная БД). В демо реестр — только для просмотра.');
-                setFormOpen(false);
-                return;
-            }
-            await createIncident({
-                systemName: v.systemName,
-                category: v.category,
-                categoryCustom: v.category === 'OTHER' ? v.categoryCustom : undefined,
-                severity: v.severity,
-                title: v.title,
-                rootCause: v.rootCause,
-                admissionCause: v.admissionCause,
-                responsibleUnit: v.responsibleUnit,
-                preventiveMeasures: v.preventiveMeasures,
-                linkedMeasureId: v.linkedMeasureId || null,
-                releaseRef: v.releaseRef,
-                occurredAt: (v.occurredAt as dayjs.Dayjs).toISOString(),
-                resolvedAt: v.resolvedAt ? (v.resolvedAt as dayjs.Dayjs).toISOString() : null,
-            }).unwrap();
-            message.success('Сбой добавлен в реестр');
-            setFormOpen(false);
-            form.resetFields();
-        } catch (e: any) {
-            if (e?.data?.detail) message.error(e.data.detail);
-        }
-    };
-
-    const category = Form.useWatch('category', form);
-    const formSystem = Form.useWatch('systemName', form);
-
-    // T-37: справочник первопричин (live) — базовые + ранее введённые пользовательские.
-    const catQuery = useGetIncidentCategoriesQuery(undefined, { skip: !isLive });
-    const rawCategoryOptions: { value: string; label: string }[] = catQuery.data?.base?.length
-        ? catQuery.data.base.map((c) => ({ value: c.code, label: c.label }))
-        : INCIDENT_CATEGORIES.map((c) => ({ value: c as string, label: CATEGORY_LABEL[c] }));
-    const baseCategoryOptions = rawCategoryOptions
-        .filter((o) => o.value !== 'OTHER')
-        .concat({ value: 'OTHER', label: 'Другое…' });
-    const customCategoryOptions = (catQuery.data?.custom ?? []).map((v) => ({ value: v }));
-
-    // T-42: связка «сбой ↔ мера по улучшению качества». Скоуп по умолчанию — та же ИС +
-    // характеристика, соответствующая первопричине (CATEGORY_TO_CHARACTERISTIC); поиск снимает скоуп.
+    // Связь «сбой ↔ мера» показывается в карточке сбоя (реестр — только чтение). Меры берём из
+    // governance-набора по текущему режиму данных.
     const proposals = useSelector(selectVisibleProposals, shallowEqual);
-    const measureOptions = useMemo(() => {
-        if (!formSystem) return [];
-        const mappedChar = CATEGORY_TO_CHARACTERISTIC[category] ?? 'Надёжность';
-        const sameSystem = proposals.filter((p) => norm(p.systemName) === norm(formSystem));
-        const toOpt = (p: Proposal) => ({ value: p.id, label: `${p.riskTitle || p.metricName} · ${p.characteristic}` });
-        const scoped = sameSystem.filter((p) => norm(p.characteristic) === norm(mappedChar)).map(toOpt);
-        const rest = sameSystem.filter((p) => norm(p.characteristic) !== norm(mappedChar)).map(toOpt);
-        return [
-            ...(scoped.length ? [{ label: `Рекомендуемые по «${mappedChar}»`, options: scoped }] : []),
-            ...(rest.length ? [{ label: 'Другие меры этой ИС', options: rest }] : []),
-        ];
-    }, [proposals, formSystem, category]);
 
     // Название связанной меры для карточки сбоя (T-42).
     const measureTitleById = (id?: string | null) => {
@@ -237,10 +172,27 @@ const IncidentsAnalyticsPage: React.FC = () => {
                 <Col>
                     <Space>
                         {isLive && <Button icon={<ReloadOutlined />} onClick={() => liveList.refetch()}>Обновить</Button>}
-                        {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setFormOpen(true)}>Зарегистрировать сбой</Button>}
+                        {canManage && (
+                            <Button type="primary" icon={<UploadOutlined />} onClick={() => navigate('/assessments/new?tab=upload-incidents')}>
+                                Загрузить сбои из Excel
+                            </Button>
+                        )}
                     </Space>
                 </Col>
             </Row>
+
+            {/* Источник сбоев: только авто-выгрузка из ITSM и загрузка из Excel/CSV. Ручная регистрация
+                убрана — оператор не заводит сбои по одному, данные поступают из внешних систем. */}
+            <Alert
+                type="info"
+                showIcon
+                icon={<ApiOutlined />}
+                style={{ marginBottom: 16 }}
+                message="Сбои поступают автоматически из ITSM и загрузкой из Excel/CSV"
+                description={canManage
+                    ? 'Ручная регистрация сбоя по одному отключена. Технические сбои синхронизируются из ITSM и/или загружаются пакетом через «Загрузка ТС» (кнопка «Загрузить сбои из Excel»).'
+                    : 'Технические сбои синхронизируются из ITSM и загружаются пакетом из Excel/CSV. Реестр ниже — только для просмотра и анализа.'}
+            />
 
             {/* Фильтры верхнего уровня: система (T-39) и кварталы (T-40) — влияют на KPI, диаграммы и реестр. */}
             <Row gutter={[12, 12]} align="middle" style={{ marginBottom: 16 }} wrap>
@@ -392,57 +344,6 @@ const IncidentsAnalyticsPage: React.FC = () => {
                         </div>
                     </Space>
                 )}
-            </Modal>
-
-            <Modal
-                open={formOpen}
-                title="Регистрация технического сбоя"
-                okText="Добавить"
-                cancelText="Отмена"
-                confirmLoading={creating}
-                onOk={submit}
-                onCancel={() => setFormOpen(false)}
-                width={640}
-            >
-                {!isLive && <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Демо-режим: ввод сохранится только в режиме LLM (реальная БД)." />}
-                <Form form={form} layout="vertical" initialValues={{ severity: 'medium', occurredAt: dayjs() }}>
-                    <Row gutter={12}>
-                        <Col span={12}><Form.Item name="systemName" label="ИС" rules={[{ required: true, message: 'Укажите систему' }]}><Input placeholder="напр. АБС Core" /></Form.Item></Col>
-                        <Col span={12}><Form.Item name="category" label="Первопричина" rules={[{ required: true, message: 'Выберите первопричину' }]}>
-                            <Select options={baseCategoryOptions} placeholder="Категория" />
-                        </Form.Item></Col>
-                    </Row>
-                    {category === 'OTHER' && (
-                        <Form.Item name="categoryCustom" label="Новая первопричина" rules={[{ required: true, message: 'Укажите новую первопричину' }]}>
-                            <AutoComplete
-                                options={customCategoryOptions}
-                                placeholder="напр. человеческий фактор"
-                                filterOption={(inp, opt) => String(opt?.value ?? '').toLowerCase().includes(inp.toLowerCase())}
-                            />
-                        </Form.Item>
-                    )}
-                    <Row gutter={12}>
-                        <Col span={12}><Form.Item name="severity" label="Критичность"><Select options={Object.keys(SEVERITY_LABEL).map((s) => ({ value: s, label: SEVERITY_LABEL[s] }))} /></Form.Item></Col>
-                        {category === 'RELEASE' && <Col span={12}><Form.Item name="releaseRef" label="Релиз/версия"><Input placeholder="напр. CRM 4.2.0" /></Form.Item></Col>}
-                    </Row>
-                    <Form.Item name="title" label="Краткое описание" rules={[{ required: true, message: 'Опишите сбой' }]}><Input placeholder="Что произошло" /></Form.Item>
-
-                    <Divider style={{ margin: '4px 0 12px' }} orientation="left" plain><Text type="secondary" style={{ fontSize: 12 }}>Обязательный разбор</Text></Divider>
-                    <Form.Item name="rootCause" label="Корневая причина" rules={[{ required: true, message: 'Укажите корневую причину' }]}><Input.TextArea rows={2} placeholder="Что стало непосредственной причиной сбоя" /></Form.Item>
-                    <Form.Item name="admissionCause" label="Причина допущения" rules={[{ required: true, message: 'Укажите причину допущения' }]}><Input.TextArea rows={2} placeholder="Почему сбой стал возможен — что не сработало в контроле" /></Form.Item>
-                    <Row gutter={12}>
-                        <Col span={12}><Form.Item name="responsibleUnit" label="Виновное направление производства" rules={[{ required: true, message: 'Укажите направление' }]}><Input placeholder="напр. Разработка CRM" /></Form.Item></Col>
-                        <Col span={12}><Form.Item name="linkedMeasureId" label="Связанная мера по улучшению качества" tooltip="Предлагаются меры этой ИС по характеристике, связанной с первопричиной; поиск ищет среди всех мер ИС">
-                            <Select allowClear showSearch optionFilterProp="label" placeholder={formSystem ? 'Подобрать меру…' : 'Сначала укажите ИС'} options={measureOptions} notFoundContent="Мер по этой ИС нет" />
-                        </Form.Item></Col>
-                    </Row>
-                    <Form.Item name="preventiveMeasures" label="Меры по неповторению" rules={[{ required: true, message: 'Укажите меры по неповторению' }]}><Input.TextArea rows={2} placeholder="Что сделать, чтобы сбой не повторился" /></Form.Item>
-
-                    <Row gutter={12}>
-                        <Col span={12}><Form.Item name="occurredAt" label="Возник" rules={[{ required: true }]}><DatePicker showTime style={{ width: '100%' }} format="DD.MM.YYYY HH:mm" /></Form.Item></Col>
-                        <Col span={12}><Form.Item name="resolvedAt" label="Восстановлен (если закрыт)"><DatePicker showTime style={{ width: '100%' }} format="DD.MM.YYYY HH:mm" /></Form.Item></Col>
-                    </Row>
-                </Form>
             </Modal>
         </div>
     );

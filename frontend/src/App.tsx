@@ -1,11 +1,11 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ConfigProvider, Spin } from 'antd';
 import ruRU from 'antd/locale/ru_RU';
 import { useSelector } from 'react-redux';
 import { RootState } from './store';
 import { AppLayout } from './components/AppLayout';
-import { BRAND } from './theme/ragPalette';
+import { THEMES, antdThemeOf, fontStackOf } from './theme/themes';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -22,6 +22,8 @@ const ExpertReviewPage = lazy(() => import('./pages/ExpertReviewPage'));
 const AdminFlagsPage = lazy(() => import('./pages/AdminFlagsPage'));
 const ExcelReportsPage = lazy(() => import('./pages/ExcelReportsPage'));
 const RiskBasePage = lazy(() => import('./pages/RiskBasePage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const AssigneeTasksPage = lazy(() => import('./pages/AssigneeTasksPage'));
 
 const PageLoader = () => (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -37,8 +39,13 @@ const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) =
 // Ролевая маршрутизация для /dashboard: каждый пользователь попадает на «свой» дашборд
 // (устраняет путаницу «какой из дашбордов мой», ТЗ v11 R1.1).
 const EXECUTIVE_ROLES = ['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN'];
+// Исполнитель (ТЗ v17, req 6) видит тот же состав дашбордов, что топ-менеджмент (просмотр) +
+// «Мои задачи». Роли-зрители дашбордов = топ-менеджмент + исполнитель.
+const EXEC_VIEW_ROLES = [...EXECUTIVE_ROLES, 'ASSIGNEE'];
+const DASH_ROLES = ['QUALITY_MANAGER', ...EXEC_VIEW_ROLES];
 const DashboardRouter: React.FC = () => {
     const { role } = useSelector((state: RootState) => state.auth);
+    if (role === 'ASSIGNEE') return <Navigate to="/my-tasks" replace />;
     if (role && EXECUTIVE_ROLES.includes(role)) return <Navigate to="/dashboard/executive" replace />;
     if (role === 'QUALITY_MANAGER') return <Navigate to="/dashboard/manager" replace />;
     return <Navigate to="/dashboard/analytics" replace />;
@@ -49,34 +56,32 @@ const RequireRole: React.FC<{ allowedRoles: string[], children: React.ReactEleme
     return (role && allowedRoles.includes(role)) ? children : <Navigate to="/dashboard" replace />;
 };
 
+/**
+ * ThemeVarsBridge — проставляет CSS-переменные выбранной темы и шрифта на <html>.
+ * Кастомный слой (токены BRAND/PREMIUM на var()) и «сырые» элементы дашбордов перекрашиваются этим;
+ * компоненты antd — через ConfigProvider theme ниже. `data-theme` включает точечные правила
+ * (color-scheme, скроллбары) из styles/themes.css.
+ */
+const ThemeVarsBridge: React.FC = () => {
+    const themeName = useSelector((s: RootState) => s.ui.themeName);
+    const fontKey = useSelector((s: RootState) => s.ui.fontKey);
+    useEffect(() => {
+        const root = document.documentElement;
+        const preset = THEMES[themeName] ?? THEMES.premium;
+        root.dataset.theme = preset.name;
+        Object.entries(preset.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+        root.style.setProperty('--app-font', fontStackOf(fontKey));
+    }, [themeName, fontKey]);
+    return null;
+};
+
 export const App: React.FC = () => {
+    const themeName = useSelector((s: RootState) => s.ui.themeName);
+    const fontKey = useSelector((s: RootState) => s.ui.fontKey);
+    const preset = THEMES[themeName] ?? THEMES.premium;
     return (
-        <ConfigProvider
-            locale={ruRU}
-            theme={{
-                token: {
-                    // Приглушённая, пастельная палитра (менее «кричащие» тона).
-                    colorPrimary: '#3A4F6B',
-                    colorSuccess: '#6F9F86',
-                    colorWarning: '#C9A14A',
-                    colorError: '#C06B5A',
-                    colorInfo: '#6E89A6',
-                    // T-57: дефолтный вторичный текст antd — rgba(0,0,0,.45) ≈ 3.05:1 на полотне
-                    // дашбордов, ниже WCAG AA. Подписи `type="secondary"` встречаются повсеместно
-                    // (счётчики, сноски под графиками), поэтому чиним токеном, а не по местам.
-                    colorTextSecondary: BRAND.inkSoft,
-                    colorTextDescription: BRAND.inkSoft,
-                    colorTextPlaceholder: '#6E7787',
-                    // Ссылки/кнопки-ссылки наследуют colorInfo (#6E89A6 = 3.63:1) — поднимаем.
-                    colorLink: '#50749B',
-                    colorLinkHover: '#3F5F82',
-                    colorLinkActive: '#33506F',
-                    // Заливку info-Alert antd выводит из приглушённого colorInfo, получается
-                    // необычно тёмный тон (#D8E1E6): описание на нём давало 4.40:1. Задаём явно.
-                    colorInfoBg: '#EAF0F4',
-                },
-            }}
-        >
+        <ConfigProvider locale={ruRU} theme={antdThemeOf(preset, fontKey)}>
+            <ThemeVarsBridge />
             <BrowserRouter>
                 <Suspense fallback={<PageLoader />}>
                     <Routes>
@@ -84,12 +89,13 @@ export const App: React.FC = () => {
                         <Route path="/*" element={<RequireAuth><AppLayout><Suspense fallback={<PageLoader />}><Routes>
                             <Route path="dashboard" element={<DashboardRouter />} />
                             <Route path="dashboard/analytics" element={<DashboardPage />} />
-                            <Route path="dashboard/executive" element={<RequireRole allowedRoles={['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><ExecutiveDashboard /></RequireRole>} />
+                            <Route path="dashboard/executive" element={<RequireRole allowedRoles={EXEC_VIEW_ROLES}><ExecutiveDashboard /></RequireRole>} />
                             <Route path="dashboard/manager" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><ManagerDashboard /></RequireRole>} />
-                            <Route path="dashboard/manager/dynamics" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><QualityDynamicsPage /></RequireRole>} />
-                            <Route path="dashboard/taskplan" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><TaskPlanDashboard /></RequireRole>} />
-                            <Route path="dashboard/incidents" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><IncidentsAnalyticsPage /></RequireRole>} />
-                            <Route path="dashboard/risk-radar" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><RiskRadarPage /></RequireRole>} />
+                            <Route path="dashboard/manager/dynamics" element={<RequireRole allowedRoles={DASH_ROLES}><QualityDynamicsPage /></RequireRole>} />
+                            <Route path="dashboard/taskplan" element={<RequireRole allowedRoles={DASH_ROLES}><TaskPlanDashboard /></RequireRole>} />
+                            <Route path="dashboard/incidents" element={<RequireRole allowedRoles={DASH_ROLES}><IncidentsAnalyticsPage /></RequireRole>} />
+                            <Route path="dashboard/risk-radar" element={<RequireRole allowedRoles={DASH_ROLES}><RiskRadarPage /></RequireRole>} />
+                            <Route path="my-tasks" element={<RequireRole allowedRoles={['ASSIGNEE', 'ADMIN']}><AssigneeTasksPage /></RequireRole>} />
                             <Route path="assessments/new" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><AssessmentWorkspacePage /></RequireRole>} />
                             {/* ПОД РАЗВИТИЕ: «Оценка СИИ» (ГОСТ Р 59898-2021) и история ИИ-оценок.
                                 Пункт меню и переключатель в «Настройка» намеренно убраны из UI (раздел
@@ -100,6 +106,8 @@ export const App: React.FC = () => {
                             <Route path="assessments/:id/review" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><ExpertReviewPage /></RequireRole>} />
                             <Route path="reports" element={<ExcelReportsPage />} />
                             <Route path="risks" element={<RiskBasePage />} />
+                            {/* «Настройка» (оформление) — доступна всем ролям: аналитик, МК, топ-менеджмент (ТЗ v17). */}
+                            <Route path="settings" element={<SettingsPage />} />
                             <Route path="admin/flags" element={<RequireRole allowedRoles={['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><AdminFlagsPage /></RequireRole>} />
                             <Route index element={<Navigate to="/dashboard" replace />} />
                         </Routes></Suspense></AppLayout></RequireAuth>} />

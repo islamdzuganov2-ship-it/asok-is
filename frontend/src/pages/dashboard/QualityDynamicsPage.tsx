@@ -23,6 +23,7 @@ import {
 } from '../../data/mockScaleData';
 import { BRAND, ragToken, solidTagStyle } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE, SPACE } from '../../theme/premium';
+import { useChartTokens } from '../../theme/useThemeTokens';
 import Sparkline from '../../components/Sparkline';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import { DynamicsModal } from '../../components/DynamicsModal';
@@ -75,6 +76,14 @@ const QualityDynamicsPage: React.FC = () => {
   const dataMode = useSelector((s: RootState) => s.ui.dataMode);
   const reasons = useSelector(selectReasons);
   const isLive = dataMode === 'live';
+  const chart = useChartTokens();
+  // Осевая тема для ECharts (canvas не понимает var()): подписи/линии/сетка по активной теме.
+  const axisTheme = {
+    axisLabel: { color: chart.axis },
+    axisLine: { lineStyle: { color: chart.split } },
+    splitLine: { lineStyle: { color: chart.split } },
+  };
+  const legendTheme = { type: 'scroll' as const, bottom: 0, textStyle: { fontSize: TYPE.micro.fontSize, color: chart.axis } };
   const [systemId, setSystemId] = useState<string>(MANAGER_SCALE_SYSTEMS[0].id);
   const isAll = systemId === ALL_SYSTEMS;
   const system = useMemo(
@@ -107,10 +116,10 @@ const QualityDynamicsPage: React.FC = () => {
             return lines.length ? `<b>${QUARTERS[qIdx]}</b><br/>${lines.join('<br/>')}` : '';
           },
         },
-        legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: TYPE.micro.fontSize } },
+        legend: legendTheme,
         grid: { top: 16, left: 44, right: 16, bottom: 52 },
-        xAxis: { type: 'category', data: QUARTERS, boundaryGap: false },
-        yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
+        xAxis: { ...axisTheme, type: 'category', data: QUARTERS, boundaryGap: false },
+        yAxis: { ...axisTheme, type: 'value', min: 0, max: 100, axisLabel: { ...axisTheme.axisLabel, formatter: '{value}%' } },
         color: LINE_COLORS,
         series: MANAGER_SCALE_SYSTEMS.map((s) => ({
           name: s.name, type: 'line', smooth: true, connectNulls: false,
@@ -133,8 +142,8 @@ const QualityDynamicsPage: React.FC = () => {
         },
       },
       grid: { top: 16, left: 44, right: 16, bottom: 28 },
-      xAxis: { type: 'category', data: QUARTERS, boundaryGap: false },
-      yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
+      xAxis: { ...axisTheme, type: 'category', data: QUARTERS, boundaryGap: false },
+      yAxis: { ...axisTheme, type: 'value', min: 0, max: 100, axisLabel: { ...axisTheme.axisLabel, formatter: '{value}%' } },
       series: [{
         name: s.name, type: 'line', smooth: true, connectNulls: false,
         triggerLineEvent: true,
@@ -144,17 +153,17 @@ const QualityDynamicsPage: React.FC = () => {
         data: seriesPoints(s.series),
       }],
     };
-  }, [isAll, dyn, system.name, reasons]);
+  }, [isAll, dyn, system.name, reasons, chart.axis, chart.split]);
 
   // 1. Динамика по характеристикам. Всплывающее окно ОТКЛЮЧЕНО намеренно: оно избыточно и
   // мешает (по требованию МК). Аномалии видны красными маркерами на линиях, а причины
   // открываются по клику (модалка) — этого достаточно.
   const charChartOption = useMemo(() => ({
     tooltip: { show: false },
-    legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: TYPE.micro.fontSize } },
+    legend: legendTheme,
     grid: { top: 16, left: 44, right: 16, bottom: 52 },
-    xAxis: { type: 'category', data: QUARTERS, boundaryGap: false },
-    yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
+    xAxis: { ...axisTheme, type: 'category', data: QUARTERS, boundaryGap: false },
+    yAxis: { ...axisTheme, type: 'value', min: 0, max: 100, axisLabel: { ...axisTheme.axisLabel, formatter: '{value}%' } },
     color: LINE_COLORS,
     series: dyn.chars.map((c) => ({
       name: c.name, type: 'line', smooth: true, connectNulls: false,
@@ -164,7 +173,7 @@ const QualityDynamicsPage: React.FC = () => {
       lineStyle: { width: 2 },
       data: seriesPoints(c.series),
     })),
-  }), [dyn]);
+  }), [dyn, chart.axis, chart.split]);
 
   const subs = charFilter ? dyn.subs.filter((s) => s.char === charFilter) : dyn.subs;
   const charName = charFilter ? dyn.chars.find((c) => c.char === charFilter)?.name : undefined;

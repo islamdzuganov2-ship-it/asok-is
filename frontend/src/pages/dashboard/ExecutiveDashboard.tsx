@@ -20,6 +20,8 @@ import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
 import MeasuresAiAnalyticsCard from '../../components/MeasuresAiAnalyticsCard';
 import { TechDebtCard } from '../../components/TechDebtCard';
+import { EmployeeEffectivenessCard } from '../../components/EmployeeEffectivenessCard';
+import { useChartTokens } from '../../theme/useThemeTokens';
 import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 import { QUALITY_MODEL } from '../../constants/qualityModel';
 
@@ -113,6 +115,7 @@ const ExecutiveDashboard: React.FC = () => {
   const navigate = useNavigate();
   const dataMode = useSelector((s: RootState) => s.ui.dataMode);
   const isLive = dataMode === 'live';
+  const chart = useChartTokens(); // конкретные цвета для ECharts (canvas не понимает var())
   const [active, setActive] = useState<ExecSystemInsight | null>(null);
   const proposals = useSelector(selectVisibleProposals, shallowEqual);
   const pendingProposals = proposals.filter((p) => p.status === 'PENDING_APPROVAL');
@@ -204,11 +207,11 @@ const ExecutiveDashboard: React.FC = () => {
               ],
             },
           },
-          pointer: { width: 4, length: '62%', itemStyle: { color: BRAND.ink } },
+          pointer: { width: 4, length: '62%', itemStyle: { color: chart.ink } },
           axisTick: { show: false },
           splitLine: { show: false },
           axisLabel: { show: false },
-          anchor: { show: true, size: 10, itemStyle: { color: BRAND.ink } },
+          anchor: { show: true, size: 10, itemStyle: { color: chart.ink } },
           detail: {
             valueAnimation: true,
             formatter: '{value}%',
@@ -221,7 +224,7 @@ const ExecutiveDashboard: React.FC = () => {
         },
       ],
     }),
-    [globalIndex, idxTok.color],
+    [globalIndex, idxTok.color, chart.ink],
   );
 
   return (
@@ -423,6 +426,9 @@ const ExecutiveDashboard: React.FC = () => {
           <TechDebtCard proposals={proposals} onOpenMeasure={setDecisionProposal} />
         </Col>
       </Row>
+
+      {/* Эффективность сотрудников (ТЗ v17, req 7) — под техдолгом и теплокартой. */}
+      <EmployeeEffectivenessCard proposals={proposals} style={{ marginTop: 16 }} />
 
       {/* Реестр мер качества — по умолчанию СКРЫТ, раскрывается по кнопке */}
       <div style={{ marginTop: 16 }}>

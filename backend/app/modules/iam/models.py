@@ -19,7 +19,10 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     ROLE_CTO = "CTO"
     ROLE_CEO = "CEO"
     ROLE_ADMIN = "ADMIN"
-    ALL_ROLES = ("TEST_ANALYST", "QUALITY_MANAGER", "CTO", "CEO", "ADMIN")
+    # ТЗ v17 (req 6): исполнитель — на него назначаются меры; видит свои поручения и тот же
+    # состав дашбордов, что у топ-менеджмента; вносит уточнения и предлагает перенос сроков (→ МК).
+    ROLE_ASSIGNEE = "ASSIGNEE"
+    ALL_ROLES = ("TEST_ANALYST", "QUALITY_MANAGER", "CTO", "CEO", "ADMIN", "ASSIGNEE")
     READONLY_ROLES = ("CTO", "CEO")
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
