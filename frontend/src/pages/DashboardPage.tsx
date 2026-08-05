@@ -19,6 +19,8 @@ import LevelHeatmap, { LEVEL_COLORS, LEVEL_TAG_COLORS } from '../components/Leve
 import { critTagStyle, levelLabel, solidTagStyle, ragToken, RAG, BRAND } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
 import { numericColumn } from '../theme/table';
+import { useGetAllTemplatesQuery } from '../store/api/apiSlice';
+import TemplatesDisplay from '../components/TemplatesDisplay';
 
 const { Title, Text } = Typography;
 
@@ -79,6 +81,7 @@ const DashboardPage: React.FC = () => {
   const donutRef = useRef<HTMLDivElement>(null);
   const donutChart = useRef<echarts.ECharts | null>(null);
   const navigate = useNavigate();
+  const { data: templatesData, isLoading: templatesLoading } = useGetAllTemplatesQuery();
 
   useEffect(() => {
     // Демо-режим — демо-набор без обращения к бэкенду.
@@ -421,6 +424,8 @@ const DashboardPage: React.FC = () => {
           </Card>
         </Col>
       </Row>
+
+      <TemplatesDisplay templates={templatesData} isLoading={templatesLoading} />
 
       <Modal
         open={!!detail}

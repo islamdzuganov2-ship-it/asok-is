@@ -180,6 +180,13 @@ export interface MetricCreateDto {
     is_active: boolean;
 }
 
+export interface AllTemplates {
+    metrics: Record<string, any>[];
+    risks: Record<string, any>[];
+    qualityReport: Record<string, any>[];
+    systemQuality: Record<string, any>[];
+}
+
 export interface ExcelImportResult {
     filename: string;
     period_id: string;
@@ -309,6 +316,10 @@ export const apiSlice = createApi({
     endpoints: (builder) => ({
         getExecutiveDashboard: builder.query<DashboardData, void>({
             query: () => '/reports/executive-dashboard',
+            providesTags: ['Dashboard'],
+        }),
+        getAllTemplates: builder.query<AllTemplates, void>({
+            query: () => '/reports/templates',
             providesTags: ['Dashboard'],
         }),
         getExcelReports: builder.query<any, void>({
@@ -526,6 +537,7 @@ export const {
     useGetCalculatedMetricsQuery,
     useGetPeriodSummariesQuery,
     useGetExecutiveDashboardQuery,
+    useGetAllTemplatesQuery,
     useGetSystemsQuery,
     useImportAssessmentExcelMutation,
     useImportWorkbookMutation,
