@@ -46,13 +46,18 @@ export const RAG: Record<RagKey, RagToken> = {
  * Базовые «спокойные» цвета бренда.
  * `inkSoft` — рабочий тон вторичного текста: 5.83:1 на белом и 5.29:1 на полотне-градиенте,
  * в отличие от дефолтного antd `rgba(0,0,0,.45)` (3.05:1 на полотне — ниже AA).
+ *
+ * ТЗ v17 (темизация): значения переведены на CSS-переменные — их проставляет ThemeVarsBridge по
+ * выбранной теме (theme/themes.ts). Дефолты переменных = премиум-тема (styles/themes.css), поэтому
+ * при отсутствии bridge вид не меняется. ВНИМАНИЕ: эти токены — для DOM-инлайна; в ECharts (canvas)
+ * var() не работает — там берите useChartTokens() (theme/useThemeTokens.ts).
  */
 export const BRAND = {
-  ink:       '#2B3A4B', // основной тёмно-синий графит
-  inkSoft:   '#5B6675',
-  surface:   '#FFFFFF',
-  canvas:    '#F5F6F8',
-  divider:   '#E8EAED',
+  ink:       'var(--ink)',       // основной текст (тёмный на свету / мягкий светлый в graphite)
+  inkSoft:   'var(--ink-soft)',
+  surface:   'var(--surface)',
+  canvas:    'var(--canvas)',
+  divider:   'var(--divider)',
 };
 
 /**

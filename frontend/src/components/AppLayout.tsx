@@ -88,9 +88,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ? 'Проверка LLM…'
         : llmReady ? `LLM загружена: ${modelDesc || 'модель'}` : 'LLM не загружена — будет честный fallback';
 
-    // Ролевые меню. C-level/ADMIN — управленческий слой; менеджер/аналитик — операционный.
+    // Ролевые меню. C-level/ADMIN — управленческий слой; менеджер/аналитик — операционный;
+    // исполнитель (req 6) — «Мои задачи» + те же дашборды, что у топ-менеджмента.
     const isExec = ['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN'].includes(userRole);
     const isManager = userRole === 'QUALITY_MANAGER';
+    const isAssignee = userRole === 'ASSIGNEE';
 
     // Топ-менеджер: всегда «Управленческий дашборд» + «Настройка»; остальные борды — по галочке в настройках.
     const execMenu = [
@@ -130,14 +132,35 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             type: 'group' as const, label: collapsed ? undefined : groupLabel('Формирование тех. долга'),
             children: [{ key: '/dashboard/taskplan', icon: <ScheduleOutlined />, label: 'План задач' }],
         },
+        {
+            type: 'group' as const, label: collapsed ? undefined : groupLabel('Настройки'),
+            children: [{ key: '/settings', icon: <SettingOutlined />, label: 'Настройка' }],
+        },
     ];
+    // Аналитик (ТЗ v17, req 3): отдельный дашборд + операционные пункты в тулбаре —
+    // оценка систем, загрузка тех. сбоев, загрузка оценки, настройка. Пункты загрузок ведут
+    // прямо на нужные вкладки «Внесение данных» через ?tab=.
     const analystMenu = [
         { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
-        { key: '/assessments/new', icon: <FormOutlined />, label: 'Внесение данных' },
+        { key: '/assessments/new', icon: <FormOutlined />, label: 'Оценка систем' },
+        { key: '/assessments/new?tab=upload-incidents', icon: <ThunderboltOutlined />, label: 'Загрузка тех. сбоев' },
+        { key: '/assessments/new?tab=upload-assessments', icon: <FileExcelOutlined />, label: 'Загрузка оценки' },
         { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
+        { key: '/settings', icon: <SettingOutlined />, label: 'Настройка' },
     ];
 
-    const menuItems = isExec ? execMenu : isManager ? managerMenu : analystMenu;
+    // Исполнитель (req 6): «Мои задачи» + тот же состав дашбордов, что у топ-менеджмента + настройка.
+    const assigneeMenu = [
+        { key: '/my-tasks', icon: <AuditOutlined />, label: 'Мои задачи' },
+        { key: '/dashboard/executive', icon: <FundOutlined />, label: 'Управленческий дашборд' },
+        { key: '/dashboard/manager/dynamics', icon: <LineChartOutlined />, label: 'Динамика качества' },
+        { key: '/dashboard/taskplan', icon: <ScheduleOutlined />, label: 'План задач' },
+        { key: '/dashboard/incidents', icon: <ThunderboltOutlined />, label: 'Аналитика сбоев' },
+        { key: '/dashboard/risk-radar', icon: <AlertOutlined />, label: 'Риск-радар' },
+        { key: '/settings', icon: <SettingOutlined />, label: 'Настройка' },
+    ];
+
+    const menuItems = isExec ? execMenu : isManager ? managerMenu : isAssignee ? assigneeMenu : analystMenu;
 
     const handleLogout = () => {
         dispatch(logout());
@@ -172,7 +195,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 <Menu
                     theme="dark"
                     mode="inline"
-                    selectedKeys={[location.pathname]}
+                    // На /assessments/new пункты различаются вкладкой (?tab=) — для подсветки
+                    // учитываем query; для остальных маршрутов достаточно pathname.
+                    selectedKeys={[location.pathname === '/assessments/new' ? location.pathname + location.search : location.pathname]}
                     items={menuItems}
                     onClick={({ key }) => navigate(key)}
                     style={{ background: 'transparent', borderInlineEnd: 'none' }}

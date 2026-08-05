@@ -35,6 +35,7 @@ import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE 
 import CollapsibleCard from '../../components/CollapsibleCard';
 import { BRAND, RAG, solidTagStyle } from '../../theme/ragPalette';
 import { numericColumn } from '../../theme/table';
+import { useChartTokens } from '../../theme/useThemeTokens';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -72,6 +73,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
     // режимах (computeIncidentAnalytics — зеркало backend-агрегации).
     const liveList = useGetIncidentsQuery(undefined, { skip: !isLive });
     const navigate = useNavigate();
+    const chart = useChartTokens();
 
     const allIncidents = isLive ? (liveList.data ?? []) : MOCK_INCIDENTS;
     const loading = isLive && liveList.isFetching;
@@ -114,7 +116,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
 
     const donutOption = useMemo(() => ({
         tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-        legend: { bottom: 0, icon: 'circle', textStyle: { color: BRAND.ink } },
+        legend: { bottom: 0, icon: 'circle', textStyle: { color: chart.ink } },
         series: [{
             type: 'pie', radius: ['52%', '78%'], center: ['50%', '44%'], avoidLabelOverlap: true,
             itemStyle: { borderColor: '#fff', borderWidth: 2 },
@@ -124,7 +126,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
                 itemStyle: { color: CATEGORY_COLOR[c.category] ?? RAG.muted.color },
             })),
         }],
-    }), [analytics]);
+    }), [analytics, chart.ink]);
 
     const columns: ColumnsType<TechIncidentDto> = [
         { title: 'ИС', dataIndex: 'systemName', width: 160, fixed: 'left' as const },
