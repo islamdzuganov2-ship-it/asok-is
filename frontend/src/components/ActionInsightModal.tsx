@@ -41,6 +41,8 @@ const Block: React.FC<{ icon: React.ReactNode; title: string; children: React.Re
     <Text type="secondary" style={{ fontSize: 12 }}>
       {icon} {title}
     </Text>
+    {/* ui-audit-ignore UI-05 — подпись блока и содержимое склеены намеренно: 2px убирают
+        разрыв между строкой-меткой и её значением. */}
     <div style={{ marginTop: 2 }}>{children}</div>
   </div>
 );

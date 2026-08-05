@@ -102,6 +102,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             { key: '/dashboard/incidents', icon: <ThunderboltOutlined />, label: 'Аналитика сбоев' },
             { key: '/dashboard/risk-radar', icon: <AlertOutlined />, label: 'Риск-радар' },
         ] : []),
+        { key: '/risk-economics', icon: <AuditOutlined />, label: 'Риск-экономика' },
         { key: '/admin/flags', icon: <SettingOutlined />, label: 'Настройка' },
     ];
     // ПОД РАЗВИТИЕ: раздел «Оценка СИИ» (ГОСТ Р 59898-2021) и история ИИ-оценок пока НЕ выведены
@@ -123,6 +124,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 { key: '/dashboard/manager/dynamics', icon: <LineChartOutlined />, label: 'Динамика качества' },
                 { key: '/dashboard/incidents', icon: <ThunderboltOutlined />, label: 'Аналитика сбоев' },
                 { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
+                { key: '/risk-economics', icon: <AuditOutlined />, label: 'Риск-экономика' },
                 { key: '/dashboard/risk-radar', icon: <AlertOutlined />, label: 'Риск-радар' },
             ],
         },
@@ -135,6 +137,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
         { key: '/assessments/new', icon: <FormOutlined />, label: 'Внесение данных' },
         { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
+        { key: '/risk-economics', icon: <AuditOutlined />, label: 'Риск-экономика' },
     ];
 
     const menuItems = isExec ? execMenu : isManager ? managerMenu : analystMenu;

@@ -277,7 +277,7 @@ const TaskPlanDashboard: React.FC = () => {
                 ))}
                 {todayPct >= 0 && todayPct <= 100 && (
                   <div style={{ position: 'absolute', left: `${todayPct}%`, top: -2, bottom: 0, borderLeft: `2px solid ${RAG.bad.strong}` }}>
-                    <span style={{ position: 'absolute', top: -16, left: -20, fontSize: 10, color: RAG.bad.strong, fontWeight: 600 }}>сегодня</span>
+                    <span style={{ position: 'absolute', top: -16, left: -20, fontSize: TYPE.micro.fontSize, color: RAG.bad.strong, fontWeight: 600 }}>сегодня</span>
                   </div>
                 )}
               </div>
@@ -328,7 +328,7 @@ const TaskPlanDashboard: React.FC = () => {
                       {dl && kind !== 'done' && (
                         <span style={{
                           position: 'absolute', top: (rowH - 18) / 2, left: `calc(${left + width}% + 6px)`, height: 18,
-                          fontSize: 10, fontWeight: 600, color: dl.c, background: '#fff', border: `1px solid ${dl.c}`,
+                          fontSize: TYPE.micro.fontSize, fontWeight: 600, color: dl.c, background: '#fff', border: `1px solid ${dl.c}`,
                           borderRadius: 8, padding: `0 ${SPACE.snug}px`, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap',
                         }}>{dl.t}</span>
                       )}

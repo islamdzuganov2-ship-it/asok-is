@@ -9,7 +9,7 @@ import React, { useMemo, useState } from 'react';
 import { Card, Button, Table, Tag, Typography, Alert, Spin, Space, Collapse } from 'antd';
 import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { ragToken, solidTagStyle } from '../theme/ragPalette';
-import { premiumCard, accentDot, SPACE } from '../theme/premium';
+import { premiumCard, accentDot, SPACE, TYPE } from '../theme/premium';
 import { numericColumn } from '../theme/table';
 import type { Proposal } from '../store/slices/governanceSlice';
 import ConclusionFeedback from './ConclusionFeedback';
@@ -172,8 +172,8 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
                                 <Text strong style={{ fontSize: 12 }}>
                                   {s.code} · {s.title}{' '}
                                   {s.used_llm
-                                    ? <Tag color="blue" style={{ fontSize: 10 }}>LLM</Tag>
-                                    : <Tag style={{ fontSize: 10 }}>детерм.</Tag>}
+                                    ? <Tag color="blue" style={{ fontSize: TYPE.micro.fontSize }}>LLM</Tag>
+                                    : <Tag style={{ fontSize: TYPE.micro.fontSize }}>детерм.</Tag>}
                                 </Text>
                                 <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap', fontSize: 12, marginBottom: 0 }}>
                                   {s.content}

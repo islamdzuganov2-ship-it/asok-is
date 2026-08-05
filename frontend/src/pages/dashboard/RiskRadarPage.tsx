@@ -11,7 +11,7 @@ import React, { useMemo, useState } from 'react';
 import { Alert, Col, Empty, List, Row, Select, Space, Spin, Tag, Typography } from 'antd';
 import { AlertOutlined, SafetyCertificateOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useGetSystemsQuery, useGetTriggeredRisksQuery } from '../../store/api/apiSlice';
-import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf } from '../../theme/premium';
+import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE } from '../../theme/premium';
 import { RAG, solidTagStyle } from '../../theme/ragPalette';
 
 const { Title, Text, Paragraph } = Typography;
@@ -87,7 +87,7 @@ const RiskRadarPage: React.FC = () => {
                         renderItem={(r) => {
                             const sev = SEVERITY[r.severity] ?? { label: r.severity, color: RAG.muted.strong, order: 9 };
                             return (
-                                <List.Item key={r.id} style={{ borderLeft: `3px solid ${sev.color}`, paddingLeft: 14, marginBottom: 4 }}>
+                                <List.Item key={r.id} style={{ borderLeft: `3px solid ${sev.color}`, paddingLeft: SPACE.base, marginBottom: SPACE.tight }}>
                                     <Space direction="vertical" size={4} style={{ width: '100%' }}>
                                         <Space wrap>
                                             <Tag style={solidTagStyle(sev.color)}>{sev.label}</Tag>
@@ -96,7 +96,9 @@ const RiskRadarPage: React.FC = () => {
                                             <Text type="secondary" style={{ fontSize: 12 }}>({r.code})</Text>
                                         </Space>
                                         <Space size={6} align="start">
-                                            <ThunderboltOutlined style={{ color: '#C06B5A', marginTop: 3 }} />
+                                            {/* ui-audit-ignore UI-05 — оптическая подгонка иконки
+                                                под базовую линию текста; сетка её раскосит. */}
+                                            <ThunderboltOutlined style={{ color: RAG.bad.color, marginTop: 3 }} />
                                             <Text style={{ fontSize: 13 }}>
                                                 <Text type="secondary">Сработал по: </Text>{r.triggered_by}
                                             </Text>

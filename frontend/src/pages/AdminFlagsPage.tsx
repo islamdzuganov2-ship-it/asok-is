@@ -4,7 +4,7 @@ import { LineChartOutlined, ScheduleOutlined, DashboardOutlined, ThunderboltOutl
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { setExecFeature, type ExecFeatureKey } from '../store/slices/uiSlice';
-import { accentDot, pageContainer, pageTitle, GOLD, PREMIUM } from '../theme/premium';
+import { accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE } from '../theme/premium';
 import { RAG } from '../theme/ragPalette';
 
 const { Title, Text, Paragraph } = Typography;
@@ -131,7 +131,7 @@ const AdminFlagsPage: React.FC = () => {
                     </Space>
                     <Switch checked={on} onChange={(v) => dispatch(setExecFeature({ key: f.key, value: v }))} />
                   </Space>
-                  <Paragraph type="secondary" style={{ fontSize: 13, marginTop: 10, marginBottom: 0 }}>{f.desc}</Paragraph>
+                  <Paragraph type="secondary" style={{ fontSize: 13, marginTop: SPACE.cozy, marginBottom: 0 }}>{f.desc}</Paragraph>
                 </div>
               </Card>
             </Col>

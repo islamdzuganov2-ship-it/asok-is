@@ -27,6 +27,8 @@ import { DEMO_PENDING_JUDGMENTS } from '../data/mockAssessments';
 import { CHARACTERISTICS } from '../constants/qualityModel';
 import { groupJudgmentsByPeriod, pendingJudgmentKey, withoutJudged } from '../constants/assessmentWorkflow';
 import { ragToken } from '../theme/ragPalette';
+import { SPACE } from '../theme/premium';
+import { numericColumn } from '../theme/table';
 
 const { Title, Text } = Typography;
 
@@ -92,9 +94,9 @@ const JudgmentEntryPanel: React.FC = () => {
     { title: 'Период', dataIndex: 'period', width: 92 },
     { title: 'Характеристика', dataIndex: 'characteristic', width: 190, ellipsis: true },
     { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 200, ellipsis: true },
-    {
+    numericColumn({
       title: 'Балл', dataIndex: 'score_pct', width: 110,
-      sorter: (a, b) => a.score_pct - b.score_pct,
+      sorter: (a: PendingJudgment, b: PendingJudgment) => a.score_pct - b.score_pct,
       render: (score: number, rec) => {
         const t = ragToken(score);
         return score < 0
@@ -109,7 +111,7 @@ const JudgmentEntryPanel: React.FC = () => {
             </Tooltip>
           );
       },
-    },
+    }),
     {
       title: 'Профессиональное суждение', key: 'judgment',
       render: (_, rec) => {
@@ -133,7 +135,7 @@ const JudgmentEntryPanel: React.FC = () => {
     <div>
       <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }} wrap>
         <div>
-          <Title level={4} style={{ marginTop: 0, marginBottom: 2 }}>
+          <Title level={4} style={{ marginTop: 0, marginBottom: SPACE.tight }}>
             <CommentOutlined /> Внесение профессионального суждения
           </Title>
           <Text type="secondary">

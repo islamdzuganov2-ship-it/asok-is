@@ -23,6 +23,7 @@ const ExpertReviewPage = lazy(() => import('./pages/ExpertReviewPage'));
 const AdminFlagsPage = lazy(() => import('./pages/AdminFlagsPage'));
 const ExcelReportsPage = lazy(() => import('./pages/ExcelReportsPage'));
 const RiskBasePage = lazy(() => import('./pages/RiskBasePage'));
+const RiskEconomicsPage = lazy(() => import('./pages/RiskEconomicsPage'));
 
 // `tip` у antd работает только во вложенном/полноэкранном режиме — иначе спиннер сыплет
 // предупреждениями в консоль на каждой ленивой загрузке. Подпись выводим сами (UI-10).
@@ -107,6 +108,7 @@ export const App: React.FC = () => {
                             <Route path="assessments/:id/review" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><ExpertReviewPage /></RequireRole>} />
                             <Route path="reports" element={<ExcelReportsPage />} />
                             <Route path="risks" element={<RiskBasePage />} />
+                            <Route path="risk-economics" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'RISK_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><RiskEconomicsPage /></RequireRole>} />
                             <Route path="admin/flags" element={<RequireRole allowedRoles={['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><AdminFlagsPage /></RequireRole>} />
                             <Route index element={<Navigate to="/dashboard" replace />} />
                         </Routes></Suspense></AppLayout></RequireAuth>} />

@@ -176,6 +176,7 @@ const NotificationBell: React.FC = () => {
               onClick={() => navigate(n.to)}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                {/* ui-audit-ignore UI-05 — оптическая подгонка иконки под базовую линию текста. */}
                 <span style={{ color: n.color, marginRight: 8, marginTop: 2 }}>{n.icon}</span>
                 <Text style={{ fontSize: 13 }}>{n.text}</Text>
               </div>

@@ -39,7 +39,8 @@ import { TOTAL_SUBS } from '../constants/qualityModel';
 import {
   PERIOD_STATUS, isPeriodComplete, isPeriodLocked, recalcMetricRow, rowsMissingReason,
 } from '../constants/assessmentWorkflow';
-import { SPACE } from '../theme/premium';
+import { SPACE, TYPE } from '../theme/premium';
+import { numericColumn } from '../theme/table';
 
 const { Title, Text } = Typography;
 
@@ -263,11 +264,11 @@ const AssessmentCorrectionPanel: React.FC = () => {
         />
       ),
     },
-    {
+    numericColumn({
       title: 'X', dataIndex: 'calculatedX', width: 74,
       render: (x: number | null | undefined) =>
         (x != null ? <Text strong>{x.toFixed(2)}</Text> : <Text type="secondary">—</Text>),
-    },
+    }),
     {
       title: 'Уровень', dataIndex: 'qualityLevel', width: 170,
       render: (level: string | null | undefined) => (level
@@ -276,7 +277,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
     },
     {
       title: 'Изм.', key: 'dirty', width: 48, align: 'center',
-      render: (_, rec) => (edits[rec.id] ? <Tag color="orange" style={{ fontSize: 10 }}>●</Tag> : null),
+      render: (_, rec) => (edits[rec.id] ? <Tag color="orange" style={{ fontSize: TYPE.micro.fontSize }}>●</Tag> : null),
     },
   ];
 
@@ -284,7 +285,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
     <div>
       <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }} wrap>
         <div>
-          <Title level={4} style={{ marginTop: 0, marginBottom: 2 }}>Корректировка оценки</Title>
+          <Title level={4} style={{ marginTop: 0, marginBottom: SPACE.tight }}>Корректировка оценки</Title>
           <Text type="secondary">
             Завершённые оценки ({TOTAL_SUBS} из {TOTAL_SUBS} подхарактеристик) с открытием периода на правку
             значений и комментариев · {isLive ? 'реальная БД' : 'демо-данные'}
@@ -329,7 +330,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
         <div style={{ marginTop: 16 }}>
           <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }} wrap>
             <div>
-              <Title level={5} style={{ marginTop: 0, marginBottom: 2 }}>
+              <Title level={5} style={{ marginTop: 0, marginBottom: SPACE.tight }}>
                 {selected.system_name} · {selected.period}
               </Title>
               <Text type="secondary">

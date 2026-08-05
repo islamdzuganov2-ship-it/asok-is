@@ -262,7 +262,8 @@ const ExecutiveDashboard: React.FC = () => {
       {isLive && (
         <Card {...premiumCard('slate')} style={{ ...premiumCard('slate').style, marginBottom: 16 }}>
           <Space align="start">
-            <RobotOutlined style={{ color: BRAND.ink, fontSize: 18, marginTop: 2 }} />
+            {/* ui-audit-ignore UI-05 — оптическая подгонка иконки под базовую линию заголовка. */}
+            <RobotOutlined style={{ color: BRAND.ink, fontSize: TYPE.metricSm.fontSize, marginTop: 2 }} />
             <div>
               <Text strong style={{ color: BRAND.ink }}>AI-резюме</Text>
               {liveLoading && <div style={{ marginTop: 8 }}><Spin size="small" /> <Text type="secondary">Генерация на локальной модели…</Text></div>}

@@ -22,8 +22,8 @@ import {
   CheckCircleOutlined, ExperimentOutlined, FileDoneOutlined, PlusOutlined, RobotOutlined,
 } from '@ant-design/icons';
 import { ragToken, solidTagStyle, BRAND } from '../theme/ragPalette';
-import { SPACE, premiumCard, accentDot, GOLD } from '../theme/premium';
-import { numericColumn } from '../theme/table';
+import { SPACE, premiumCard, accentDot, GOLD, TYPE } from '../theme/premium';
+import { numericColumn, numericText } from '../theme/table';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -252,20 +252,20 @@ const AiAssessmentPage: React.FC = () => {
       render: (v: string, rec) => (
         <Space size={4}>
           <Text style={{ fontSize: 12 }}>{v}</Text>
-          {rec.is_ai_specific && <Tag color="purple" style={{ fontSize: 10 }}>ИИ</Tag>}
+          {rec.is_ai_specific && <Tag color="purple" style={{ fontSize: TYPE.micro.fontSize }}>ИИ</Tag>}
         </Space>
       ),
     },
-    { title: 'Метрика', dataIndex: 'metric_kind', width: 110, render: (v: string) => <Tag style={{ fontSize: 10 }}>{v}</Tag> },
-    {
+    { title: 'Метрика', dataIndex: 'metric_kind', width: 110, render: (v: string) => <Tag style={{ fontSize: TYPE.micro.fontSize }}>{v}</Tag> },
+    numericColumn({
       title: 'Значение', dataIndex: 'raw_value', width: 90,
-      render: (v: number | null, rec) => rec.unmeasurable ? <Tag>Н/И</Tag> : v == null ? '—' : <Text strong>{v.toFixed(3)}</Text>,
-    },
-    {
+      render: (v: number | null, rec: any) => rec.unmeasurable ? <Tag>Н/И</Tag> : v == null ? '—' : <Text strong>{v.toFixed(3)}</Text>,
+    }),
+    numericColumn({
       title: 'Эталон ±ε', key: 'baseline', width: 130,
-      render: (_: unknown, rec) => rec.baseline == null ? <Text type="secondary">—</Text>
-        : <Text style={{ fontSize: 12 }}>{rec.baseline} (−{rec.tol_low ?? 0}/+{rec.tol_high ?? 0})</Text>,
-    },
+      render: (_: unknown, rec: any) => rec.baseline == null ? <Text type="secondary">—</Text>
+        : <Text style={TYPE.caption}>{rec.baseline} (−{rec.tol_low ?? 0}/+{rec.tol_high ?? 0})</Text>,
+    }),
     numericColumn({
       title: 'X', dataIndex: 'normalized_x', width: 80,
       render: (v: number | null) => v == null ? '—'
@@ -360,7 +360,7 @@ const AiAssessmentPage: React.FC = () => {
               type={qPct != null && qPct >= 61 ? 'success' : qPct != null && qPct >= 41 ? 'warning' : 'error'}
               showIcon icon={<RobotOutlined />}
               message={<Space size="large">
-                <Text strong>Интегральный показатель Q = {calc.q != null ? calc.q.toFixed(3) : '—'} ({qPct ?? '—'}%)</Text>
+                <Text strong style={numericText}>Интегральный показатель Q = {calc.q != null ? calc.q.toFixed(3) : '—'} ({qPct ?? '—'}%)</Text>
                 <Tag style={qPct != null ? solidTagStyle(ragToken(qPct).strong) : undefined}>{calc.level}</Tag>
                 <Tag>{calc.weighted ? 'взвешенная свёртка (ф. 3–8)' : 'равные веса'}</Tag>
               </Space>}
@@ -494,7 +494,7 @@ const AiAssessmentPage: React.FC = () => {
         <Alert
           type={Math.abs(weightSum - 1) <= 0.001 || weightSum === 0 ? 'info' : 'warning'}
           showIcon style={{ marginBottom: 12 }}
-          message={<span>Σ весов = <b>{weightSum.toFixed(3)}</b> {weightSum === 0 ? '(пусто — свёртка с равными весами)' : Math.abs(weightSum - 1) <= 0.001 ? '✓' : '— требуется 1.0'}</span>}
+          message={<span>Σ весов = <b style={numericText}>{weightSum.toFixed(3)}</b> {weightSum === 0 ? '(пусто — свёртка с равными весами)' : Math.abs(weightSum - 1) <= 0.001 ? '✓' : '— требуется 1.0'}</span>}
           description="Вес отражает значимость характеристики для конкретной СИИ (представительный набор, п. 7.1.4). Пустые поля не участвуют."
         />
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -520,7 +520,7 @@ const AiAssessmentPage: React.FC = () => {
         {report && (
           <Space direction="vertical" style={{ width: '100%' }} size={10}>
             <Space size="large" wrap>
-              <Text strong>Q = {report.q != null ? report.q.toFixed(3) : '—'}</Text>
+              <Text strong style={numericText}>Q = {report.q != null ? report.q.toFixed(3) : '—'}</Text>
               <Tag>{report.level}</Tag>
               <Tag color="green">В допуске: {report.conformant_count}</Tag>
               <Tag color="red">Вне допуска: {report.nonconformant_count}</Tag>

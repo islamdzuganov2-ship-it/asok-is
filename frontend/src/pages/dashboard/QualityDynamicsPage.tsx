@@ -21,7 +21,7 @@ import { RootState } from '../../store';
 import {
   MANAGER_SCALE_SYSTEMS, DYNAMICS, QUARTERS, detectAnomalies, type DynSeries,
 } from '../../data/mockScaleData';
-import { BRAND, ragToken, solidTagStyle } from '../../theme/ragPalette';
+import { BRAND, RAG, ragToken, solidTagStyle } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE, SPACE } from '../../theme/premium';
 import Sparkline from '../../components/Sparkline';
 import CollapsibleCard from '../../components/CollapsibleCard';
@@ -61,12 +61,13 @@ function pointTooltip(
   const prev = qIdx > 0 ? s.series[qIdx - 1] : -1;
   const delta = prev >= 0 ? v - prev : null;
   const deltaStr = delta == null ? '' : ` (${delta > 0 ? '+' : ''}${delta} п.п.)`;
-  let line = `${s.name}: <b>${v}%</b>${deltaStr}`;
+  // Всплывашка ECharts — HTML-строка, поэтому подача задаётся инлайн-стилем, а не токенами.
+  let line = `${s.name}: <b style="font-variant-numeric:tabular-nums">${v}%</b>${deltaStr}`;
   if (detectAnomalies(s.series).includes(qIdx)) {
     const reason = reasons[reasonKey(systemName, s.key, QUARTERS[qIdx])];
     line += reason
-      ? `<br/><span style="color:#6F9F86">Причина (менеджер по качеству):</span> ${reason}`
-      : '<br/><span style="color:#C06B5A"><b>⚠ Аномальное изменение — причина не указана.</b> Менеджер по качеству должен заполнить причину (клик по точке).</span>';
+      ? `<br/><span style="color:${RAG.good.strong}">Причина (менеджер по качеству):</span> ${reason}`
+      : `<br/><span style="color:${RAG.bad.strong}"><b>⚠ Аномальное изменение — причина не указана.</b> Менеджер по качеству должен заполнить причину (клик по точке).</span>`;
   }
   return line;
 }

@@ -16,6 +16,9 @@ import { join, relative, sep } from 'node:path';
 const SRC = join(process.cwd(), 'src');
 const THEME_DIR = join('src', 'theme');
 
+/** Ступени шкалы TYPE (src/theme/premium.ts). Держать синхронным при правке шкалы. */
+const SCALE = new Set([11, 12, 13, 14, 16, 18, 20, 24, 28]);
+
 /** Файлы, которым разрешено определять «сырьё» дизайна. */
 const isThemeFile = (f) => f.includes(THEME_DIR);
 /** Тесты и данные не участвуют в визуальном аудите. */
@@ -57,7 +60,7 @@ const RULES = [
       if (isThemeFile(file)) return [];
       const out = [];
       // объект колонки в одной строке: есть числовой dataIndex/ключ и нет align
-      const NUM = /(dataIndex|key):\s*'(score|count|pct|calculatedScore|avg_score|totalMetrics|filled|value_a|value_b|normalized_x|lowMetricsCount|avgMttrHours|measures|systems)'/;
+      const NUM = /(dataIndex|key):\s*'(score|count|pct|calculatedScore|calculatedX|x|avg_score|totalMetrics|filled|val_a|val_b|value_a|value_b|normalized_x|lowMetricsCount|avgMttrHours|measures|systems|baseline|score_pct)'/;
       const all = lines(text);
       for (const [n, l] of all) {
         if (!/title:/.test(l)) continue;
@@ -93,17 +96,37 @@ const RULES = [
   },
   {
     code: 'UI-04',
-    title: 'Размер шрифта мимо шкалы',
-    why: 'размеры расходятся на 1–2px и перестают читаться как иерархия',
+    title: 'Размер шрифта вне шкалы',
+    why: 'размер, которого нет в шкале, читается не как иерархия, а как небрежность; мельче 11px — за пределом читаемости',
     severity: 'major',
     check(text, file) {
       if (isThemeFile(file)) return [];
       const out = [];
       for (const [n, l] of lines(text)) {
-        if (/ui-audit-ignore/.test(l)) continue;
         if (/TYPE\./.test(l)) continue;
         const m = l.match(/fontSize:\s*(\d+(\.\d+)?)/);
-        if (m) out.push({ line: n, snippet: l.trim().slice(0, 90) });
+        if (!m) continue;
+        // Ступени шкалы TYPE. Значение вне набора (или мельче 11px) — настоящий визуальный дефект.
+        if (SCALE.has(Number(m[1]))) continue;
+        out.push({ line: n, snippet: l.trim().slice(0, 90) });
+      }
+      return out;
+    },
+  },
+  {
+    code: 'UI-11',
+    title: 'Размер шрифта числом вместо ступени TYPE',
+    why: 'значение совпадает со шкалой, но интерлиньяж не задан — ряд «плывёт», и шкалу нельзя поменять централизованно',
+    severity: 'minor',
+    check(text, file) {
+      if (isThemeFile(file)) return [];
+      const out = [];
+      for (const [n, l] of lines(text)) {
+        if (/TYPE\./.test(l)) continue;
+        const m = l.match(/fontSize:\s*(\d+(\.\d+)?)/);
+        if (!m) continue;
+        if (!SCALE.has(Number(m[1]))) continue; // вне шкалы — это UI-04, не дублируем
+        out.push({ line: n, snippet: l.trim().slice(0, 90) });
       }
       return out;
     },
@@ -176,12 +199,17 @@ const RULES = [
     severity: 'minor',
     check(text, file) {
       if (isThemeFile(file)) return [];
+      const all = lines(text);
       const out = [];
-      for (const [n, l] of lines(text)) {
+      for (const [n, l] of all) {
         // рендер процента/числа в ячейке или показателе
         if (!/\$\{v\}%|\{v\}%|toFixed\(|calculatedScore|\{score\}%/.test(l)) continue;
         if (/tabular-nums/.test(l)) continue;
         if (!/(render|Text|span|b>)/.test(l)) continue;
+        // Внутри `numericColumn(...)` табличные цифры ставит хелпер классом `num` —
+        // искать `tabular-nums` в строке рендера там бессмысленно (правило врало на 20 мест).
+        const window = all.slice(Math.max(0, n - 4), n).map(([, s]) => s).join(' ');
+        if (/numericColumn/.test(window)) continue;
         out.push({ line: n, snippet: l.trim().slice(0, 90) });
       }
       return out;

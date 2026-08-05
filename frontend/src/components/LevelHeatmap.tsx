@@ -106,6 +106,8 @@ const LevelHeatmap: React.FC<Props> = ({
               const sc = cellScores?.[y]?.[x];
               const label = sc != null ? (sc < 0 ? 'н/д' : `${sc}%`) : '';
               return (
+                // ui-audit-ignore UI-05 — зазор мозаики теплокарты: это плотность визуализации,
+                // а не отступ макета; сетка 4px разредит карту и сломает чтение цветовых пятен.
                 <td key={x} style={{ padding: 2, borderBottom: '1px solid #F0F1F3' }}>
                   <div
                     onClick={onCellClick ? () => onCellClick(y, x) : undefined}

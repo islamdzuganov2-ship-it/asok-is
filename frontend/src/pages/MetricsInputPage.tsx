@@ -15,7 +15,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import ExcelUploadBlock from '../components/ExcelUploadBlock';
 import { subDescription, subArtifacts } from '../constants/subDescriptions';
-import { SPACE } from '../theme/premium';
+import { SPACE, TYPE } from '../theme/premium';
+import { numericColumn } from '../theme/table';
 import { apiSlice } from '../store/api/apiSlice';
 
 const { Text, Title } = Typography;
@@ -249,13 +250,13 @@ const MetricsInputPage: React.FC = () => {
         );
       },
     },
-    {
+    numericColumn({
       title: 'X',
       dataIndex: 'calculatedX',
       width: 72,
       render: (x: number | null | undefined) =>
         x != null ? <Text strong>{x.toFixed(4)}</Text> : <Text type="secondary">—</Text>,
-    },
+    }),
     {
       title: 'Уровень',
       dataIndex: 'qualityLevel',
@@ -271,7 +272,7 @@ const MetricsInputPage: React.FC = () => {
       width: 44,
       render: (_: unknown, rec: MetricRow) =>
         dirtyIds.has(rec.id)
-          ? <Tag color="orange" style={{ fontSize: 10 }}>●</Tag>
+          ? <Tag color="orange" style={{ fontSize: TYPE.micro.fontSize }}>●</Tag>
           : null,
     },
   ];

@@ -18,7 +18,7 @@ import {
   type JudgmentItem,
 } from '../store/api/apiSlice';
 import ConclusionFeedback from './ConclusionFeedback';
-import { SPACE } from '../theme/premium';
+import { SPACE, TYPE } from '../theme/premium';
 
 const { Text, Paragraph } = Typography;
 
@@ -131,7 +131,7 @@ const ProfessionalJudgmentsPanel: React.FC<Props> = ({ periodId, periodLabel }) 
                   return (
                     <div key={s.name}>
                       <Text style={{ fontSize: 13 }}>
-                        {s.name} {!has && <Tag color="orange" style={{ fontSize: 10 }}>нужно суждение</Tag>}
+                        {s.name} {!has && <Tag color="orange" style={{ fontSize: TYPE.micro.fontSize }}>нужно суждение</Tag>}
                       </Text>
                       <Input.TextArea
                         rows={2}

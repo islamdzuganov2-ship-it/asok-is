@@ -19,6 +19,7 @@ import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { useImportIncidentsMutation } from '../store/api/apiSlice';
 import { matchColumn, type UploadSpec } from '../constants/uploadSpecs';
+import { SPACE } from '../theme/premium';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -158,7 +159,7 @@ const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
                 { title: 'Формат', dataIndex: 'format' },
               ]}
             />
-            <ul style={{ marginBottom: 0, paddingLeft: 18 }}>
+            <ul style={{ marginBottom: 0, paddingLeft: SPACE.airy }}>
               {spec.notes.map((n) => <li key={n}><Text type="secondary">{n}</Text></li>)}
             </ul>
           </div>
@@ -212,7 +213,7 @@ const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
               type={importResult.created > 0 ? 'success' : 'warning'} showIcon style={{ marginBottom: 12 }}
               message={`Импортировано: ${importResult.created}, пропущено: ${importResult.skipped}`}
               description={importResult.errors.length ? (
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                <ul style={{ margin: 0, paddingLeft: SPACE.airy }}>
                   {importResult.errors.slice(0, 10).map((e, i) => <li key={i}><Text type="secondary" style={{ fontSize: 12 }}>{e}</Text></li>)}
                 </ul>
               ) : undefined}

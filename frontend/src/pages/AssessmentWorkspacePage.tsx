@@ -28,6 +28,7 @@ import { ASSESSMENT_UPLOAD_SPEC, INCIDENT_UPLOAD_SPEC } from '../constants/uploa
 import { MeasuresRegistryCard } from '../components/MeasuresRegistryCard';
 import { MeasureDecisionModal } from '../components/MeasureDecisionModal';
 import { selectVisibleProposals, type Proposal } from '../store/slices/governanceSlice';
+import { SPACE } from '../theme/premium';
 
 const { Title, Text } = Typography;
 
@@ -72,7 +73,7 @@ const MeasuresRegistryTab: React.FC = () => {
     <div>
       <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }} wrap>
         <div>
-          <Title level={4} style={{ marginTop: 0, marginBottom: 2 }}>Реестры мер</Title>
+          <Title level={4} style={{ marginTop: 0, marginBottom: SPACE.tight }}>Реестры мер</Title>
           <Text type="secondary">Полный список мер за весь период: статусы, решения, комментарии, ответственные, сроки, исполнение. Клик по мере — карточка.</Text>
         </div>
         <Button

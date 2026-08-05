@@ -14,7 +14,7 @@ import React, { useMemo, useState } from 'react';
 import { Tooltip } from 'antd';
 import type { Proposal } from '../store/slices/governanceSlice';
 import { BRAND, RAG } from '../theme/ragPalette';
-import { SPACE } from '../theme/premium';
+import { SPACE, TYPE } from '../theme/premium';
 
 const DAY = 86400000;
 const LABEL_W = 184;
@@ -139,7 +139,7 @@ const TaskBubbleTimeline: React.FC<Props> = ({ tasks, onOpen }) => {
             {/* «Сегодня» */}
             {todayPct >= 0 && todayPct <= 100 && (
               <div style={{ position: 'absolute', left: `${todayPct}%`, top: 0, bottom: 0, borderLeft: `2px solid ${RAG.bad.strong}`, pointerEvents: 'none' }}>
-                <span style={{ position: 'absolute', top: -16, left: -18, fontSize: 10, color: RAG.bad.strong, fontWeight: 600 }}>сегодня</span>
+                <span style={{ position: 'absolute', top: -16, left: -18, fontSize: TYPE.micro.fontSize, color: RAG.bad.strong, fontWeight: 600 }}>сегодня</span>
               </div>
             )}
 

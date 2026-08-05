@@ -219,7 +219,7 @@ const DashboardPage: React.FC = () => {
         {loading ? <Skeleton.Input active /> : (
           <>
             <Statistic title={title} value={value as any} valueStyle={color ? { color, fontWeight: 700 } : undefined} />
-            <Text type="secondary" style={{ fontSize: 11 }}>раскрыть <RightOutlined style={{ fontSize: 9 }} /></Text>
+            <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize }}>раскрыть <RightOutlined style={{ fontSize: TYPE.micro.fontSize }} /></Text>
           </>
         )}
       </Card>

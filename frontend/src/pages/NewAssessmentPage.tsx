@@ -36,6 +36,7 @@ import {
 import { subArtifacts, subDescription } from '../constants/subDescriptions';
 import ProfessionalJudgmentsPanel from '../components/ProfessionalJudgmentsPanel';
 import { premiumCard, accentDot, accentColorOf, GOLD, SPACE } from '../theme/premium';
+import { numericColumn } from '../theme/table';
 import { BRAND } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
@@ -288,12 +289,12 @@ export const NewAssessmentPage: React.FC = () => {
     const resultColumns: ColumnsType<ResultRow> = [
         { title: 'Характеристика', dataIndex: 'characteristic', width: 220 },
         { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 230 },
-        { title: 'A', dataIndex: 'val_a', width: 70, render: (v: number | null) => (v ?? '—') },
-        { title: 'B', dataIndex: 'val_b', width: 70, render: (v: number | null) => (v ?? '—') },
-        {
+        numericColumn({ title: 'A', dataIndex: 'val_a', width: 70, render: (v: number | null) => (v ?? '—') }),
+        numericColumn({ title: 'B', dataIndex: 'val_b', width: 70, render: (v: number | null) => (v ?? '—') }),
+        numericColumn({
             title: 'X', dataIndex: 'x', width: 80,
             render: (x: number | null) => (x != null ? <Text strong>{x.toFixed(2)}</Text> : <Text type="secondary">—</Text>),
-        },
+        }),
         {
             title: 'Уровень', dataIndex: 'level', width: 180,
             render: (level: string | null) => (

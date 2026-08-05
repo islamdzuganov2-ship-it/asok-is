@@ -132,7 +132,8 @@ export const ExcelReportsPage: React.FC = () => {
                 title: 'Характеристика', dataIndex: 'characteristic', width: 220, fixed: 'left' as const,
                 render: (v: string) => (v === 'Интегральный показатель' ? <Text strong>{v}</Text> : v),
             },
-            ...points.map((p) => ({
+            // Колонки-периоды генерируются динамически, но содержат проценты — те же правила.
+            ...points.map((p) => numericColumn({
                 title: p.period, dataIndex: p.period, width: 100,
                 render: (v: number | undefined) => (v == null ? '—' : `${v}%`),
             })),
@@ -238,13 +239,13 @@ export const ExcelReportsPage: React.FC = () => {
     const qualityColumns: ColumnsType<EditableMetric> = [
         { title: 'Характеристика', dataIndex: 'characteristic', width: 220 },
         { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 230 },
-        { title: 'A', dataIndex: 'val_a', width: 70, render: (v: number | null) => (v ?? '—') },
-        { title: 'B', dataIndex: 'val_b', width: 70, render: (v: number | null) => (v ?? '—') },
-        {
+        numericColumn({ title: 'A', dataIndex: 'val_a', width: 70, render: (v: number | null) => (v ?? '—') }),
+        numericColumn({ title: 'B', dataIndex: 'val_b', width: 70, render: (v: number | null) => (v ?? '—') }),
+        numericColumn({
             title: 'X', dataIndex: 'calculatedX', width: 80,
             render: (x: number | null | undefined) =>
                 (x != null ? <Text strong>{x.toFixed(2)}</Text> : <Text type="secondary">—</Text>),
-        },
+        }),
         {
             title: 'Уровень', dataIndex: 'qualityLevel', width: 170,
             render: (level: string | null | undefined) =>
@@ -337,11 +338,16 @@ export const ExcelReportsPage: React.FC = () => {
     };
 
     const handleExport = () => {
+        // Спека колонок для ВЫГРУЗКИ в CSV/Excel, а не для отрисовки: выравнивание и шрифт
+        // задаёт получающее приложение, поэтому правила подачи таблиц здесь неприменимы.
         const qualityExportCols = [
             { title: 'Характеристика', dataIndex: 'characteristic' },
             { title: 'Подхарактеристика', dataIndex: 'subcharacteristic' },
+            // ui-audit-ignore UI-02 — колонка выгрузки, не отрисовки.
             { title: 'A', dataIndex: 'val_a' },
+            // ui-audit-ignore UI-02 — колонка выгрузки, не отрисовки.
             { title: 'B', dataIndex: 'val_b' },
+            // ui-audit-ignore UI-02 — колонка выгрузки, не отрисовки.
             { title: 'X', dataIndex: 'calculatedX' },
             { title: 'Уровень', dataIndex: 'qualityLevel' },
             { title: 'Комментарий', dataIndex: 'expert_comment' },
