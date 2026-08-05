@@ -12,6 +12,7 @@ import { FundOutlined } from '@ant-design/icons';
 import type { Proposal } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
+import { numericColumn } from '../theme/table';
 
 const { Text } = Typography;
 const TODAY = new Date(2026, 5, 26).getTime();
@@ -78,8 +79,8 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
   const detailColumns: ColumnsType<Proposal> = [
     { title: 'Мера', dataIndex: 'riskTitle', render: (v: string, r) => v || r.metricName },
     { title: 'ИС', dataIndex: 'systemName', width: 170 },
-    { title: '%', dataIndex: 'calculatedScore', width: 64,
-      render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> },
+    numericColumn<Proposal>({ title: '%', dataIndex: 'calculatedScore', width: 64,
+      render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> }),
     { title: 'Срок', dataIndex: 'dueDate', width: 104 },
   ];
 

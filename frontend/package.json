@@ -8,7 +8,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "check:contrast": "node scripts/check-contrast.mjs"
+    "check:contrast": "node scripts/check-contrast.mjs",
+    "check:ui": "node scripts/check-ui.mjs",
+    "check": "npm run typecheck && npm run check:contrast && npm run check:ui && npm run test"
   },
   "dependencies": {
     "@ant-design/icons": "^5.3.7",

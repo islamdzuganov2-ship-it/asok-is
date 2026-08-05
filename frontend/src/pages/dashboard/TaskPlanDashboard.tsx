@@ -381,6 +381,7 @@ const TaskPlanDashboard: React.FC = () => {
                   rowKey={(r) => r.p.id}
                   size="small"
                   pagination={tasks.length > 10 ? { pageSize: 10, size: 'small' } : false}
+                  locale={{ emptyText: 'Задач по выбранным фильтрам нет' }}
                   onRow={(r) => ({ onClick: () => openTask(r.p), style: { cursor: 'pointer' } })}
                 />
               )}

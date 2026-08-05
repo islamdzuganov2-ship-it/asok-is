@@ -6,6 +6,7 @@ import { useSelector } from 'react-redux';
 import { RootState } from './store';
 import { AppLayout } from './components/AppLayout';
 import { BRAND } from './theme/ragPalette';
+import { SPACE, TYPE } from './theme/premium';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -23,9 +24,15 @@ const AdminFlagsPage = lazy(() => import('./pages/AdminFlagsPage'));
 const ExcelReportsPage = lazy(() => import('./pages/ExcelReportsPage'));
 const RiskBasePage = lazy(() => import('./pages/RiskBasePage'));
 
+// `tip` у antd работает только во вложенном/полноэкранном режиме — иначе спиннер сыплет
+// предупреждениями в консоль на каждой ленивой загрузке. Подпись выводим сами (UI-10).
 const PageLoader = () => (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <Spin size="large" tip="Загрузка..." />
+    <div style={{
+        display: 'flex', flexDirection: 'column', gap: SPACE.cozy,
+        justifyContent: 'center', alignItems: 'center', height: '100vh',
+    }}>
+        <Spin size="large" />
+        <span style={{ ...TYPE.caption, color: BRAND.inkSoft }}>Загрузка…</span>
     </div>
 );
 

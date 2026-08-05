@@ -296,6 +296,15 @@ export const apiSlice = createApi({
             return headers;
         },
     }),
+    // Авто-освежение кэша без ручного F5 (жалоба «нет автоматического сброса кэша»):
+    //  · refetchOnFocus — вернулись во вкладку → данные перезапрашиваются;
+    //  · refetchOnReconnect — восстановилась сеть → перезапрос;
+    //  · refetchOnMountOrArgChange:30 — при переходе на страницу данные старше 30с обновляются
+    //    (иначе RTK Query отдаёт кэш и дашборд показывает устаревшие цифры до перезагрузки).
+    // Включатели событий focus/reconnect уже поднимаются setupListeners (store/index.ts).
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMountOrArgChange: 30,
     tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems', 'Incidents'],
     endpoints: (builder) => ({
         getExecutiveDashboard: builder.query<DashboardData, void>({

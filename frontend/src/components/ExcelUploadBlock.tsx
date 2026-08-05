@@ -3,6 +3,8 @@ import { Alert, Button, Card, Space, Typography, Upload, message } from 'antd';
 import { FileExcelOutlined, UploadOutlined } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import { useImportAssessmentExcelMutation, useImportWorkbookMutation } from '../store/api/apiSlice';
+import { premiumCard } from '../theme/premium';
+import { BRAND } from '../theme/ragPalette';
 
 const { Text } = Typography;
 
@@ -39,11 +41,11 @@ const ExcelUploadBlock: React.FC<ExcelUploadBlockProps> = ({ periodId, onImporte
   };
 
   return (
-    <Card size="small">
+    <Card size="small" {...premiumCard('none')}>
       <Space direction="vertical" size="small" style={{ width: '100%' }}>
         <Space style={{ justifyContent: 'space-between', width: '100%' }}>
           <Space>
-            <FileExcelOutlined style={{ color: '#1F3864' }} />
+            <FileExcelOutlined style={{ color: BRAND.ink }} />
             <Text strong>Загрузка данных из Excel</Text>
           </Space>
           <Upload {...uploadProps}>

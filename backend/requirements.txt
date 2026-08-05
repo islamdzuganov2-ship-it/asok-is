@@ -10,6 +10,9 @@ sqlalchemy[asyncio]==2.0.25
 asyncpg==0.29.0
 alembic==1.13.1
 psycopg2-binary==2.9.9
+# pgvector: тип Vector для SQLAlchemy + операторы косинуса (T-20, семантический поиск базы рисков).
+# Чистый Python (без torch/тяжёлых зависимостей); совместим с образом pgvector/pgvector:pg14.
+pgvector==0.3.6
 
 # === Security ===
 python-jose[cryptography]==3.3.0

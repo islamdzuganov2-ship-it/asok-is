@@ -18,6 +18,7 @@ import {
   UploadOutlined, ThunderboltOutlined, UnorderedListOutlined, DownloadOutlined,
 } from '@ant-design/icons';
 import { shallowEqual, useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom';
 import NewAssessmentPage from './NewAssessmentPage';
 import ExcelReportsPage from './ExcelReportsPage';
 import DataUploadPanel from '../components/DataUploadPanel';
@@ -88,8 +89,20 @@ const MeasuresRegistryTab: React.FC = () => {
   );
 };
 
+// Ключи вкладок — стабильные, используются и во внутреннем состоянии, и в deep-link `?tab=`
+// (меню аналитика ведёт прямо на «Загрузка ТС»/«Загрузка оценок», карточка сбоев — на импорт ТС).
+const VALID_TABS = ['new', 'edit', 'judgment', 'reports', 'upload-assessments', 'upload-incidents', 'measures'];
+
 const AssessmentWorkspacePage: React.FC = () => {
-  const [tab, setTab] = useState('new');
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const [tab, setTab] = useState(urlTab && VALID_TABS.includes(urlTab) ? urlTab : 'new');
+  // Синхронизация вкладки с URL: смена вкладки пишет `?tab=`, внешняя навигация на `?tab=` открывает её.
+  React.useEffect(() => {
+    if (urlTab && VALID_TABS.includes(urlTab) && urlTab !== tab) setTab(urlTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlTab]);
+  const onTabChange = (k: string) => { setTab(k); setParams((p) => { p.set('tab', k); return p; }, { replace: true }); };
   return (
     <div style={{ padding: '0 8px' }}>
       <div style={{ padding: '4px 4px 0' }}>
@@ -98,7 +111,7 @@ const AssessmentWorkspacePage: React.FC = () => {
       </div>
       <Tabs
         activeKey={tab}
-        onChange={setTab}
+        onChange={onTabChange}
         items={[
           {
             key: 'new',

@@ -35,6 +35,8 @@ import {
 } from '../constants/qualityModel';
 import { subArtifacts, subDescription } from '../constants/subDescriptions';
 import ProfessionalJudgmentsPanel from '../components/ProfessionalJudgmentsPanel';
+import { premiumCard, accentDot, accentColorOf, GOLD, SPACE } from '../theme/premium';
+import { BRAND } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
 
@@ -247,6 +249,8 @@ export const NewAssessmentPage: React.FC = () => {
     const overviewColumns: ColumnsType<PeriodSummary> = [
         { title: 'Период', dataIndex: 'period', width: 130 },
         {
+            // ui-audit-ignore UI-02 — в колонке полоса Progress, а не число: она занимает ширину
+            // колонки, выравнивание вправо неприменимо.
             title: 'Заполнено', key: 'filled', width: 200,
             render: (_: unknown, rec) => (
                 <Progress
@@ -318,7 +322,10 @@ export const NewAssessmentPage: React.FC = () => {
                 {systemsError && <Alert type="error" showIcon message="Не удалось загрузить справочник систем" />}
 
                 {/* 1. Выбор системы и периода */}
-                <Card title="Система и период оценки">
+                <Card
+                    {...premiumCard('gold')}
+                    title={<Space><span style={accentDot(GOLD.base)} /><span style={{ color: BRAND.ink }}>Система и период оценки</span></Space>}
+                >
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                         <Space wrap align="end" style={{ width: '100%' }}>
                             <div style={{ minWidth: 360 }}>
@@ -367,7 +374,10 @@ export const NewAssessmentPage: React.FC = () => {
 
                 {/* 2. Обзор существующих оценок по системе */}
                 {systemId && (
-                    <Card title="Оценки по системе">
+                    <Card
+                        {...premiumCard('slate', { marginTop: SPACE.base })}
+                        title={<Space><span style={accentDot(accentColorOf('slate')!)} /><span style={{ color: BRAND.ink }}>Оценки по системе</span></Space>}
+                    >
                         <Table<PeriodSummary>
                             columns={overviewColumns}
                             dataSource={summaries || []}

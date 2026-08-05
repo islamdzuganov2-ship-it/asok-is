@@ -21,8 +21,9 @@ import type { ColumnsType } from 'antd/es/table';
 import {
   CheckCircleOutlined, ExperimentOutlined, FileDoneOutlined, PlusOutlined, RobotOutlined,
 } from '@ant-design/icons';
-import { ragToken, solidTagStyle } from '../theme/ragPalette';
-import { SPACE } from '../theme/premium';
+import { ragToken, solidTagStyle, BRAND } from '../theme/ragPalette';
+import { SPACE, premiumCard, accentDot, GOLD } from '../theme/premium';
+import { numericColumn } from '../theme/table';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -265,11 +266,11 @@ const AiAssessmentPage: React.FC = () => {
       render: (_: unknown, rec) => rec.baseline == null ? <Text type="secondary">—</Text>
         : <Text style={{ fontSize: 12 }}>{rec.baseline} (−{rec.tol_low ?? 0}/+{rec.tol_high ?? 0})</Text>,
     },
-    {
+    numericColumn({
       title: 'X', dataIndex: 'normalized_x', width: 80,
       render: (v: number | null) => v == null ? '—'
         : <Tag style={solidTagStyle(ragToken(v * 100).strong)}>{v.toFixed(3)}</Tag>,
-    },
+    }),
     {
       title: 'Вердикт', key: 'verdict', width: 140,
       render: (_: unknown, rec) => {
@@ -299,7 +300,10 @@ const AiAssessmentPage: React.FC = () => {
         базовым значениям (baseline ± допуски), интегральный показатель Q.
       </Text>
 
-      <Card title="Система ИИ и период" style={{ marginTop: 16 }}>
+      <Card
+        {...premiumCard('gold', { marginTop: SPACE.base })}
+        title={<Space><span style={accentDot(GOLD.base)} /><span style={{ color: BRAND.ink }}>Система ИИ и период</span></Space>}
+      >
         <Space wrap align="end" size="middle">
           <div style={{ minWidth: 340 }}>
             <Text type="secondary">Система ИИ (system_kind = AI)</Text>
@@ -529,9 +533,9 @@ const AiAssessmentPage: React.FC = () => {
                 { title: 'Характеристика', dataIndex: 'characteristic', width: 180, ellipsis: true },
                 { title: 'Субхарактеристика', dataIndex: 'subcharacteristic', ellipsis: true },
                 { title: 'Значение', dataIndex: 'raw_value', width: 90, render: (v: number | null) => v == null ? '—' : v.toFixed(3) },
-                { title: 'Эталон', dataIndex: 'baseline', width: 80, render: (v: number | null) => v == null ? '—' : v },
-                { title: 'ε⁻/ε⁺', key: 'tol', width: 90, render: (_: unknown, r) => r.baseline == null ? '—' : `${r.tol_low ?? 0}/${r.tol_high ?? 0}` },
-                { title: 'X', dataIndex: 'normalized_x', width: 70, render: (v: number | null) => v == null ? '—' : v.toFixed(3) },
+                numericColumn({ title: 'Эталон', dataIndex: 'baseline', width: 80, render: (v: number | null) => v == null ? '—' : v }),
+                numericColumn({ title: 'ε⁻/ε⁺', key: 'tol', width: 90, render: (_: unknown, r: any) => r.baseline == null ? '—' : `${r.tol_low ?? 0}/${r.tol_high ?? 0}` }),
+                numericColumn({ title: 'X', dataIndex: 'normalized_x', width: 70, render: (v: number | null) => v == null ? '—' : v.toFixed(3) }),
                 { title: 'Вердикт', dataIndex: 'verdict', width: 150, render: (v: string) => <Tag color={VERDICT_TAG[v]}>{v}</Tag> },
               ]}
             />

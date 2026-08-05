@@ -62,8 +62,21 @@ async def search_risks(
     limit: int = 5,
     db: AsyncSession = Depends(get_db),
 ) -> list[RiskBase]:
-    """Семантически простой поиск для LLM-grounding (по тексту/ключевым словам)."""
+    """Лексический поиск для LLM-grounding (по тексту/ключевым словам). Оставлен неизменным."""
     return await service.search_risks(db, q, limit)
+
+
+@router.get("/semantic-search", response_model=list[RiskBaseOut])
+async def semantic_search_risks(
+    q: str = Query(..., min_length=2),
+    limit: int = 5,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> list[RiskBase]:
+    """Семантический поиск базы рисков (T-20): косинусная близость эмбеддингов через pgvector.
+    Находит риск по смыслу/морфологии, а не только по точному вхождению слова (в отличие от
+    /search и ?q=). Если эмбеддинги ещё не проставлены — честный откат на лексический поиск."""
+    return await service.semantic_search_risks(db, q, limit)
 
 
 @router.get("/triggered", response_model=list[TriggeredRiskOut])
@@ -114,6 +127,7 @@ async def create_risk(
     if exists:
         raise HTTPException(status_code=409, detail=f"Код риска уже существует: {payload.code}")
     risk = RiskBase(**payload.model_dump(), created_by=user.get("username"))
+    risk.embedding = service.embed_risk(risk)  # T-20: индексируем карточку сразу при создании
     db.add(risk)
     await db.commit()
     await db.refresh(risk)
@@ -132,6 +146,7 @@ async def update_risk(
         raise HTTPException(status_code=404, detail="Риск не найден")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(risk, field, value)
+    risk.embedding = service.embed_risk(risk)  # T-20: текст мог измениться — пересчитываем вектор
     await db.commit()
     await db.refresh(risk)
     return risk
@@ -169,7 +184,7 @@ async def import_from_period(
         code = f"R-IMP-{today}-{r.id}"
         if code in existing_codes:
             continue
-        db.add(RiskBase(
+        risk = RiskBase(
             code=code,
             title=(r.risk_description or "Риск")[:120],
             category=r.characteristic or "общее",
@@ -180,8 +195,22 @@ async def import_from_period(
             mitigation=r.mitigation_measures,
             source="excel",
             created_by=user.get("username"),
-        ))
+        )
+        risk.embedding = service.embed_risk(risk)  # T-20: импортированные карточки тоже индексируем
+        db.add(risk)
         existing_codes.add(code)
         imported += 1
     await db.commit()
     return {"imported": imported, "skipped": len(rows) - imported}
+
+
+@router.post("/reembed", response_model=dict)
+async def reembed_risks(
+    only_missing: bool = False,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_role("ADMIN")),
+) -> dict:
+    """Бэкфилл эмбеддингов базы рисков (T-20). only_missing=true — только строки без вектора
+    (после первого разворачивания фичи); иначе пересчёт всех (после смены провайдера)."""
+    count = await service.reembed_all(db, only_missing=only_missing)
+    return {"reembedded": count}

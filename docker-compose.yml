@@ -3,7 +3,10 @@ name: asok-is
 services:
 
   postgres:
-    image: postgres:14-alpine
+    # pgvector/pgvector:pg14 = официальный PostgreSQL 14 + расширение vector (T-20, семантический
+    # поиск базы рисков). Формат данных PG14 идентичен postgres:14-alpine → том pgdata переносится
+    # без потерь. Само расширение включается миграцией 012 (CREATE EXTENSION vector).
+    image: pgvector/pgvector:pg14
     container_name: asok_postgres
     restart: unless-stopped
     environment:

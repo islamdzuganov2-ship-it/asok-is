@@ -147,6 +147,7 @@ const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
               style={{ marginTop: 8, marginBottom: 8 }}
               pagination={false}
               rowKey="key"
+              locale={{ emptyText: 'Спецификация колонок не задана' }}
               dataSource={spec.columns}
               columns={[
                 {

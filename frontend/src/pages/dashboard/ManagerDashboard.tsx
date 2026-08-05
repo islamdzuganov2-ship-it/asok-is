@@ -27,6 +27,7 @@ import { ManagerMetric, ManagerSystem } from '../../data/mockDashboards';
 import { MANAGER_SCALE_SYSTEMS as MANAGER_MOCK_SYSTEMS } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND, solidTagStyle } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE, SPACE, PREMIUM } from '../../theme/premium';
+import { numericColumn } from '../../theme/table';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import MeasureDevelopmentPanel from '../../components/MeasureDevelopmentPanel';
@@ -212,11 +213,11 @@ const ManagerDashboard: React.FC = () => {
 
   const columns = [
     { title: 'Метрика (подхарактеристика)', dataIndex: 'name', key: 'name', width: '46%' },
-    {
+    numericColumn<ManagerMetric>({
       title: 'Расчётный %', dataIndex: 'score', key: 'score', width: '20%',
       render: (v: number) => <Text strong style={{ color: scoreTok(v).strong }}>{v < 0 ? 'н/д' : `${v}%`}</Text>,
       sorter: (a: ManagerMetric, b: ManagerMetric) => a.score - b.score,
-    },
+    }),
     {
       title: 'Уровень', key: 'level', width: '20%',
       render: (_: unknown, r: ManagerMetric) => {

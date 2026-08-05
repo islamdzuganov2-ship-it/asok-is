@@ -16,8 +16,9 @@ import {
     useSaveAssessmentMetricsMutation,
 } from '../store/api/apiSlice';
 import { RootState } from '../store';
-import { accentDot, pageTitle, GOLD, SPACE } from '../theme/premium';
+import { accentDot, pageTitle, GOLD, SPACE, premiumCard } from '../theme/premium';
 import { BRAND, RAG } from '../theme/ragPalette';
+import { numericColumn } from '../theme/table';
 import {
     approveProposal, rejectProposal, selectVisibleProposals, type ProposalStatus,
 } from '../store/slices/governanceSlice';
@@ -294,7 +295,7 @@ export const ExcelReportsPage: React.FC = () => {
         { title: 'ИС', dataIndex: 'systemName', width: 180 },
         { title: 'Подхарактеристика', dataIndex: 'characteristic', width: 180 },
         { title: 'Метрика', dataIndex: 'metricName', width: 180 },
-        { title: 'Расч. %', dataIndex: 'calculatedScore', width: 90, render: (v: number) => `${v}%` },
+        numericColumn({ title: 'Расч. %', dataIndex: 'calculatedScore', width: 90, render: (v: number) => `${v}%` }),
         { title: 'Обоснование (суждение)', dataIndex: 'rationale' },
         { title: 'Что ожидается от ЛПР', dataIndex: 'expectation' },
         { title: 'Ответственный', dataIndex: 'owner', width: 150 },
@@ -417,9 +418,9 @@ export const ExcelReportsPage: React.FC = () => {
             {systemId && !periodId && <Alert type="info" showIcon message="Выберите период оценки для выбранной системы." />}
             {isError && <Alert type="warning" showIcon message="Не удалось загрузить матрицы для выбранного периода." />}
 
-            <Card style={reportCardStyle}>
-                <Space style={{ marginBottom: 16 }}>
-                    <FileExcelOutlined style={{ color: '#1F3864' }} />
+            <Card {...premiumCard('sage', reportCardStyle)}>
+                <Space style={{ marginBottom: SPACE.base }}>
+                    <FileExcelOutlined style={{ color: BRAND.ink }} />
                     <Text strong>Данные из БД</Text>
                     {(isFetching || qualityLoading) && <Spin size="small" />}
                 </Space>

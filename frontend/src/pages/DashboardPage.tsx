@@ -18,6 +18,7 @@ import { ANALYTICS_SCALE } from '../data/mockScaleData';
 import LevelHeatmap, { LEVEL_COLORS, LEVEL_TAG_COLORS } from '../components/LevelHeatmap';
 import { critTagStyle, levelLabel, solidTagStyle, ragToken, RAG, BRAND } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
+import { numericColumn } from '../theme/table';
 
 const { Title, Text } = Typography;
 
@@ -237,11 +238,12 @@ const DashboardPage: React.FC = () => {
           )}
           <Table
             dataSource={levelDist} rowKey="level" size="small" pagination={false}
+            locale={{ emptyText: 'Нет рассчитанных метрик за период' }}
             columns={[
               { title: 'Уровень', dataIndex: 'level',
                 render: (v: string) => <Tag style={solidTagStyle(LEVEL_TAG_COLORS[v])}>{v}</Tag> },
-              { title: 'Метрик', dataIndex: 'count' },
-              { title: 'Доля', dataIndex: 'pct', render: (v: number) => `${v}%` },
+              numericColumn({ title: 'Метрик', dataIndex: 'count', width: 90 }),
+              numericColumn({ title: 'Доля', dataIndex: 'pct', width: 90, render: (v: number) => `${v}%` }),
             ]}
           />
         </>
@@ -262,10 +264,10 @@ const DashboardPage: React.FC = () => {
               { title: 'ИС', dataIndex: 'system', ellipsis: true },
               { title: 'Характеристика', dataIndex: 'characteristic', ellipsis: true },
               { title: 'Метрика', dataIndex: 'metric', ellipsis: true },
-              {
+              numericColumn({
                 title: 'Мер', dataIndex: 'measures', width: 70,
                 render: (v: number) => <Tag style={solidTagStyle(RAG.good.strong)}>{v}</Tag>,
-              },
+              }),
             ]}
           />
         </>
@@ -286,8 +288,8 @@ const DashboardPage: React.FC = () => {
           columns={[
             { title: 'ИС', dataIndex: 'name', ellipsis: true },
             { title: 'Критичность', dataIndex: 'criticality', render: critTag },
-            { title: 'Низких метрик', dataIndex: 'lowMetricsCount',
-              render: (v: number) => <Text type="danger" strong>{v}</Text> },
+            numericColumn({ title: 'Низких метрик', dataIndex: 'lowMetricsCount', width: 130,
+              render: (v: number) => <Text type="danger" strong>{v}</Text> }),
           ]}
         />
       </>
@@ -357,8 +359,8 @@ const DashboardPage: React.FC = () => {
                 columns={[
                   { title: 'ИС', dataIndex: 'name', ellipsis: true },
                   { title: 'Критичность', dataIndex: 'criticality', render: critTag },
-                  { title: 'Низких метрик', dataIndex: 'lowMetricsCount',
-                    render: (v: number) => <Text type="danger" strong>{v}</Text> },
+                  numericColumn({ title: 'Низких метрик', dataIndex: 'lowMetricsCount', width: 130,
+                    render: (v: number) => <Text type="danger" strong>{v}</Text> }),
                 ]}
               />
             )}
@@ -448,7 +450,7 @@ const DashboardPage: React.FC = () => {
             pagination={false}
             columns={[
               { title: 'Подхарактеристика', dataIndex: 'name' },
-              {
+              numericColumn({
                 title: 'Качество', dataIndex: 'score', width: 200,
                 render: (v: number) => {
                   const lvl = levelLabel(v < 0 ? -1 : v);
@@ -458,7 +460,7 @@ const DashboardPage: React.FC = () => {
                     </Tag>
                   );
                 },
-              },
+              }),
             ]}
           />
         )}

@@ -15,6 +15,7 @@ import { ExecSystemInsight, ExecutiveDashboardData } from '../../data/mockDashbo
 import { EXECUTIVE_SCALE, HEATMAP_CHARS_FULL } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND, critTagStyle, solidTagStyle } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, TYPE, SPACE } from '../../theme/premium';
+import { numericColumn } from '../../theme/table';
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
@@ -475,9 +476,9 @@ const ExecutiveDashboard: React.FC = () => {
             columns={[
               { title: 'Мера', dataIndex: 'riskTitle', render: (v: string, r) => v || r.metricName },
               { title: 'ИС', dataIndex: 'systemName', width: 180 },
-              { title: '%', dataIndex: 'calculatedScore', width: 70,
+              numericColumn<Proposal>({ title: '%', dataIndex: 'calculatedScore', width: 70,
                 render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag>,
-                sorter: (a, b) => a.calculatedScore - b.calculatedScore },
+                sorter: (a, b) => a.calculatedScore - b.calculatedScore }),
               { title: 'Срок', dataIndex: 'dueDate', width: 110 },
             ] as ColumnsType<Proposal>}
           />
@@ -507,11 +508,11 @@ const ExecutiveDashboard: React.FC = () => {
               sorter: (a, b) => CRIT_RANK[a.criticality] - CRIT_RANK[b.criticality],
               render: (v: string) => <Tag style={critTagStyle(v)}>{v}</Tag>,
             },
-            {
+            numericColumn<ExecSystemInsight>({
               title: 'Балл', dataIndex: 'score', width: 110,
               sorter: (a, b) => a.score - b.score,
               render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag>,
-            },
+            }),
             { title: 'Просевшая характеристика', dataIndex: 'weakCharacteristic', width: 220 },
           ] as ColumnsType<ExecSystemInsight>}
         />

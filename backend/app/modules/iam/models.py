@@ -19,7 +19,13 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     ROLE_CTO = "CTO"
     ROLE_CEO = "CEO"
     ROLE_ADMIN = "ADMIN"
-    ALL_ROLES = ("TEST_ANALYST", "QUALITY_MANAGER", "CTO", "CEO", "ADMIN")
+    # BL-007: владелец риска (RE-17) ведёт реестр рисков/ARO/аппетит, но НЕ меняет Score (SoD §6.1);
+    # аудитор-верификатор (RE-18) ставит статус «Верифицировано» — тот, кто оценивал, не подтверждает
+    # собственную меру (§3.3). Роли разведены в модели данных сразу, даже если носит их один человек.
+    ROLE_RISK_MANAGER = "RISK_MANAGER"
+    ROLE_AUDITOR = "AUDITOR"
+    ALL_ROLES = ("TEST_ANALYST", "QUALITY_MANAGER", "CTO", "CEO", "ADMIN",
+                 "RISK_MANAGER", "AUDITOR")
     READONLY_ROLES = ("CTO", "CEO")
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

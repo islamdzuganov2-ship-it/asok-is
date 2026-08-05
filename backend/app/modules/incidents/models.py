@@ -12,7 +12,7 @@ ORM-модель домена incidents (T-21, код-ревью 2026-07-06): т
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -59,6 +59,17 @@ SEVERITIES = ("critical", "high", "medium", "low")
 # Происхождение записи: ручной ввод (MVP), импорт, авто-приём из ITSM (задел, порт IncidentSource).
 SOURCES = ("manual", "import", "itsm")
 
+# BL-007 (RE-05, задача 17): тип события — полный простой vs деградация (частичная недоступность).
+INCIDENT_DOWNTIME = "DOWNTIME"        # полный отказ (недоступность БП)
+INCIDENT_DEGRADATION = "DEGRADATION"  # деградация: часть функций/производительности/пропускной
+INCIDENT_TYPES = (INCIDENT_DOWNTIME, INCIDENT_DEGRADATION)
+
+# Тип деградации → способ расчёта K влияния ∈ [0,1] (§2.2).
+DEGRADATION_FUNCTIONAL = "FUNCTIONAL"       # часть функций недоступна
+DEGRADATION_PERFORMANCE = "PERFORMANCE"     # выросло время отклика (ступенчатая шкала)
+DEGRADATION_THROUGHPUT = "THROUGHPUT"       # обрабатывается не вся нагрузка
+DEGRADATION_TYPES = (DEGRADATION_FUNCTIONAL, DEGRADATION_PERFORMANCE, DEGRADATION_THROUGHPUT)
+
 
 class TechIncident(Base, TimestampMixin):
     """Технический сбой ИС — запись реестра надёжности (домен incidents)."""
@@ -92,6 +103,28 @@ class TechIncident(Base, TimestampMixin):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     # Пока NULL — сбой открыт (не восстановлен). Заполнено → закрыт, для расчёта MTTR.
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # ── BL-007 (RE-05): экономический слой техсбоя — входы для C_ТС и ALE ──
+    # Тип события и деградация (задача 17): DOWNTIME/DEGRADATION + подтип деградации.
+    incident_type: Mapped[str] = mapped_column(String(16), nullable=False, default=INCIDENT_DOWNTIME)
+    degradation_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Длительность недоступности (мин) и коэффициент влияния K∈[0,1] (для деградации <1) → C_простой.
+    downtime_minutes: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    k_impact: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    # Тайминги (RE-05): T реакции, T устранения (до восстановления сервиса), T целевого решения.
+    t_reaction_min: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    t_resolution_min: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    t_target_min: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Момент устранения ПЕРВОПРИЧИНЫ (не симптома) — разрыв с resolved_at = метрика зрелости (§2.1).
+    root_cause_fixed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Трудозатраты по линиям (ч) — раздельно для C_восстановление = Σ T_линия×R_линия×K_время (§2.1).
+    labor_l1_hours: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    labor_l2_hours: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    labor_l3_hours: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Признак участия вендора в устранении (для разреза по вендорам, §2.4).
+    vendor_involved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Кэш стоимости единичной реализации C_ТС (движок RE-07). NULL — ещё не считалось.
+    cost_total: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
 
     source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
     created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)

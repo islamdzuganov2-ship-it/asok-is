@@ -3,6 +3,7 @@ import { Alert, Button, Card, Progress, Space, Spin, Table, Tag, Typography } fr
 import { useParams } from 'react-router-dom';
 import { CalculatedMetric, useGetCalculatedMetricsQuery } from '../store/api/apiSlice';
 import { ExpertJudgmentModal } from '../components/ExpertJudgmentModal';
+import { premiumCard, SPACE } from '../theme/premium';
 
 const { Title, Text } = Typography;
 
@@ -81,7 +82,7 @@ export const ExpertReviewPage: React.FC = () => {
     return (
         <div>
             <Title level={3}>Экспертиза и утверждение оценки</Title>
-            <Card style={{ marginBottom: 24 }}>
+            <Card {...premiumCard('slate', { marginBottom: SPACE.page })}>
                 <Text>Метрики ниже 41% требуют управленческого внимания и могут быть скорректированы экспертным суждением.</Text>
             </Card>
             <Table
@@ -89,6 +90,7 @@ export const ExpertReviewPage: React.FC = () => {
                 columns={columns}
                 rowKey="id"
                 pagination={false}
+                locale={{ emptyText: 'Метрик для экспертизы нет — оценка ещё не рассчитана' }}
                 bordered
                 rowClassName={(record) => record.calculatedX < 41 ? 'red-zone-row' : ''}
             />

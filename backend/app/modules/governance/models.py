@@ -13,7 +13,7 @@ SoD (ролевая модель v12 §5.1) обеспечивается в ро
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,6 +30,19 @@ EXECUTION_NOT_DONE = "NOT_DONE"
 
 ESCALATION_IGNORE = "IGNORE"
 ESCALATION_REQUEST_MEASURES = "REQUEST_MEASURES"
+
+# BL-007 (RE-11): тип меры — устраняющая (снимает первопричину, растёт Score, падает ALE) vs
+# компенсирующая (первопричина остаётся, Score НЕ растёт, ALE падает за счёт ущерба/вероятности §4.2).
+MEASURE_ELIMINATING = "ELIMINATING"
+MEASURE_COMPENSATING = "COMPENSATING"
+MEASURE_TYPES = (MEASURE_ELIMINATING, MEASURE_COMPENSATING)
+
+# Вердикт решения (RE-12/RE-13): три исхода, а не два (§3.1). Proposal остаётся совмещённой
+# (мера + решение в одной сущности, решение заказчика) — вердикт живёт полем здесь.
+VERDICT_ELIMINATE = "ELIMINATE"    # устранить — ROSI>0 или сработало вето
+VERDICT_COMPENSATE = "COMPENSATE"  # компенсировать — ROSI<0, но риск выше аппетита
+VERDICT_ACCEPT = "ACCEPT"          # принять — ROSI<0 и риск в пределах аппетита (с подписью, §3.3)
+VERDICTS = (VERDICT_ELIMINATE, VERDICT_COMPENSATE, VERDICT_ACCEPT)
 
 
 class Proposal(Base, TimestampMixin):
@@ -76,6 +89,22 @@ class Proposal(Base, TimestampMixin):
     escalation_decision: Mapped[str | None] = mapped_column(String(32), nullable=True)
     escalation_decision_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     escalation_decided_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ── BL-007 (RE-11): экономический слой меры — входы и кэш для ROSI (§3.1) ──
+    measure_type: Mapped[str | None] = mapped_column(String(16), nullable=True)  # ELIMINATING/COMPENSATING
+    capex: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)          # разовые затраты
+    opex_per_year: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)  # ежегодные затраты
+    implementation_months: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)  # t_внедр (лаг)
+    expected_delta_score: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)    # ΔScore
+    # ΔALE раскладывается на три природы экономии (§2.4): кассовая / отложенная контрактная /
+    # высвобожденная мощность. В ROSI по умолчанию входит только кассовая.
+    delta_ale_cash: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    delta_ale_deferred: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    delta_ale_capacity: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    # Кэш расчёта движка (RE-12): ROSI и рекомендованный вердикт (устранить/компенсировать/принять).
+    rosi: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    recommended_verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)  # принятый вердикт (§3.1)
 
     # --- Аудит правок (список записей {at, by, field, from, to}) ---
     history: Mapped[list | None] = mapped_column(JSONB, nullable=True)

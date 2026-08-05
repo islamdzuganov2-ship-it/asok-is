@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.api import api_router
 from app.infrastructure.config import settings
-from app.infrastructure.database import Base, engine, import_models
+from app.infrastructure.database import AsyncSessionLocal, Base, engine, import_models
+from app.modules.econ import seed_econ_defaults
 from app.scripts.seed_iso25010 import seed_iso25010_async
 from app.shared.exceptions import (
     ConflictError,
@@ -90,5 +91,8 @@ async def startup_init() -> None:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         await seed_iso25010_async()
+        # BL-007: первичный сид финпараметров контура (идемпотентно — не затирает правки).
+        async with AsyncSessionLocal() as econ_session:
+            await seed_econ_defaults(econ_session)
     except Exception as exc:
         logger.warning("Стартовый сид пропущен: %s", exc)

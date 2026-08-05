@@ -100,7 +100,8 @@ def test_modules_do_not_import_legacy_layers():
 
 
 def test_single_base_and_full_model_registry():
-    """Единый Base: после import_models() в metadata все 13 таблиц контура (ТЗ v13 §B6)."""
+    """Единый Base: после import_models() в metadata все таблицы контура (ТЗ v13 §B6),
+    включая слой риск-экономического контура (BL-007)."""
     from app.infrastructure.database import Base, import_models
     import_models()
     expected = {
@@ -108,6 +109,11 @@ def test_single_base_and_full_model_registry():
         "assessment_periods", "assessment_values", "professional_judgments",
         "expert_judgment_history", "risk_matrices", "defect_matrices",
         "quality_plan_matrices", "risk_base",
+        # BL-007 (риск-экономический контур): эконом. справочники, числовые риски, несоответствия.
+        "business_processes", "system_business_processes", "business_process_costs",
+        "support_rates", "econ_config",
+        "risk_events", "risk_event_subchars", "risk_event_incidents", "risk_event_measures",
+        "nonconformities",
     }
     assert expected.issubset(set(Base.metadata.tables)), (
         expected - set(Base.metadata.tables)

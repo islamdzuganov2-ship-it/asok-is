@@ -5,9 +5,19 @@
 он монтируется композиционным корнем из app.modules.risk.router, чтобы реестр моделей и
 соседние домены могли импортировать фасад без web-зависимостей и без циклов импорта.
 """
-from app.modules.risk.models import RiskBase
+from app.modules.risk.models import (
+    RiskBase,
+    RiskEvent,
+    RiskEventIncident,
+    RiskEventMeasure,
+    RiskEventSubchar,
+)
 from app.modules.risk.schemas import RiskBaseCreate, RiskBaseOut, RiskBaseUpdate
-from app.modules.risk.service import risks_for_characteristics, search_risks
+from app.modules.risk.service import (
+    risks_for_characteristics,
+    search_risks,
+    semantic_search_risks,
+)
 
 __all__ = [
     "RiskBase",
@@ -15,5 +25,11 @@ __all__ = [
     "RiskBaseUpdate",
     "RiskBaseOut",
     "search_risks",
+    "semantic_search_risks",
     "risks_for_characteristics",
+    # BL-007 числовой контур риска (RE-08/09)
+    "RiskEvent",
+    "RiskEventSubchar",
+    "RiskEventIncident",
+    "RiskEventMeasure",
 ]

@@ -34,9 +34,11 @@ import {
   type EditableMetric,
   type PeriodSummary,
 } from '../store/api/apiSlice';
-import { DEMO_PERIOD_SUMMARIES, computeX, demoMetricsOf } from '../data/mockAssessments';
-import { formulaFor, TOTAL_SUBS } from '../constants/qualityModel';
-import { levelLabel } from '../theme/ragPalette';
+import { DEMO_PERIOD_SUMMARIES, demoMetricsOf } from '../data/mockAssessments';
+import { TOTAL_SUBS } from '../constants/qualityModel';
+import {
+  PERIOD_STATUS, isPeriodComplete, isPeriodLocked, recalcMetricRow, rowsMissingReason,
+} from '../constants/assessmentWorkflow';
 import { SPACE } from '../theme/premium';
 
 const { Title, Text } = Typography;
@@ -49,9 +51,6 @@ const LEVEL_COLOR: Record<string, string> = {
   'Низкий уровень': 'red',
   'Невозможно измерить': 'default',
 };
-
-/** COMPLETE — завершена и закрыта на правку; иначе период открыт (в т.ч. после разблокировки). */
-const isLocked = (status?: string) => status === 'COMPLETE';
 
 const AssessmentCorrectionPanel: React.FC = () => {
   const dataMode = useSelector((s: RootState) => s.ui.dataMode);
@@ -76,7 +75,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
     const rows = isLive ? (live.data ?? []) : DEMO_PERIOD_SUMMARIES;
     // Завершённая оценка = заполнены все подхарактеристики модели (в т.ч. открытая на правку).
     return rows
-      .filter((p) => p.complete || p.filled >= TOTAL_SUBS)
+      .filter((p) => p.complete || isPeriodComplete(p.filled, p.total || TOTAL_SUBS))
       .map((p) => (isLive ? p : { ...p, status: demoStatus[p.id] ?? p.status }));
   }, [isLive, live.data, demoStatus]);
 
@@ -96,7 +95,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
   );
 
   const selected = useMemo(() => allPeriods.find((p) => p.id === selectedId), [allPeriods, selectedId]);
-  const locked = isLocked(selected?.status);
+  const locked = isPeriodLocked(selected?.status);
 
   const liveMetrics = useGetAssessmentMetricsQuery(selectedId ?? '', { skip: !isLive || !selectedId });
   const baseMetrics: EditableMetric[] = useMemo(() => {
@@ -108,20 +107,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
   // Строки таблицы = сохранённые значения + текущие правки; X/уровень пересчитываются сразу
   // по методике (прямая A/B, обратная 1 − A/B) — пользователь видит эффект до сохранения.
   const metricRows: EditableMetric[] = useMemo(
-    () => baseMetrics.map((row) => {
-      const patch = edits[row.id];
-      if (!patch) return row;
-      const merged = { ...row, ...patch };
-      if (merged.unmeasurable) {
-        return { ...merged, val_a: null, val_b: null, calculatedX: null, qualityLevel: 'Невозможно измерить' };
-      }
-      const x = computeX(
-        merged.val_a,
-        merged.val_b,
-        formulaFor(merged.characteristic || '', merged.subcharacteristic || ''),
-      );
-      return { ...merged, calculatedX: x, qualityLevel: x == null ? null : levelLabel(Math.round(x * 100)) };
-    }),
+    () => baseMetrics.map((row) => recalcMetricRow(row, edits[row.id])),
     [baseMetrics, edits],
   );
 
@@ -134,7 +120,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
   const handleReopen = async () => {
     if (!selectedId) return;
     if (!isLive) {
-      setDemoStatus((prev) => ({ ...prev, [selectedId]: 'CALCULATED' }));
+      setDemoStatus((prev) => ({ ...prev, [selectedId]: PERIOD_STATUS.CALCULATED }));
       message.success('Оценка открыта на корректировку (демо-режим)');
       return;
     }
@@ -151,7 +137,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
   const handleSave = async () => {
     if (!selectedId || !dirtyIds.length) return;
     const changed = metricRows.filter((r) => edits[r.id]);
-    const missingReason = changed.filter((r) => r.unmeasurable && !(r.expert_comment || '').trim());
+    const missingReason = rowsMissingReason(changed);
     if (missingReason.length) {
       message.error(`Для «Невозможно измерить» обязательна причина (строк: ${missingReason.length})`);
       return;
@@ -174,7 +160,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
   const handleFinalize = async () => {
     if (!selectedId) return;
     if (!isLive) {
-      setDemoStatus((prev) => ({ ...prev, [selectedId]: 'COMPLETE' }));
+      setDemoStatus((prev) => ({ ...prev, [selectedId]: PERIOD_STATUS.COMPLETE }));
       message.success('Оценка завершена заново (демо-режим)');
       return;
     }
@@ -190,6 +176,8 @@ const AssessmentCorrectionPanel: React.FC = () => {
     { title: 'Информационная система', dataIndex: 'system_name', ellipsis: true },
     { title: 'Период', dataIndex: 'period', width: 110 },
     {
+      // ui-audit-ignore UI-02 — колонка рендерит полосу Progress, а не число: полоса должна
+      // занимать ширину колонки, выравнивание вправо её обрежет.
       title: 'Заполнено', key: 'filled', width: 180,
       render: (_, rec) => (
         <Progress
@@ -202,7 +190,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
     },
     {
       title: 'Статус', key: 'status', width: 190,
-      render: (_, rec) => (isLocked(rec.status)
+      render: (_, rec) => (isPeriodLocked(rec.status)
         ? <Tag color="green" icon={<CheckCircleOutlined />}>Завершена (закрыта)</Tag>
         : <Tag color="gold" icon={<UnlockOutlined />}>Открыта на корректировку</Tag>),
     },

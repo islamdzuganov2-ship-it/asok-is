@@ -2,6 +2,7 @@
 import sys
 import os
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
@@ -47,6 +48,8 @@ async def engine(test_database_url: str):
 async def db_session(engine):
     """Fresh DB session for each test with rollback"""
     async with engine.begin() as conn:
+        # T-20: risk_base.embedding = Vector(...) требует расширение pgvector до create_all.
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
     
     async_session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)

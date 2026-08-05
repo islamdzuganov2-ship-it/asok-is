@@ -58,8 +58,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
     // Синхронизация мер governance из БД при live-режиме (T-10): петля работает между ролями и
     // устройствами (меры/решения/эскалации — на бэкенде). В mock — локальный демо-набор.
+    // Дополнительно ре-синхронизируем при возврате во вкладку (focus) — чтобы меры/статусы
+    // обновлялись без ручного F5 (жалоба «нет авто-сброса кэша»). В mock thunk — no-op.
     useEffect(() => {
         dispatch(syncProposals());
+        const onFocus = () => dispatch(syncProposals());
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
     }, [dataMode, dispatch]);
 
     // Статус встроенной LLM (для индикатора рядом с переключателем): готовность + паспорт модели.

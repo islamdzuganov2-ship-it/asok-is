@@ -13,8 +13,11 @@
  */
 import { SCALE_ASSESSMENT_PAIRS, type AssessmentPairRow } from './mockScaleData';
 import { TOTAL_SUBS } from '../constants/qualityModel';
+import { PERIOD_STATUS, computeX } from '../constants/assessmentWorkflow';
 import { levelLabel } from '../theme/ragPalette';
 import type { EditableMetric, PendingJudgment, PeriodSummary } from '../store/api/apiSlice';
+
+export { computeX };
 
 /** Кварталы демо-оценок: последний — «текущий», предыдущий — для сравнения/архива. */
 export const DEMO_QUARTERS = ['Q1-2026', 'Q2-2026'] as const;
@@ -29,13 +32,6 @@ const hash = (s: string): number => {
 const SYSTEM_NAMES = Object.keys(SCALE_ASSESSMENT_PAIRS);
 const periodId = (systemName: string, quarter: string) => `demo-${hash(systemName)}-${quarter}`;
 const systemId = (systemName: string) => `sys-${hash(systemName)}`;
-
-/** Расчёт X по методике (как backend calculate_metric): прямая A/B, обратная 1 − A/B. */
-export function computeX(a: number | null, b: number | null, formula: 'DIRECT' | 'INVERSE'): number | null {
-  if (a == null || b == null || b === 0) return null;
-  const x = formula === 'INVERSE' ? 1 - a / b : a / b;
-  return Math.round(Math.min(1, Math.max(0, x)) * 10000) / 10000;
-}
 
 /**
  * Значения периода: за базу берётся срез ИС, для прошлого квартала A сдвигается
@@ -62,7 +58,9 @@ export const DEMO_PERIOD_SUMMARIES: PeriodSummary[] = SYSTEM_NAMES.flatMap((name
     system_id: systemId(name),
     system_name: name,
     period: quarter,
-    status: quarter !== DEMO_LATEST_QUARTER && idx % 4 === 0 ? 'CALCULATED' : 'COMPLETE',
+    status: quarter !== DEMO_LATEST_QUARTER && idx % 4 === 0
+      ? PERIOD_STATUS.CALCULATED
+      : PERIOD_STATUS.COMPLETE,
     filled: TOTAL_SUBS,
     total: TOTAL_SUBS,
     complete: true,

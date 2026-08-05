@@ -65,3 +65,5 @@ def import_models() -> None:
     import app.modules.risk.models    # noqa: F401  (мигрирован в modules/risk)
     import app.modules.governance.models  # noqa: F401  (governance-петля в БД, T-10)
     import app.modules.incidents.models  # noqa: F401  (аналитика техсбоев, T-21)
+    import app.modules.econ.models  # noqa: F401  (эконом. справочники контура, BL-007)
+    import app.modules.nonconformity.models  # noqa: F401  (несоответствия E3, BL-007)

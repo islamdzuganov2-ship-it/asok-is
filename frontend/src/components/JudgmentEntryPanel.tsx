@@ -21,16 +21,16 @@ import { RootState } from '../store';
 import {
   useGetPendingJudgmentsQuery,
   useSaveJudgmentsMutation,
-  type JudgmentItem,
   type PendingJudgment,
 } from '../store/api/apiSlice';
 import { DEMO_PENDING_JUDGMENTS } from '../data/mockAssessments';
 import { CHARACTERISTICS } from '../constants/qualityModel';
+import { groupJudgmentsByPeriod, pendingJudgmentKey, withoutJudged } from '../constants/assessmentWorkflow';
 import { ragToken } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
 
-const rowKeyOf = (r: PendingJudgment) => `${r.period_id}|||${r.characteristic}|||${r.subcharacteristic}`;
+const rowKeyOf = pendingJudgmentKey;
 
 const JudgmentEntryPanel: React.FC = () => {
   const dataMode = useSelector((s: RootState) => s.ui.dataMode);
@@ -49,10 +49,7 @@ const JudgmentEntryPanel: React.FC = () => {
   const [demoDone, setDemoDone] = useState<Set<string>>(new Set());
 
   const source: PendingJudgment[] = isLive ? (live.data ?? []) : DEMO_PENDING_JUDGMENTS;
-  const pending = useMemo(
-    () => source.filter((r) => !demoDone.has(rowKeyOf(r))),
-    [source, demoDone],
-  );
+  const pending = useMemo(() => withoutJudged(source, demoDone), [source, demoDone]);
 
   const systemOptions = useMemo(
     () => Array.from(new Set(pending.map((r) => r.system_name))).sort((a, b) => a.localeCompare(b)),
@@ -69,13 +66,7 @@ const JudgmentEntryPanel: React.FC = () => {
   const handleSave = async () => {
     if (!filledDrafts.length) { message.info('Нет введённых суждений'); return; }
     // Один PUT на период: эндпоинт принимает пачку пар (upsert по «характеристика + подхарактеристика»).
-    const byPeriod = new Map<string, JudgmentItem[]>();
-    filledDrafts.forEach(([key, text]) => {
-      const [periodId, characteristic, subcharacteristic] = key.split('|||');
-      const items = byPeriod.get(periodId) ?? [];
-      items.push({ characteristic, subcharacteristic, judgment_text: text.trim() });
-      byPeriod.set(periodId, items);
-    });
+    const byPeriod = groupJudgmentsByPeriod(drafts);
 
     if (!isLive) {
       setDemoDone((prev) => new Set([...prev, ...filledDrafts.map(([k]) => k)]));

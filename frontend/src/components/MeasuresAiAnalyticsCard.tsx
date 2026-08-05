@@ -10,6 +10,7 @@ import { Card, Button, Table, Tag, Typography, Alert, Spin, Space, Collapse } fr
 import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { ragToken, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, SPACE } from '../theme/premium';
+import { numericColumn } from '../theme/table';
 import type { Proposal } from '../store/slices/governanceSlice';
 import ConclusionFeedback from './ConclusionFeedback';
 
@@ -108,10 +109,10 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
             pagination={false}
             columns={[
               { title: 'Характеристика (систематика)', dataIndex: 'characteristic' },
-              { title: 'Мер', dataIndex: 'count', width: 80, render: (v: number) => <Tag color="volcano">{v}</Tag> },
-              { title: 'ИС охвачено', dataIndex: 'systems', width: 110 },
-              { title: 'Ср. балл', dataIndex: 'avg_score', width: 100,
-                render: (v: number | null) => v == null ? '—' : <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> },
+              numericColumn({ title: 'Мер', dataIndex: 'count', width: 80, render: (v: number) => <Tag color="volcano">{v}</Tag> }),
+              numericColumn({ title: 'ИС охвачено', dataIndex: 'systems', width: 110 }),
+              numericColumn({ title: 'Ср. балл', dataIndex: 'avg_score', width: 100,
+                render: (v: number | null) => v == null ? '—' : <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> }),
             ]}
           />
           {loading && (

@@ -9,11 +9,13 @@ RiskBase живёт независимо от периодов и служит �
 """
 import uuid
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
 from app.infrastructure.database import Base
+from app.modules.risk.embeddings import EMBED_DIM
 from app.shared.db import TimestampMixin
 
 
@@ -39,6 +41,10 @@ class RiskBase(Base):
     created_by = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Семантический эмбеддинг карточки (T-20): считается из текста при создании/правке (service.
+    # embed_risk), поиск — по косинусу через pgvector. nullable: старые строки до бэкфилла и
+    # graceful-fallback на ILIKE, если эмбеддинги ещё не проставлены.
+    embedding = Column(Vector(EMBED_DIM), nullable=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
