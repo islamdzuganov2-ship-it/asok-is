@@ -83,6 +83,14 @@ DEFAULT_CONFIG: dict[str, dict] = {
         ],
         "description": "Матрица акцепта: подписант принятия риска по сумме ALE (§3.3). Пороги — предложение.",
     },
+    "nc_sla_days": {
+        "value": 30,
+        "description": "SLA на решение по несоответствию: >N дней в статусе «Оценено» → эскалация (§3.3).",
+    },
+    "nc_review_months": {
+        "value": 6,
+        "description": "Срок переоценки принятого риска по умолчанию, мес (§3.3).",
+    },
     "risk_appetite_by_class": {
         "value": {"Mission Critical": 500_000, "Business Critical": 2_000_000, "Support": 5_000_000},
         "description": "Риск-аппетит по классу ИС, ₽/год. ЗАГЛУШКА — сверить с заказчиком (§3.2).",

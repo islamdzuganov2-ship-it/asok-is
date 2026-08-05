@@ -171,13 +171,21 @@ def judgment_text(system_name: str, characteristic: str, sub: str, pct: int,
 
 async def seed_data() -> None:
     async with AsyncSessionLocal() as db:
-        # --- Пользователи (все роли: аналитик, МК, топ-менеджмент) ---
+        # --- Пользователи: по одному на КАЖДУЮ роль ролевой модели (User.ALL_ROLES) ---
+        # Полный набор нужен, чтобы проверять SoD (BL-007): владелец риска (RISK_MANAGER)
+        # ведёт реестр, но не меняет Score; аудитор-верификатор (AUDITOR) подтверждает меры.
+        # CTO/CEO — только чтение (User.READONLY_ROLES). Посев идемпотентен: существующие
+        # логины не трогаются, добавляются только недостающие.
         users_data = [
             {"username": "admin", "email": "admin@example.com", "password": "Admin123!", "role": "ADMIN"},
             {"username": "analyst", "email": "analyst@example.com", "password": "Analyst123!", "role": "TEST_ANALYST"},
             {"username": "manager", "email": "manager@example.com", "password": "Manager123!", "role": "QUALITY_MANAGER"},
             {"username": "cto", "email": "cto@example.com", "password": "Cto12345!", "role": "CTO"},
+            {"username": "ceo", "email": "ceo@example.com", "password": "Ceo12345!", "role": "CEO"},
+            {"username": "risk", "email": "risk@example.com", "password": "Risk123!", "role": "RISK_MANAGER"},
+            {"username": "auditor", "email": "auditor@example.com", "password": "Auditor123!", "role": "AUDITOR"},
         ]
+        assert {u["role"] for u in users_data} == set(User.ALL_ROLES), "seed users must cover all roles"
         for item in users_data:
             result = await db.execute(select(User).where(User.username == item["username"]))
             if result.scalar_one_or_none() is None:

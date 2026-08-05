@@ -15,13 +15,15 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.governance import service
+from app.modules.governance import economics_service, service
 from app.modules.governance.schemas import (
     DecisionIn,
     EditIn,
     EscalateIn,
     EscalationDecisionIn,
     ExecutionIn,
+    MeasureEconomicsIn,
+    MeasureEconomicsResult,
     MetaIn,
     ProposalCreate,
     ProposalOut,
@@ -34,6 +36,7 @@ router = APIRouter()
 # SoD-уровни доступа (ролевая модель v12). ADMIN совмещает администрирование и решения.
 DECISION_ROLES = ("ADMIN", "CTO", "CEO", "CIO", "EXECUTIVE")  # топ-менеджмент
 MANAGER_ROLES = ("QUALITY_MANAGER", "ADMIN")                  # менеджер по качеству (+ADMIN супер)
+ECONOMICS_ROLES = ("QUALITY_MANAGER", "RISK_MANAGER", "ADMIN")  # ввод/расчёт экономики меры (BL-007)
 
 
 def _username(user: dict) -> str:
@@ -139,3 +142,25 @@ async def resolve_escalation(
 ):
     p = await service.get_or_404(db, pid)
     return await service.resolve_escalation(db, p)
+
+
+# ── BL-007 (RE-11/12/13): экономика меры ──
+
+@router.put("/proposals/{pid}/economics", response_model=ProposalOut)
+async def set_economics(
+    pid: uuid.UUID, payload: MeasureEconomicsIn,
+    db: AsyncSession = Depends(get_db), _: dict = Depends(require_role(*ECONOMICS_ROLES)),
+):
+    """Ввод экономических параметров меры (CAPEX/OPEX/лаг/ΔScore/тип). Расчёт ROSI — отдельным вызовом."""
+    p = await service.get_or_404(db, pid)
+    return await economics_service.set_measure_economics(db, p, payload)
+
+
+@router.post("/proposals/{pid}/recompute-economics", response_model=MeasureEconomicsResult)
+async def recompute_economics(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db), _: dict = Depends(require_role(*ECONOMICS_ROLES)),
+):
+    """ROSI + рекомендованный вердикт (устранить/компенсировать/принять) по портфелю снимаемых рисков."""
+    p = await service.get_or_404(db, pid)
+    return await economics_service.recompute_economics(db, p)

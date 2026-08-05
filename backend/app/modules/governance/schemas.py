@@ -61,10 +61,47 @@ class ProposalOut(_CamelModel):
     escalation_decision: str | None = None
     escalation_decision_comment: str | None = None
     escalation_decided_by: str | None = None
+    # BL-007 (RE-11/12): экономический слой меры.
+    measure_type: str | None = None
+    capex: float | None = None
+    opex_per_year: float | None = None
+    implementation_months: float | None = None
+    expected_delta_score: float | None = None
+    delta_ale_cash: float | None = None
+    delta_ale_deferred: float | None = None
+    delta_ale_capacity: float | None = None
+    rosi: float | None = None
+    recommended_verdict: str | None = None
+    verdict: str | None = None
     history: list | None = None
     is_demo: bool = False
     created_by: str | None = None
     created_at: datetime | None = None
+
+
+# ── BL-007 (RE-11/12): экономические входы меры и результат расчёта ROSI ──
+class MeasureEconomicsIn(_CamelModel):
+    measure_type: str | None = None            # ELIMINATING / COMPENSATING
+    capex: float | None = None
+    opex_per_year: float | None = None
+    implementation_months: float | None = None
+    expected_delta_score: float | None = None
+    # Ручной ввод ΔALE (кассовая часть). Если не задан — считается по привязанным рискам.
+    delta_ale_cash: float | None = None
+    delta_ale_deferred: float | None = None
+    delta_ale_capacity: float | None = None
+    verdict: str | None = None                  # принятый вердикт (утверждает ЛПР)
+
+
+class MeasureEconomicsResult(_CamelModel):
+    proposal_id: uuid.UUID
+    risks_count: int
+    delta_ale_per_year: float
+    rosi: float | None = None
+    benefit_pv: float | None = None
+    cost_pv: float | None = None
+    recommended_verdict: str
+    reasons: list[str]
 
 
 class ProposalCreate(_CamelModel):

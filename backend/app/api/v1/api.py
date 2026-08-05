@@ -7,6 +7,7 @@ from app.modules.econ.router import router as econ_router  # риск-эконо
 from app.modules.governance.router import router as governance_router  # governance-петля в БД (T-10)
 from app.modules.iam.router import router as auth_router  # домен iam мигрирован (ТЗ v13)
 from app.modules.incidents.router import router as incidents_router  # аналитика техсбоев (T-21)
+from app.modules.nonconformity.router import router as nonconformity_router  # замыкание контура (BL-007)
 from app.modules.quality.router import router as metrics_router  # домен quality мигрирован (ТЗ v13)
 from app.modules.reporting.router import router as reporting_router  # домен reporting мигрирован (ТЗ v13)
 from app.modules.risk.event_router import router as risk_events_router  # числовой контур риска (BL-007)
@@ -27,3 +28,4 @@ api_router.include_router(risk_events_router, prefix="/risk-events", tags=["risk
 api_router.include_router(governance_router, prefix="/governance", tags=["governance"])
 api_router.include_router(incidents_router, prefix="/incidents", tags=["incidents"])
 api_router.include_router(econ_router, prefix="/econ", tags=["econ"])
+api_router.include_router(nonconformity_router, prefix="/nonconformities", tags=["nonconformities"])
