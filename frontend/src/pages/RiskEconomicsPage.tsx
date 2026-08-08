@@ -13,6 +13,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined, ReloadOutlined, InboxOutlined } from '@ant-design/icons';
+import KpiCard from '../components/KpiCard';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, SPACE, TYPE } from '../theme/premium';
 import { numericColumn } from '../theme/table';
 import { BRAND } from '../theme/ragPalette';
@@ -184,10 +185,10 @@ const RiskEventsTab: React.FC = () => {
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
-        <Card {...premiumCard('gold')} styles={{ body: { padding: SPACE.base } }}>
-          <Statistic title="Портфельный ALE (сумма средних)" value={Math.round(portfolioAle)} suffix="₽"
-            valueStyle={{ ...TYPE.metricMd, color: BRAND.ink }} groupSeparator=" " />
-        </Card>
+        <KpiCard
+          title="Портфельный ALE (сумма средних)"
+          value={`${Math.round(portfolioAle).toLocaleString('ru-RU')} ₽`}
+        />
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
           Добавить рисковое событие
         </Button>
@@ -482,16 +483,11 @@ const ClosureTab: React.FC = () => {
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
-        <Card {...premiumCard('gold')} styles={{ body: { padding: SPACE.base } }}>
-          <Space size="large">
-            <Statistic title="Всего несоответствий" value={funnel?.total ?? 0}
-              valueStyle={{ ...TYPE.metricMd, color: BRAND.ink }} />
-            <Statistic title="Верифицировано" value={funnel?.verified ?? 0}
-              valueStyle={{ ...TYPE.metricMd, color: BRAND.ink }} />
-            <Statistic title="Замкнутость контура" value={funnel?.closureRate ?? 0} suffix="%"
-              valueStyle={{ ...TYPE.metricMd, color: BRAND.ink }} />
-          </Space>
-        </Card>
+        <Space size={SPACE.base} wrap>
+          <KpiCard title="Всего несоответствий" value={funnel?.total ?? 0} />
+          <KpiCard title="Верифицировано" value={funnel?.verified ?? 0} />
+          <KpiCard title="Замкнутость контура" value={`${funnel?.closureRate ?? 0} %`} />
+        </Space>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
           Зарегистрировать несоответствие
         </Button>

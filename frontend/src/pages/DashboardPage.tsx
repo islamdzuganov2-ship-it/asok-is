@@ -19,6 +19,7 @@ import LevelHeatmap, { LEVEL_COLORS, LEVEL_TAG_COLORS } from '../components/Leve
 import { critTagStyle, levelLabel, solidTagStyle, ragToken, RAG, BRAND } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
 import { numericColumn } from '../theme/table';
+import KpiCard from '../components/KpiCard';
 
 const { Title, Text } = Typography;
 
@@ -131,7 +132,25 @@ const DashboardPage: React.FC = () => {
       legend: { show: false },
       series: [{
         type: 'pie', radius: ['45%', '72%'], center: ['50%', '50%'], data: seriesData,
-        label: { show: false }, emphasis: { label: { show: true, fontSize: 13, fontWeight: 500 } },
+        label: { show: false },
+        labelLine: { show: false },
+        // При наведении подпись показываем В ЦЕНТРЕ бублика, а не у сектора: внешняя подпись
+        // выносилась за пределы контейнера и обрезалась («Вы…» вместо «Выше среднего»),
+        // а на узкой колонке ещё и наползала на соседние элементы.
+        emphasis: {
+          scale: true,
+          scaleSize: 4,
+          label: {
+            show: true,
+            position: 'center',
+            formatter: (p: any) => `{name|${p.name}}\n{val|${p.value}}  {pct|${p.percent}%}`,
+            rich: {
+              name: { fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft, lineHeight: 18 },
+              val: { fontSize: TYPE.metricMd.fontSize, fontWeight: TYPE.metricMd.fontWeight, color: BRAND.ink },
+              pct: { fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft },
+            },
+          },
+        },
       }],
     });
     donutChart.current.resize();
@@ -213,16 +232,9 @@ const DashboardPage: React.FC = () => {
         .map((r) => ({ ...r, pct: data.totalMetrics ? Math.round((r.count / data.totalMetrics) * 100) : 0 }))
     : [];
 
-  const KpiCard: React.FC<{ k: DetailKey; title: string; value: React.ReactNode; color?: string }> =
+  const KpiTile: React.FC<{ k: DetailKey; title: string; value: React.ReactNode; color?: string }> =
     ({ k, title, value, color }) => (
-      <Card size="small" hoverable onClick={() => setDetail(k)} style={{ cursor: 'pointer', borderRadius: PREMIUM.radiusSm, border: `1px solid ${PREMIUM.border}`, boxShadow: PREMIUM.shadow.card, height: '100%' }}>
-        {loading ? <Skeleton.Input active /> : (
-          <>
-            <Statistic title={title} value={value as any} valueStyle={color ? { color, fontWeight: 700 } : undefined} />
-            <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize }}>раскрыть <RightOutlined style={{ fontSize: TYPE.micro.fontSize }} /></Text>
-          </>
-        )}
-      </Card>
+      <KpiCard title={title} value={value} color={color} loading={loading} onClick={() => setDetail(k)} />
     );
 
   const renderDetail = () => {
@@ -311,11 +323,11 @@ const DashboardPage: React.FC = () => {
       {/* Порядок (T-53): Глобальный балл · ИС в мониторинге · Всего метрик · Низких метрик ·
           Метрик имеющих меры (T-54). Пять карточек — flex-раскладка (равная ширина, перенос). */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col flex="1 1 168px"><KpiCard k="global" title="Глобальный балл" value={`${healthPct}%`} color={healthColor} /></Col>
-        <Col flex="1 1 168px"><KpiCard k="systems" title="ИС в мониторинге" value={data?.yAxisLabels.length ?? 0} /></Col>
-        <Col flex="1 1 168px"><KpiCard k="metrics" title="Всего метрик" value={data?.totalMetrics ?? 0} /></Col>
-        <Col flex="1 1 168px"><KpiCard k="low" title="Низких метрик" value={lowTotal} color={RAG.bad.strong} /></Col>
-        <Col flex="1 1 168px"><KpiCard k="measures" title="Метрик имеющих меры" value={measureLinks.count} color={RAG.good.strong} /></Col>
+        <Col flex="1 1 168px"><KpiTile k="global" title="Глобальный балл" value={`${healthPct}%`} color={healthColor} /></Col>
+        <Col flex="1 1 168px"><KpiTile k="systems" title="ИС в мониторинге" value={data?.yAxisLabels.length ?? 0} /></Col>
+        <Col flex="1 1 168px"><KpiTile k="metrics" title="Всего метрик" value={data?.totalMetrics ?? 0} /></Col>
+        <Col flex="1 1 168px"><KpiTile k="low" title="Низких метрик" value={lowTotal} color={RAG.bad.strong} /></Col>
+        <Col flex="1 1 168px"><KpiTile k="measures" title="Метрик имеющих меры" value={measureLinks.count} color={RAG.good.strong} /></Col>
       </Row>
 
       <Row gutter={[16, 16]}>

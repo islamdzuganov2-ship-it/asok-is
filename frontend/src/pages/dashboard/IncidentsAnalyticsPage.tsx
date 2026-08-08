@@ -33,6 +33,7 @@ import { selectVisibleProposals } from '../../store/slices/governanceSlice';
 import { MOCK_INCIDENTS, INCIDENT_CATEGORIES, computeIncidentAnalytics } from '../../data/mockIncidents';
 import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
+import KpiCard from '../../components/KpiCard';
 import { BRAND, RAG, solidTagStyle } from '../../theme/ragPalette';
 import { numericColumn } from '../../theme/table';
 
@@ -224,10 +225,19 @@ const IncidentsAnalyticsPage: React.FC = () => {
             {loading ? <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div> : (
                 <>
                     <Row gutter={[16, 16]}>
-                        <Col xs={12} md={6}><div {...premiumCard()}><Statistic title="Всего сбоев" value={analytics?.total ?? 0} /></div></Col>
-                        <Col xs={12} md={6}><div {...premiumCard()}><Statistic title="Открыто (не восстановлены)" value={analytics?.openCount ?? 0} valueStyle={{ color: (analytics?.openCount ?? 0) > 0 ? '#C06B5A' : undefined }} /></div></Col>
-                        <Col xs={12} md={6}><div {...premiumCard()}><Statistic title="Средний MTTR, ч" value={analytics?.avgMttrHours ?? 0} precision={1} /></div></Col>
-                        <Col xs={12} md={6}><div {...premiumCard()}><Statistic title="Из-за релизов, %" value={analytics?.releaseInducedShare ?? 0} precision={1} suffix="%" /></div></Col>
+                        {/* Ряд KPI — общий компонент: раньше это был голый <div> с разлитым
+                            premiumCard(), из-за чего в DOM уходил невалидный проп `styles`,
+                            а плитки отличались от таких же на аналитическом дашборде (UI-12). */}
+                        <Col xs={12} md={6}><KpiCard title="Всего сбоев" value={analytics?.total ?? 0} /></Col>
+                        <Col xs={12} md={6}>
+                            <KpiCard
+                                title="Открыто (не восстановлены)"
+                                value={analytics?.openCount ?? 0}
+                                color={(analytics?.openCount ?? 0) > 0 ? RAG.bad.strong : undefined}
+                            />
+                        </Col>
+                        <Col xs={12} md={6}><KpiCard title="Средний MTTR, ч" value={(analytics?.avgMttrHours ?? 0).toFixed(1)} /></Col>
+                        <Col xs={12} md={6}><KpiCard title="Из-за релизов, %" value={`${(analytics?.releaseInducedShare ?? 0).toFixed(1)} %`} /></Col>
                     </Row>
 
                     <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
