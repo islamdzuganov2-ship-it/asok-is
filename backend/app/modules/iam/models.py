@@ -24,8 +24,11 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     # собственную меру (§3.3). Роли разведены в модели данных сразу, даже если носит их один человек.
     ROLE_RISK_MANAGER = "RISK_MANAGER"
     ROLE_AUDITOR = "AUDITOR"
+    # ТЗ v17 (req 6): исполнитель — на него назначаются меры; видит свои поручения и тот же
+    # состав дашбордов, что у топ-менеджмента; вносит уточнения и предлагает перенос сроков (→ МК).
+    ROLE_ASSIGNEE = "ASSIGNEE"
     ALL_ROLES = ("TEST_ANALYST", "QUALITY_MANAGER", "CTO", "CEO", "ADMIN",
-                 "RISK_MANAGER", "AUDITOR")
+                 "RISK_MANAGER", "AUDITOR", "ASSIGNEE")
     READONLY_ROLES = ("CTO", "CEO")
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

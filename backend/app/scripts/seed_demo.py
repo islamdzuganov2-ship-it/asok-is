@@ -174,7 +174,9 @@ async def seed_data() -> None:
         # --- Пользователи: по одному на КАЖДУЮ роль ролевой модели (User.ALL_ROLES) ---
         # Полный набор нужен, чтобы проверять SoD (BL-007): владелец риска (RISK_MANAGER)
         # ведёт реестр, но не меняет Score; аудитор-верификатор (AUDITOR) подтверждает меры.
-        # CTO/CEO — только чтение (User.READONLY_ROLES). Посев идемпотентен: существующие
+        # CTO/CEO — только чтение (User.READONLY_ROLES). ТЗ v17 (req 6): исполнитель (ASSIGNEE) —
+        # full_name = ФИО ответственного из демо-мер («Петрова А.С.»), чтобы в демо-режиме он сразу
+        # видел назначенные поручения (сопоставление по owner). Посев идемпотентен: существующие
         # логины не трогаются, добавляются только недостающие.
         users_data = [
             {"username": "admin", "email": "admin@example.com", "password": "Admin123!", "role": "ADMIN"},
@@ -184,6 +186,7 @@ async def seed_data() -> None:
             {"username": "ceo", "email": "ceo@example.com", "password": "Ceo12345!", "role": "CEO"},
             {"username": "risk", "email": "risk@example.com", "password": "Risk123!", "role": "RISK_MANAGER"},
             {"username": "auditor", "email": "auditor@example.com", "password": "Auditor123!", "role": "AUDITOR"},
+            {"username": "assignee", "email": "assignee@example.com", "password": "Assignee123!", "role": "ASSIGNEE", "full_name": "Петрова А.С."},
         ]
         assert {u["role"] for u in users_data} == set(User.ALL_ROLES), "seed users must cover all roles"
         for item in users_data:
@@ -194,7 +197,7 @@ async def seed_data() -> None:
                         username=item["username"],
                         email=item["email"],
                         password_hash=get_password_hash(item["password"]),
-                        full_name=item["username"].title(),
+                        full_name=item.get("full_name") or item["username"].title(),
                         role=item["role"],
                     )
                 )
