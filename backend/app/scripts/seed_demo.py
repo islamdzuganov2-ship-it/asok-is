@@ -26,6 +26,7 @@
 import asyncio
 import hashlib
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import delete, select
 
@@ -42,6 +43,20 @@ from app.modules.quality import MetricCatalog, calculate_metric, map_to_level
 from app.modules.quality.ai_calculation import compute_metric, normalize_to_baseline
 from app.modules.quality.ai_quality_model import AI_QUALITY_MODEL
 from app.modules.systems import CriticalityClass, System
+# BL-007 риск-экономический контур: справочники, ТС с экономикой, рисковые события, несоответствия.
+from app.modules.econ.models import (
+    BusinessProcess,
+    BusinessProcessCost,
+    SupportRate,
+    SystemBusinessProcess,
+)
+from app.modules.governance.models import Proposal
+from app.modules.incidents.models import TechIncident
+from app.modules.nonconformity import service as nc_service
+from app.modules.nonconformity.models import Nonconformity
+from app.modules.nonconformity.schemas import DecideIn, NonconformityCreate
+from app.modules.risk.event_service import recompute_ale
+from app.modules.risk.models import RiskEvent, RiskEventIncident, RiskEventSubchar
 
 QUARTERS = ["Q1-2025", "Q2-2025", "Q3-2025", "Q4-2025", "Q1-2026", "Q2-2026"]
 
@@ -369,5 +384,152 @@ async def seed_ai_contour(db) -> None:
                 taken += 1
 
 
+async def seed_econ_contour() -> None:
+    """Демо-данные риск-экономического контура (BL-007): справочники (ставки, БП+стоимость),
+    техсбои с экономикой, рисковые события с расчётом ALE через движок, несоответствия по стадиям
+    жизненного цикла (для воронки замкнутости). Идемпотентно — чистит свои строки (created_by).
+    Запускается ПОСЛЕ seed_data (нужны системы) и после старта приложения (нужен сид econ_config)."""
+    async with AsyncSessionLocal() as db:
+        systems = {s.name: s for s in (await db.execute(select(System))).scalars().all()}
+        abs_core, crm, hr = systems.get("АБС Core"), systems.get("CRM ОПК"), systems.get("HR Portal")
+        if abs_core is None:
+            return  # нет сценарных систем — seed_data ещё не отработал
+
+        # --- Идемпотентная очистка (в FK-безопасном порядке) ---
+        await db.execute(delete(Nonconformity).where(Nonconformity.created_by == "econ_seed"))
+        await db.execute(delete(RiskEvent).where(RiskEvent.created_by == "econ_seed"))  # links каскадом (ondelete)
+        await db.execute(delete(TechIncident).where(TechIncident.created_by == "econ_seed"))
+        await db.execute(delete(Proposal).where(Proposal.created_by == "econ_seed"))
+        await db.execute(delete(BusinessProcessCost))
+        await db.execute(delete(SystemBusinessProcess))
+        await db.execute(delete(SupportRate))
+        await db.execute(delete(BusinessProcess))
+        await db.commit()
+
+        # --- 1. Ставки сопровождения (смешанная модель §2.4): внутренние L1-L3 + вендорская L3 ---
+        db.add_all([
+            SupportRate(line="L1", executor_type="INTERNAL", rate_per_hour=1200),
+            SupportRate(line="L2", executor_type="INTERNAL", rate_per_hour=2000),
+            SupportRate(line="L3", executor_type="INTERNAL", rate_per_hour=3500),
+            SupportRate(line="L3", executor_type="VENDOR", vendor="Acme Support", mode="EMERGENCY",
+                        rate_per_hour=5000),
+        ])
+
+        # --- 2. Бизнес-процессы + стоимость минуты простоя + связь ИС↔БП ---
+        async def add_bp(code, name, kind, cost_per_min, system, share=1.0):
+            bp = BusinessProcess(code=code, name=name, kind=kind)
+            db.add(bp)
+            await db.flush()
+            db.add(BusinessProcessCost(business_process_id=bp.id, method="RESOURCE",
+                                       cost_per_min_base=cost_per_min))
+            if system is not None:
+                db.add(SystemBusinessProcess(system_id=system.id, business_process_id=bp.id, share=share))
+            return bp
+
+        await add_bp("BP-PAY", "Приём платежей", "FRONTAL", 5000, abs_core)      # фронтальный — дорогой простой
+        if crm is not None:
+            await add_bp("BP-SALES", "Продажи (CRM)", "FRONTAL", 1500, crm)
+        if hr is not None:
+            await add_bp("BP-HR", "Кадровый учёт", "BACKOFFICE", 200, hr)         # бэк-офис — дёшево
+        await db.commit()
+
+        # --- 3. Техсбои с экономикой (ТС = реализации риска), рабочее время → K_время=1.0 ---
+        def incident(system, title, category, occurred, downtime, k, l2, l3, itype="DOWNTIME", deg=None):
+            return TechIncident(
+                system_id=system.id, system_name=system.name, category=category, severity="high",
+                title=title, occurred_at=occurred,
+                resolved_at=occurred.replace(hour=occurred.hour + 1),
+                incident_type=itype, degradation_type=deg, downtime_minutes=downtime, k_impact=k,
+                labor_l2_hours=l2, labor_l3_hours=l3, t_reaction_min=10, t_resolution_min=downtime,
+                vendor_involved=(l3 > 0), source="import", created_by="econ_seed",
+            )
+        inc_abs1 = incident(abs_core, "Отказ узла кластера БД → простой приёма платежей",
+                            "INFRASTRUCTURE", datetime(2026, 2, 2, 11, 0, tzinfo=timezone.utc), 45, 1.0, 3, 1)
+        inc_abs2 = incident(abs_core, "Деградация отклика на пике оплаты",
+                            "PERFORMANCE", datetime(2026, 5, 4, 14, 0, tzinfo=timezone.utc), 90, 0.5, 2, 0,
+                            itype="DEGRADATION", deg="PERFORMANCE")
+        seeded_incidents = [inc_abs1, inc_abs2]
+        if crm is not None:
+            seeded_incidents.append(incident(
+                crm, "Сбой интеграции CRM → недоступность продаж", "NETWORK",
+                datetime(2026, 3, 2, 10, 0, tzinfo=timezone.utc), 60, 1.0, 2, 1))
+        db.add_all(seeded_incidents)
+        await db.commit()
+
+        # --- 4. Рисковые события + связи (подхарактеристика/ТС) + расчёт ALE движком ---
+        re_abs = RiskEvent(code="RE-ABS-001", title="Отказ узла кластера → простой приёма платежей",
+                           category="Отказоустойчивость", owner="Риск-менеджер Орлов А.В.",
+                           system_id=abs_core.id, created_by="econ_seed")
+        db.add(re_abs)
+        await db.flush()
+        db.add_all([
+            RiskEventSubchar(risk_event_id=re_abs.id, characteristic="Надёжность",
+                             subcharacteristic="Отказоустойчивость"),
+            RiskEventIncident(risk_event_id=re_abs.id, incident_id=inc_abs1.id),
+            RiskEventIncident(risk_event_id=re_abs.id, incident_id=inc_abs2.id),
+        ])
+        # Регуляторный риск (КИИ/187-ФЗ) с экспертным ARO — кейс вето независимо от частоты (§3.2).
+        re_reg = RiskEvent(code="RE-SEC-001", title="Компрометация данных (КИИ) — регуляторный риск",
+                           category="Защищённость", owner="Руководитель ИБ Смирнов В.П.",
+                           system_id=abs_core.id, aro=0.5, aro_is_expert=True, sle_expert=20_000_000,
+                           regulatory=True, created_by="econ_seed")
+        db.add(re_reg)
+        await db.flush()
+        db.add(RiskEventSubchar(risk_event_id=re_reg.id, characteristic="Защищённость",
+                                subcharacteristic="Целостность"))
+        await db.commit()
+        # Пересчёт ALE через движок (C_ТС по привязанным ТС × ARO).
+        for ev in (re_abs, re_reg):
+            await recompute_ale(db, ev)
+
+        # --- 5. Несоответствия по стадиям жизненного цикла (для воронки замкнутости §3.3) ---
+        # Демо-мера, чтобы довести одно несоответствие до «Верифицировано» (нужен proposal_id).
+        measure = Proposal(system_name=abs_core.name, characteristic="Надёжность",
+                           rationale="Кластеризация БД (N+1) для устранения SPOF",
+                           status="APPROVED", measure_type="ELIMINATING", capex=4_000_000,
+                           opex_per_year=600_000, implementation_months=4, is_demo=True,
+                           created_by="econ_seed")
+        db.add(measure)
+        await db.commit()
+        await db.refresh(measure)
+
+        # NC1 — полный цикл до «Верифицировано» (SoD: оценивал/исполнял/верифицировал — разные лица).
+        nc1 = await nc_service.create(db, NonconformityCreate(
+            system_name=abs_core.name, characteristic="Надёжность", subcharacteristic="Отказоустойчивость",
+            owner="Сидоров К.М.", level="MAJOR", evidence_type="B"), "econ_seed")
+        nc1 = await nc_service.evaluate(db, nc1, 3_200_000, "Сидоров К.М.")
+        nc1 = await nc_service.decide(db, nc1, DecideIn(verdict="ELIMINATE"), "cto")
+        nc1 = await nc_service.assign_measure(db, nc1, measure.id, "manager")
+        nc1 = await nc_service.start(db, nc1, "manager")
+        nc1 = await nc_service.execute(db, nc1, "Петров А.С.", "Кластер развёрнут, SPOF устранён")
+        await nc_service.verify(db, nc1, "Аудитор Козлова Е.В.", 15.0)
+
+        # NC2 — принятый риск (ACCEPT с подписью и датой пересмотра).
+        nc2 = await nc_service.create(db, NonconformityCreate(
+            system_name=(crm.name if crm else abs_core.name), characteristic="Производительность",
+            subcharacteristic="Временные характеристики", owner="Николаев Д.А.", level="MINOR",
+            evidence_type="A"), "econ_seed")
+        nc2 = await nc_service.evaluate(db, nc2, 1_500_000, "Николаев Д.А.")
+        await nc_service.decide(db, nc2, DecideIn(verdict="ACCEPT", signed_by="CIO Орлов А.В."), "cto")
+
+        # NC3 — оценено, решения ещё нет (SLA-таймер идёт).
+        nc3 = await nc_service.create(db, NonconformityCreate(
+            system_name=abs_core.name, characteristic="Защищённость", subcharacteristic="Целостность",
+            owner="Смирнов В.П.", level="MAJOR", evidence_type="E"), "econ_seed")
+        await nc_service.evaluate(db, nc3, 800_000, "Смирнов В.П.")
+
+        # NC4, NC5 — только выявлено (одно критическое-блокирующее на Mission Critical).
+        await nc_service.create(db, NonconformityCreate(
+            system_name=abs_core.name, characteristic="Надёжность", subcharacteristic="Восстанавливаемость",
+            owner="Сидоров К.М.", level="CRITICAL", is_blocking=True, evidence_type="B"), "econ_seed")
+        await nc_service.create(db, NonconformityCreate(
+            system_name=(crm.name if crm else abs_core.name), characteristic="Сопровождаемость",
+            subcharacteristic="Анализируемость", owner="Козлова Е.В.", level="MINOR",
+            evidence_type="C"), "econ_seed")
+
+
 if __name__ == "__main__":
-    asyncio.run(seed_data())
+    async def _main() -> None:
+        await seed_data()
+        await seed_econ_contour()
+    asyncio.run(_main())

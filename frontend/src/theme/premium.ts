@@ -143,6 +143,10 @@ export const accentColorOf = (accent: AccentKey): string | undefined =>
  * увеличенный радиус и премиальная шапка. Возвращает ТОЛЬКО валидные пропсы Card
  * (`style`, `styles`) — безопасно расширять: `<Card {...premiumCard('gold')} title=…>`.
  * Цвет акцента для `accentDot` берётся отдельно через `accentColorOf(accent)`.
+ *
+ * ВНИМАНИЕ: `accent` красит ШАПКУ. У карточки без `title` шапки нет — и акцент не даёт
+ * ничего вообще (поймано скриншотом на форме входа). Если акцент нужен на карточке без
+ * заголовка, задавайте грань явно: `premiumCard('gold', { borderTop: '2px solid ' + GOLD.base })`.
  */
 export function premiumCard(accent: AccentKey = 'none', extra?: CSSProperties) {
   const style: CSSProperties = {

@@ -55,8 +55,13 @@ export const LoginPage: React.FC = () => {
     return (
         <Layout style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: PREMIUM.gradient.canvas }}>
             {/* Первый экран продукта: держим тот же premium-слой и тот же фирменный знак, что
-                в сайдбаре, — иначе впечатление «дорого» ломается ещё до входа (UI-01). */}
-            <Card {...premiumCard('gold', { width: 400 })}>
+                в сайдбаре, — иначе впечатление «дорого» ломается ещё до входа (UI-01).
+                Акцент `premiumCard` красит ШАПКУ, а у этой карточки шапки нет — поэтому золотую
+                грань задаём явно сверху, иначе акцент не виден вообще (найдено на скриншоте). */}
+            <Card {...premiumCard('gold', {
+                width: 400,
+                borderTop: `2px solid ${GOLD.base}`,
+            })}>
                 <div style={{ textAlign: 'center', marginBottom: SPACE.page }}>
                     <div style={{
                         width: 44, height: 44, borderRadius: 12, margin: '0 auto',
