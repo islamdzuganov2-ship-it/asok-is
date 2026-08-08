@@ -15,7 +15,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.iam import get_current_user, require_role
+from app.modules.iam import get_current_user, require_permission
 from app.modules.incidents import triggering_characteristics  # кросс-доменный фасад (T-16)
 from app.modules.reporting import RiskMatrix  # кросс-доменное чтение через фасад reporting
 from app.modules.risk import service
@@ -119,7 +119,7 @@ async def triggered_risks(
 async def create_risk(
     payload: RiskBaseCreate,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role("QUALITY_MANAGER", "ADMIN")),
+    user: dict = Depends(require_permission("risk.base.edit")),
 ) -> RiskBase:
     exists = (await db.execute(
         select(RiskBase).where(RiskBase.code == payload.code)
@@ -139,7 +139,7 @@ async def update_risk(
     risk_id: uuid.UUID,
     payload: RiskBaseUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role("QUALITY_MANAGER", "ADMIN")),
+    _: dict = Depends(require_permission("risk.base.edit")),
 ) -> RiskBase:
     risk = await db.get(RiskBase, risk_id)
     if risk is None:
@@ -156,7 +156,7 @@ async def update_risk(
 async def archive_risk(
     risk_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role("QUALITY_MANAGER", "ADMIN")),
+    _: dict = Depends(require_permission("risk.base.edit")),
 ) -> RiskBase:
     risk = await db.get(RiskBase, risk_id)
     if risk is None:
@@ -171,7 +171,7 @@ async def archive_risk(
 async def import_from_period(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role("QUALITY_MANAGER", "ADMIN")),
+    user: dict = Depends(require_permission("risk.base.edit")),
 ) -> dict:
     """Перенос рисков периода (risk_matrices) в накопительную базу. Дубли по коду пропускаются."""
     rows = list((await db.execute(
@@ -208,7 +208,7 @@ async def import_from_period(
 async def reembed_risks(
     only_missing: bool = False,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role("ADMIN")),
+    _: dict = Depends(require_permission("risk.reembed")),
 ) -> dict:
     """Бэкфилл эмбеддингов базы рисков (T-20). only_missing=true — только строки без вектора
     (после первого разворачивания фичи); иначе пересчёт всех (после смены провайдера)."""

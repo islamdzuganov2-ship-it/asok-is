@@ -15,7 +15,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.iam import require_role
+from app.modules.iam import require_permission
 from app.modules.quality import (
     ABBR,
     CHARACTERISTICS,
@@ -472,7 +472,7 @@ async def add_assessment_value(
     period_id: UUID,
     payload: ValueAddIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")),
+    _: dict = Depends(require_permission("assessment.edit")),
 ) -> EditableMetricOut:
     """Добавить/заполнить оценку для пары (характеристика, подхарактеристика) в периоде.
 
@@ -552,7 +552,7 @@ async def add_assessment_value(
 async def finalize_assessment(
     period_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")),
+    _: dict = Depends(require_permission("assessment.edit")),
 ) -> PeriodSummaryOut:
     """Завершить оценку: разрешено только при полном заполнении (все подхарактеристики модели).
 
@@ -612,7 +612,7 @@ async def finalize_assessment(
 async def reopen_assessment(
     period_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")),
+    _: dict = Depends(require_permission("assessment.edit")),
 ) -> PeriodSummaryOut:
     """T-47: открыть ЗАВЕРШЁННУЮ оценку на корректировку (разблокировка периода).
 
@@ -675,7 +675,7 @@ async def save_judgments(
     period_id: UUID,
     payload: List[JudgmentIn],
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role("QUALITY_MANAGER", "ADMIN")),
+    user: dict = Depends(require_permission("assessment.review")),
 ) -> JudgmentsStatusOut:
     """Внести/обновить профессиональные суждения (задача менеджера по качеству). Upsert по паре."""
     await _require_period(db, period_id)

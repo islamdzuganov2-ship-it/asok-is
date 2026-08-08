@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.iam import get_current_user, require_role
+from app.modules.iam import get_current_user, require_permission
 from app.modules.incidents import service
 from app.modules.incidents.schemas import (
     IncidentAnalyticsOut,
@@ -65,7 +65,7 @@ async def incident_categories(
 async def create_incident(
     payload: TechIncidentCreate,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*MANAGER_ROLES)),
+    user: dict = Depends(require_permission("incidents.edit")),
 ):
     return await service.create(db, payload, user.get("username") or "—")
 
@@ -74,7 +74,7 @@ async def create_incident(
 async def import_incidents(
     rows: list[IncidentImportRow],
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*MANAGER_ROLES)),
+    user: dict = Depends(require_permission("incidents.edit")),
 ) -> IncidentImportResult:
     """Импорт ТС из внешнего ITSM/ЕХД/DWH (T-43): распарсенные строки → нормализация + дедуп → БД."""
     return await service.import_incidents(db, rows, user.get("username") or "import")
@@ -85,7 +85,7 @@ async def update_incident(
     iid: uuid.UUID,
     payload: TechIncidentUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*MANAGER_ROLES)),
+    _: dict = Depends(require_permission("incidents.edit")),
 ):
     inc = await service.get_or_404(db, iid)
     return await service.update(db, inc, payload)
@@ -96,7 +96,7 @@ async def resolve_incident(
     iid: uuid.UUID,
     payload: ResolveIn | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*MANAGER_ROLES)),
+    _: dict = Depends(require_permission("incidents.edit")),
 ):
     inc = await service.get_or_404(db, iid)
     return await service.resolve(db, inc, payload.resolved_at if payload else None)

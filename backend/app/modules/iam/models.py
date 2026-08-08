@@ -4,7 +4,7 @@ ORM-модели домена iam (ТЗ v13): пользователь и жур
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, DateTime, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,8 +24,11 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     # собственную меру (§3.3). Роли разведены в модели данных сразу, даже если носит их один человек.
     ROLE_RISK_MANAGER = "RISK_MANAGER"
     ROLE_AUDITOR = "AUDITOR"
+    # BL-008: супер-администратор — единственный, кто заводит пользователей и раздаёт права
+    # (матрица role_permissions). Стоит НАД ADMIN; в резолвере прав всегда получает весь каталог.
+    ROLE_SUPER_ADMIN = "SUPER_ADMIN"
     ALL_ROLES = ("TEST_ANALYST", "QUALITY_MANAGER", "CTO", "CEO", "ADMIN",
-                 "RISK_MANAGER", "AUDITOR")
+                 "RISK_MANAGER", "AUDITOR", "SUPER_ADMIN")
     READONLY_ROLES = ("CTO", "CEO")
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -54,4 +57,21 @@ class AuditLog(Base):
     ip_address: Mapped[str | None] = mapped_column(INET, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default="now()", nullable=False
+    )
+
+
+class RolePermission(Base):
+    """Матрица доступа (BL-008 RBAC): наличие строки (role, permission) = право выдано.
+
+    Каталог прав задаётся кодом (app.modules.iam.permissions); супер-администратор
+    редактирует лишь связи роль→право. Резолвится permissions_service c кэшем в процессе.
+    """
+    __tablename__ = "role_permissions"
+    __table_args__ = (UniqueConstraint("role", "permission", name="uq_role_permission"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    role: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    permission: Mapped[str] = mapped_column(String(100), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False,
     )

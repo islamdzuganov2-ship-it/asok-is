@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.iam import get_current_user, require_role
+from app.modules.iam import get_current_user, require_permission
 from app.modules.nonconformity import service
 from app.modules.nonconformity.schemas import (
     AssignMeasureIn,
@@ -59,7 +59,7 @@ async def closure_funnel(
 async def create_nonconformity(
     payload: NonconformityCreate,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*CONTOUR_ROLES)),
+    user: dict = Depends(require_permission("nonconformity.edit")),
 ):
     return await service.create(db, payload, user.get("username"))
 
@@ -78,7 +78,7 @@ async def evaluate(
     nc_id: uuid.UUID,
     payload: EvaluateIn,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*CONTOUR_ROLES)),
+    user: dict = Depends(require_permission("nonconformity.edit")),
 ):
     nc = await service.get_or_404(db, nc_id)
     return await service.evaluate(db, nc, payload.evaluated_ale, user.get("username"))
@@ -89,7 +89,7 @@ async def decide(
     nc_id: uuid.UUID,
     payload: DecideIn,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*DECIDE_ROLES)),
+    user: dict = Depends(require_permission("nonconformity.decide")),
 ):
     nc = await service.get_or_404(db, nc_id)
     return await service.decide(db, nc, payload, user.get("username"))
@@ -100,7 +100,7 @@ async def assign_measure(
     nc_id: uuid.UUID,
     payload: AssignMeasureIn,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*CONTOUR_ROLES)),
+    user: dict = Depends(require_permission("nonconformity.edit")),
 ):
     nc = await service.get_or_404(db, nc_id)
     return await service.assign_measure(db, nc, payload.proposal_id, user.get("username"))
@@ -110,7 +110,7 @@ async def assign_measure(
 async def start(
     nc_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*CONTOUR_ROLES)),
+    user: dict = Depends(require_permission("nonconformity.edit")),
 ):
     nc = await service.get_or_404(db, nc_id)
     return await service.start(db, nc, user.get("username"))
@@ -121,7 +121,7 @@ async def execute(
     nc_id: uuid.UUID,
     payload: ExecuteIn | None = None,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*CONTOUR_ROLES)),
+    user: dict = Depends(require_permission("nonconformity.edit")),
 ):
     nc = await service.get_or_404(db, nc_id)
     return await service.execute(db, nc, user.get("username"), payload.comment if payload else None)
@@ -132,7 +132,7 @@ async def verify(
     nc_id: uuid.UUID,
     payload: VerifyIn | None = None,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*VERIFY_ROLES)),
+    user: dict = Depends(require_permission("risk.verify")),
 ):
     nc = await service.get_or_404(db, nc_id)
     return await service.verify(db, nc, user.get("username"), payload.delta_score_confirmed if payload else None)

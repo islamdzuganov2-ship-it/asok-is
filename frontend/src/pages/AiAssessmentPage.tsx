@@ -305,7 +305,7 @@ const AiAssessmentPage: React.FC = () => {
         title={<Space><span style={accentDot(GOLD.base)} /><span style={{ color: BRAND.ink }}>Система ИИ и период</span></Space>}
       >
         <Space wrap align="end" size="middle">
-          <div style={{ minWidth: 340 }}>
+          <div style={{ width: 340, maxWidth: '100%' }}>
             <Text type="secondary">Система ИИ (system_kind = AI)</Text>
             <Select
               style={{ width: 340, display: 'block' }}

@@ -12,3 +12,30 @@
 .ant-table-thead > tr > th.num {
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * Заголовок карточки должен ПЕРЕНОСИТЬСЯ. По умолчанию antd ставит `white-space: nowrap`
+ * с многоточием, а внутри заголовка обычно лежит <Space> (inline-flex, не переносится) —
+ * из-за этого длинные заголовки вроде «Первопричины: частота, доля, среднее время
+ * восстановления» распирали страницу на узком экране (375px: +262px вбок).
+ * Чиним в одном месте, а не в каждом заголовке (UI-13).
+ */
+.ant-card-head-title {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  /* Без min-width: 0 flex-элемент не сжимается ниже своего содержимого, и перенос строки
+     не спасает — блок всё равно распирает ряд. */
+  min-width: 0;
+}
+
+.ant-card-head-title .ant-space {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ant-card-head-title .ant-space-item {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

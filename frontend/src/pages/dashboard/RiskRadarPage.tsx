@@ -8,10 +8,10 @@
  * не зависит от переключателя Демо/LLM.
  */
 import React, { useMemo, useState } from 'react';
-import { Alert, Col, Empty, List, Row, Select, Space, Spin, Tag, Typography } from 'antd';
+import { Alert, Card, Col, Empty, List, Row, Select, Space, Spin, Tag, Typography } from 'antd';
 import { AlertOutlined, SafetyCertificateOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useGetSystemsQuery, useGetTriggeredRisksQuery } from '../../store/api/apiSlice';
-import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE } from '../../theme/premium';
+import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE, TYPE, PREMIUM } from '../../theme/premium';
 import { RAG, solidTagStyle } from '../../theme/ragPalette';
 
 const { Title, Text, Paragraph } = Typography;
@@ -76,11 +76,13 @@ const RiskRadarPage: React.FC = () => {
             {isFetching ? (
                 <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div>
             ) : sorted.length === 0 ? (
-                <div {...premiumCard()} style={{ padding: 40 }}>
+                // Свой `style` после спреда затирал стиль карточки целиком — блок оставался
+                // без фона, рамки и тени, а невалидный `styles` уходил в DOM (UI-14).
+                <Card {...premiumCard('slate')}>
                     <Empty description="Активных риск-триггеров нет — по текущим данным риски из базы не сработали." />
-                </div>
+                </Card>
             ) : (
-                <div {...premiumCard()} style={{ padding: 8 }}>
+                <Card {...premiumCard('slate')}>
                     <List
                         itemLayout="vertical"
                         dataSource={sorted}
@@ -109,8 +111,13 @@ const RiskRadarPage: React.FC = () => {
                                             </Text>
                                         )}
                                         {r.mitigation && (
-                                            <Paragraph style={{ fontSize: 13, marginBottom: 0, background: '#FAFBFC', padding: '6px 10px', borderRadius: 8 }}>
-                                                <Text strong style={{ fontSize: 12 }}>Меры минимизации: </Text>{r.mitigation}
+                                            <Paragraph style={{
+                                                ...TYPE.bodySm, marginBottom: 0,
+                                                background: PREMIUM.surfaceSoft,
+                                                padding: `${SPACE.snug}px ${SPACE.cozy}px`,
+                                                borderRadius: PREMIUM.radiusSm,
+                                            }}>
+                                                <Text strong style={TYPE.captionStrong}>Меры минимизации: </Text>{r.mitigation}
                                             </Paragraph>
                                         )}
                                     </Space>
@@ -118,7 +125,7 @@ const RiskRadarPage: React.FC = () => {
                             );
                         }}
                     />
-                </div>
+                </Card>
             )}
         </div>
     );

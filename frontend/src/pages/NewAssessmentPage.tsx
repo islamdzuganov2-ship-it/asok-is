@@ -329,7 +329,7 @@ export const NewAssessmentPage: React.FC = () => {
                 >
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                         <Space wrap align="end" style={{ width: '100%' }}>
-                            <div style={{ minWidth: 360 }}>
+                            <div style={{ width: 360, maxWidth: '100%' }}>
                                 <Text type="secondary">Информационная система</Text>
                                 <Select
                                     style={{ width: 360, display: 'block' }}

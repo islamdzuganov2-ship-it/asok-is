@@ -155,8 +155,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
+            {/* `breakpoint` — сайдбар сам сворачивается на узком экране. Без него 244px были
+                фиксированы всегда: на 375px под контент оставалось 131px, и КАЖДАЯ страница
+                уезжала вбок на ~450px. Причина была не в контенте, а здесь (UI-13). */}
             <Sider
                 collapsible collapsed={collapsed} onCollapse={setCollapsed} theme="dark" width={244}
+                breakpoint="lg" collapsedWidth={56}
                 style={{ background: PREMIUM.gradient.sider, boxShadow: '2px 0 24px -12px rgba(16,24,40,0.45)' }}
             >
                 {/* Премиальный логотип: графит-плашка с золотым акцентом */}
@@ -182,25 +186,41 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 />
             </Sider>
             <Layout style={{ background: PREMIUM.gradient.canvas }}>
-                <Header style={{ padding: '0 24px', background: PREMIUM.gradient.header, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${PREMIUM.border}`, boxShadow: '0 1px 4px rgba(0,21,41,.06)', zIndex: 1 }}>
-                    <Title level={4} style={{ margin: 0, color: BRAND.ink, letterSpacing: 0.3, fontWeight: 700 }}>Система оценки качества</Title>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                {/* Шапка не сжималась: заголовок и блок пользователя вместе требовали ~637px,
+                    из-за чего на 375px КАЖДАЯ страница уезжала вбок на 262px даже при
+                    свёрнутом сайдбаре. Заголовок теперь ужимается, имя — с многоточием (UI-13). */}
+                <Header style={{ padding: `0 ${SPACE.page}px`, background: PREMIUM.gradient.header, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: SPACE.base, borderBottom: `1px solid ${PREMIUM.border}`, boxShadow: '0 1px 4px rgba(0,21,41,.06)', zIndex: 1 }}>
+                    <Title
+                        level={4}
+                        style={{
+                            ...TYPE.pageTitle, margin: 0, color: BRAND.ink, letterSpacing: 0.3,
+                            minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}
+                    >
+                        Система оценки качества
+                    </Title>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.base, minWidth: 0, flex: '0 1 auto' }}>
                         <Tooltip title={`${llmStatusText}. Переключатель источника данных дашбордов.`}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.snug, flex: '0 0 auto' }}>
                                 <Badge color={llmStatusColor} />
-                                <RobotOutlined style={{ color: dataMode === 'live' ? '#1F3864' : '#bbb' }} />
-                                <Text type="secondary" style={{ fontSize: 12 }}>Демо</Text>
+                                <RobotOutlined style={{ color: dataMode === 'live' ? BRAND.ink : BRAND.inkSoft }} />
+                                <Text type="secondary" style={TYPE.caption}>Демо</Text>
                                 <Switch
                                     size="small"
                                     checked={dataMode === 'live'}
                                     onChange={(v) => dispatch(setDataMode(v ? 'live' : 'mock'))}
                                 />
-                                <Text type="secondary" style={{ fontSize: 12 }}>LLM</Text>
+                                <Text type="secondary" style={TYPE.caption}>LLM</Text>
                             </div>
                         </Tooltip>
                         <NotificationBell />
                         <Dropdown menu={userMenu} placement="bottomRight">
-                            <Button type="text" icon={<UserOutlined />}>
+                            <Button
+                                type="text"
+                                icon={<UserOutlined />}
+                                // Имя+роль — самый длинный элемент шапки; ужимаем его, а не вьюпорт.
+                                style={{ maxWidth: 'min(220px, 34vw)', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                            >
                                 {fullName || 'Пользователь'} · {roleLabel(userRole)}
                             </Button>
                         </Dropdown>

@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 
 from app.infrastructure.database import get_db
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
-from app.modules.iam import require_role
+from app.modules.iam import require_permission
 from app.modules.llm import brain as llm_brain
 from app.modules.quality import CHARACTERISTICS, canonical_characteristic
 from app.modules.reporting.models import DefectMatrix, QualityPlanMatrix, RiskMatrix
@@ -57,7 +57,7 @@ async def get_llm_models() -> dict:
 
 
 @router.post("/llm-reload")
-async def reload_llm(_: dict = Depends(require_role("ADMIN"))) -> dict:
+async def reload_llm(_: dict = Depends(require_permission("llm.reload"))) -> dict:
     """Горячая перезагрузка модели без рестарта контейнера (после подмены файла). Только ADMIN."""
     return llm_service.reload()
 

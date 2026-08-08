@@ -30,7 +30,7 @@ from app.modules.econ.schemas import (
     SystemBpCreate,
     SystemBpOut,
 )
-from app.modules.iam import get_current_user, require_role
+from app.modules.iam import get_current_user, require_permission
 
 router = APIRouter()
 
@@ -53,7 +53,7 @@ async def set_config(
     key: str,
     payload: EconConfigValueIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*CONFIG_ROLES)),
+    _: dict = Depends(require_permission("econ.config.edit")),
 ):
     return await service.set_config(db, key, payload.value, payload.description)
 
@@ -72,7 +72,7 @@ async def list_business_processes(
 async def create_business_process(
     payload: BusinessProcessCreate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*REF_ROLES)),
+    _: dict = Depends(require_permission("econ.ref.edit")),
 ):
     return await service.create_business_process(db, payload)
 
@@ -82,7 +82,7 @@ async def update_business_process(
     bp_id: uuid.UUID,
     payload: BusinessProcessUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*REF_ROLES)),
+    _: dict = Depends(require_permission("econ.ref.edit")),
 ):
     bp = await service.get_bp_or_404(db, bp_id)
     return await service.update_business_process(db, bp, payload)
@@ -102,7 +102,7 @@ async def upsert_bp_cost(
     bp_id: uuid.UUID,
     payload: BpCostIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*REF_ROLES)),
+    _: dict = Depends(require_permission("econ.ref.edit")),
 ):
     return await service.upsert_bp_cost(db, bp_id, payload)
 
@@ -123,7 +123,7 @@ async def link_system_bp(
     system_id: uuid.UUID,
     payload: SystemBpCreate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*REF_ROLES)),
+    _: dict = Depends(require_permission("econ.ref.edit")),
 ):
     return await service.link_system_bp(db, system_id, payload)
 
@@ -143,7 +143,7 @@ async def list_rates(
 async def create_rate(
     payload: SupportRateIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*REF_ROLES)),
+    _: dict = Depends(require_permission("econ.ref.edit")),
 ):
     return await service.create_rate(db, payload)
 
@@ -153,7 +153,7 @@ async def update_rate(
     rate_id: uuid.UUID,
     payload: SupportRateUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*REF_ROLES)),
+    _: dict = Depends(require_permission("econ.ref.edit")),
 ):
     rate = await service.get_rate_or_404(db, rate_id)
     return await service.update_rate(db, rate, payload)

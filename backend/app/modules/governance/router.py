@@ -29,7 +29,7 @@ from app.modules.governance.schemas import (
     ProposalOut,
     TaskUpdateIn,
 )
-from app.modules.iam import get_current_user, require_role
+from app.modules.iam import get_current_user, require_permission
 
 router = APIRouter()
 
@@ -58,7 +58,7 @@ async def list_proposals(
 async def create_proposal(
     payload: ProposalCreate,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*MANAGER_ROLES)),
+    user: dict = Depends(require_permission("governance.propose")),
 ):
     return await service.create(db, payload, _username(user))
 
@@ -66,7 +66,7 @@ async def create_proposal(
 @router.post("/proposals/{pid}/approve", response_model=ProposalOut)
 async def approve_proposal(
     pid: uuid.UUID, payload: DecisionIn | None = None,
-    db: AsyncSession = Depends(get_db), user: dict = Depends(require_role(*DECISION_ROLES)),
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.decide")),
 ):
     p = await service.get_or_404(db, pid)
     return await service.decide(db, p, True, (payload.comment if payload else None), _username(user))
@@ -75,7 +75,7 @@ async def approve_proposal(
 @router.post("/proposals/{pid}/reject", response_model=ProposalOut)
 async def reject_proposal(
     pid: uuid.UUID, payload: DecisionIn | None = None,
-    db: AsyncSession = Depends(get_db), user: dict = Depends(require_role(*DECISION_ROLES)),
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.decide")),
 ):
     p = await service.get_or_404(db, pid)
     return await service.decide(db, p, False, (payload.comment if payload else None), _username(user))
@@ -84,7 +84,7 @@ async def reject_proposal(
 @router.patch("/proposals/{pid}/meta", response_model=ProposalOut)
 async def update_meta(
     pid: uuid.UUID, payload: MetaIn,
-    db: AsyncSession = Depends(get_db), user: dict = Depends(require_role(*DECISION_ROLES)),
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.decide")),
 ):
     p = await service.get_or_404(db, pid)
     return await service.update_meta(db, p, payload, _username(user))
@@ -93,7 +93,7 @@ async def update_meta(
 @router.patch("/proposals/{pid}", response_model=ProposalOut)
 async def edit_proposal(
     pid: uuid.UUID, payload: EditIn,
-    db: AsyncSession = Depends(get_db), user: dict = Depends(require_role(*DECISION_ROLES)),
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.decide")),
 ):
     p = await service.get_or_404(db, pid)
     return await service.edit(db, p, payload, _username(user))
@@ -102,7 +102,7 @@ async def edit_proposal(
 @router.post("/proposals/{pid}/execution", response_model=ProposalOut)
 async def report_execution(
     pid: uuid.UUID, payload: ExecutionIn,
-    db: AsyncSession = Depends(get_db), user: dict = Depends(require_role(*MANAGER_ROLES)),
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.propose")),
 ):
     p = await service.get_or_404(db, pid)
     return await service.set_execution(db, p, payload.status, payload.comment, _username(user))
@@ -120,7 +120,7 @@ async def update_task(
 @router.post("/proposals/{pid}/escalate", response_model=ProposalOut)
 async def escalate(
     pid: uuid.UUID, payload: EscalateIn,
-    db: AsyncSession = Depends(get_db), user: dict = Depends(require_role(*MANAGER_ROLES)),
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.propose")),
 ):
     p = await service.get_or_404(db, pid)
     return await service.escalate(db, p, payload.reason, _username(user))
@@ -129,7 +129,7 @@ async def escalate(
 @router.post("/proposals/{pid}/escalation-decision", response_model=ProposalOut)
 async def decide_escalation(
     pid: uuid.UUID, payload: EscalationDecisionIn,
-    db: AsyncSession = Depends(get_db), user: dict = Depends(require_role(*DECISION_ROLES)),
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.decide")),
 ):
     p = await service.get_or_404(db, pid)
     return await service.decide_escalation(db, p, payload.decision, payload.comment, _username(user))
@@ -138,7 +138,7 @@ async def decide_escalation(
 @router.post("/proposals/{pid}/resolve-escalation", response_model=ProposalOut)
 async def resolve_escalation(
     pid: uuid.UUID,
-    db: AsyncSession = Depends(get_db), _: dict = Depends(require_role(*MANAGER_ROLES)),
+    db: AsyncSession = Depends(get_db), _: dict = Depends(require_permission("governance.propose")),
 ):
     p = await service.get_or_404(db, pid)
     return await service.resolve_escalation(db, p)
@@ -149,7 +149,7 @@ async def resolve_escalation(
 @router.put("/proposals/{pid}/economics", response_model=ProposalOut)
 async def set_economics(
     pid: uuid.UUID, payload: MeasureEconomicsIn,
-    db: AsyncSession = Depends(get_db), _: dict = Depends(require_role(*ECONOMICS_ROLES)),
+    db: AsyncSession = Depends(get_db), _: dict = Depends(require_permission("econ.ref.edit")),
 ):
     """Ввод экономических параметров меры (CAPEX/OPEX/лаг/ΔScore/тип). Расчёт ROSI — отдельным вызовом."""
     p = await service.get_or_404(db, pid)
@@ -159,7 +159,7 @@ async def set_economics(
 @router.post("/proposals/{pid}/recompute-economics", response_model=MeasureEconomicsResult)
 async def recompute_economics(
     pid: uuid.UUID,
-    db: AsyncSession = Depends(get_db), _: dict = Depends(require_role(*ECONOMICS_ROLES)),
+    db: AsyncSession = Depends(get_db), _: dict = Depends(require_permission("econ.ref.edit")),
 ):
     """ROSI + рекомендованный вердикт (устранить/компенсировать/принять) по портфелю снимаемых рисков."""
     p = await service.get_or_404(db, pid)

@@ -71,7 +71,7 @@ for (const [name, route, waitSel] of routes) {
       const overflowPx = doc.scrollWidth - doc.clientWidth;
       const culprits = [];
       if (overflowPx > 1) {
-        document.querySelectorAll('main *').forEach((el) => {
+        document.querySelectorAll('body *').forEach((el) => {
           const r = el.getBoundingClientRect();
           if (r.width < 2 || r.right <= doc.clientWidth + 1) return;
           let n = el.parentElement, scrollable = false;

@@ -19,6 +19,13 @@ from app.modules.iam.security import (
 router = APIRouter()
 
 DEMO_USERS = {
+    "superadmin": {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "username": "superadmin",
+        "password": "Super123!",
+        "role": "SUPER_ADMIN",
+        "full_name": "Супер-администратор",
+    },
     "admin": {
         "id": "00000000-0000-0000-0000-000000000001",
         "username": "admin",

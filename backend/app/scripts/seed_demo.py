@@ -192,6 +192,7 @@ async def seed_data() -> None:
         # CTO/CEO — только чтение (User.READONLY_ROLES). Посев идемпотентен: существующие
         # логины не трогаются, добавляются только недостающие.
         users_data = [
+            {"username": "superadmin", "email": "superadmin@example.com", "password": "Super123!", "role": "SUPER_ADMIN"},
             {"username": "admin", "email": "admin@example.com", "password": "Admin123!", "role": "ADMIN"},
             {"username": "analyst", "email": "analyst@example.com", "password": "Analyst123!", "role": "TEST_ANALYST"},
             {"username": "manager", "email": "manager@example.com", "password": "Manager123!", "role": "QUALITY_MANAGER"},

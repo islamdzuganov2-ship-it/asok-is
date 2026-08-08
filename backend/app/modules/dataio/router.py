@@ -20,7 +20,7 @@ from app.infrastructure.workers import celery_app
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
 from app.modules.dataio.importer import import_matrices_from_workbook, import_metric_catalog_from_workbook
 from app.modules.dataio.tasks import parse_excel_task
-from app.modules.iam import require_role
+from app.modules.iam import require_permission
 from app.modules.quality import MetricCatalog, calculate_metric, map_to_level
 from app.shared.periods import PERIOD_LOCKED_MESSAGE, STATUS_CALCULATED, is_period_locked
 
@@ -107,7 +107,7 @@ async def _find_metric(
 async def upload_excel(
     period_id: str = Form(...),
     file: UploadFile = File(...),
-    _: dict = Depends(require_role("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")),
+    _: dict = Depends(require_permission("dataio.import")),
 ) -> dict[str, str]:
     content = await file.read()
     _validate_xlsx(file.filename, content)
@@ -139,7 +139,7 @@ async def import_assessment_excel(
     period_id: str = Form(...),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")),
+    _: dict = Depends(require_permission("dataio.import")),
 ) -> dict[str, Any]:
     content = await file.read()
     _validate_xlsx(file.filename, content)
@@ -257,7 +257,7 @@ async def import_workbook(
     period_id: str = Form(...),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")),
+    _: dict = Depends(require_permission("dataio.import")),
 ) -> dict[str, Any]:
     content = await file.read()
     _validate_xlsx(file.filename, content)

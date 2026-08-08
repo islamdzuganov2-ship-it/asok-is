@@ -194,7 +194,7 @@ const QualityDynamicsPage: React.FC = () => {
               <Select
                 value={systemId}
                 onChange={setSystemId}
-                style={{ minWidth: 280 }}
+                style={{ width: 280, maxWidth: '100%' }}
                 showSearch
                 optionFilterProp="label"
                 options={[

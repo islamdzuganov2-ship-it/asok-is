@@ -6,8 +6,11 @@ FastAPI-зависимости домена iam (ТЗ v13): текущий по�
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.config import settings
+from app.infrastructure.database import get_db
+from app.modules.iam.permissions_service import get_role_permissions
 from app.modules.iam.security import decode_token
 
 security = HTTPBearer(auto_error=False)
@@ -54,12 +57,35 @@ async def get_current_user(
 
 
 def require_role(*allowed_roles: str):
+    """DEPRECATED (BL-008): статическая проверка по ролям. Оставлена как обёртка на время
+    миграции call-site'ов на require_permission; новые эндпоинты используют require_permission."""
     async def checker(current_user: dict = Depends(get_current_user)) -> dict:
         user_roles = current_user.get("roles", [])
         if not any(role in user_roles for role in allowed_roles):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Required role: {', '.join(allowed_roles)}",
+            )
+        return current_user
+
+    return checker
+
+
+def require_permission(*required: str):
+    """Контроль доступа по правам (BL-008 RBAC). Пропускает, если у роли пользователя есть
+    ХОТЯ БЫ ОДНО из перечисленных прав (обычно передаётся одно). Права резолвятся из матрицы
+    role_permissions с кэшем; SUPER_ADMIN всегда проходит."""
+    async def checker(
+        current_user: dict = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
+        roles = current_user.get("roles", [])
+        role = roles[0] if roles else ""
+        granted = await get_role_permissions(db, role)
+        if not any(perm in granted for perm in required):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permission: {', '.join(required)}",
             )
         return current_user
 

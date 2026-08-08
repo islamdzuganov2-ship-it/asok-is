@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.iam import require_role
+from app.modules.iam import require_permission
 from app.modules.quality import (
     AI_SUB_INDEX,
     AI_TOTAL_SUBS,
@@ -133,7 +133,7 @@ async def save_ai_values(
     period_id: UUID,
     payload: List[AiValueIn],
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*_EDIT_ROLES)),
+    _: dict = Depends(require_permission("assessment.edit")),
 ) -> list[AiValueOut]:
     """Upsert значений субхарактеристик: расчёт сырого значения, нормировка к baseline, вердикт.
 
@@ -239,7 +239,7 @@ async def save_ai_weights(
     period_id: UUID,
     payload: dict,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*_EDIT_ROLES)),
+    _: dict = Depends(require_permission("assessment.edit")),
 ) -> dict:
     """Сохранить веса свёртки (формулы 3–8). Валидация: Σ весов = 1 в каждом scope (±0.001).
 
@@ -313,7 +313,7 @@ async def calculate_ai_period(period_id: UUID, db: AsyncSession = Depends(get_db
 async def finalize_ai_period(
     period_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*_EDIT_ROLES)),
+    _: dict = Depends(require_permission("assessment.edit")),
 ) -> dict:
     """Завершение при полноте ВЫБРАННОГО представительного набора (п. 7.1.4).
 

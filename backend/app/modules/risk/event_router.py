@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.iam import get_current_user, require_role
+from app.modules.iam import get_current_user, require_permission
 from app.modules.risk import event_service as service
 from app.modules.risk.event_schemas import (
     AleResultOut,
@@ -48,7 +48,7 @@ async def list_events(
 async def create_event(
     payload: RiskEventCreate,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(*RISK_ROLES)),
+    user: dict = Depends(require_permission("risk.register.edit")),
 ):
     return await service.create_event(db, payload, user.get("username"))
 
@@ -67,7 +67,7 @@ async def update_event(
     event_id: uuid.UUID,
     payload: RiskEventUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*RISK_ROLES)),
+    _: dict = Depends(require_permission("risk.register.edit")),
 ):
     ev = await service.get_or_404(db, event_id)
     return await service.update_event(db, ev, payload)
@@ -77,7 +77,7 @@ async def update_event(
 async def archive_event(
     event_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*RISK_ROLES)),
+    _: dict = Depends(require_permission("risk.register.edit")),
 ):
     ev = await service.get_or_404(db, event_id)
     return await service.archive_event(db, ev)
@@ -90,7 +90,7 @@ async def link_subchar(
     event_id: uuid.UUID,
     payload: SubcharLinkIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*RISK_ROLES)),
+    _: dict = Depends(require_permission("risk.register.edit")),
 ):
     return await service.link_subchar(db, event_id, payload)
 
@@ -100,7 +100,7 @@ async def link_incident(
     event_id: uuid.UUID,
     payload: IncidentLinkIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*RISK_ROLES)),
+    _: dict = Depends(require_permission("risk.register.edit")),
 ):
     return await service.link_incident(db, event_id, payload.incident_id)
 
@@ -110,7 +110,7 @@ async def link_measure(
     event_id: uuid.UUID,
     payload: MeasureLinkIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*RISK_ROLES)),
+    _: dict = Depends(require_permission("risk.register.edit")),
 ):
     return await service.link_measure(db, event_id, payload)
 
@@ -121,7 +121,7 @@ async def link_measure(
 async def recompute_ale(
     event_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_role(*RISK_ROLES)),
+    _: dict = Depends(require_permission("risk.register.edit")),
 ):
     ev = await service.get_or_404(db, event_id)
     return await service.recompute_ale(db, ev)

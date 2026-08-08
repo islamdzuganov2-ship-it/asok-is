@@ -10,8 +10,8 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-    Alert, Button, Col, Empty, Modal, Row, Select, Space, Spin,
-    Statistic, Table, Tag, Typography,
+    Alert, Button, Card, Col, Empty, Modal, Row, Select, Space, Spin,
+    Table, Tag, Typography,
 } from 'antd';
 import {
     ThunderboltOutlined, ReloadOutlined, DatabaseOutlined, CalendarOutlined,
@@ -31,11 +31,11 @@ import {
 } from '../../store/api/apiSlice';
 import { selectVisibleProposals } from '../../store/slices/governanceSlice';
 import { MOCK_INCIDENTS, INCIDENT_CATEGORIES, computeIncidentAnalytics } from '../../data/mockIncidents';
-import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE } from '../../theme/premium';
+import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE, TYPE } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import KpiCard from '../../components/KpiCard';
 import { BRAND, RAG, solidTagStyle } from '../../theme/ragPalette';
-import { numericColumn } from '../../theme/table';
+import { numericColumn, numericText } from '../../theme/table';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -241,43 +241,64 @@ const IncidentsAnalyticsPage: React.FC = () => {
                     </Row>
 
                     <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+                        {/* Раньше здесь был <div {...premiumCard()} style={{padding:16}}>: свой
+                            `style` ПОСЛЕ спреда затирал стиль карточки целиком, поэтому блоки
+                            лежали на полотне без фона, рамки и тени, а невалидный проп `styles`
+                            уходил в DOM. Это настоящая карточка (UI-14). */}
                         <Col xs={24} md={10}>
-                            <div {...premiumCard('terracotta')} style={{ padding: 16 }}>
-                                <Text strong><ThunderboltOutlined /> Распределение по первопричинам</Text>
+                            <Card
+                                {...premiumCard('terracotta')}
+                                title={(
+                                    <Space>
+                                        <span style={accentDot(accentColorOf('terracotta')!)} />
+                                        <span style={{ color: BRAND.ink }}>Распределение по первопричинам</span>
+                                    </Space>
+                                )}
+                            >
                                 {analytics && analytics.total > 0
                                     ? <ReactECharts option={donutOption} style={{ height: 300 }} />
-                                    : <Empty description="Сбоев не зафиксировано" style={{ padding: 40 }} />}
-                            </div>
+                                    : <Empty description="Сбоев не зафиксировано" style={{ padding: SPACE.page }} />}
+                            </Card>
                         </Col>
                         <Col xs={24} md={14}>
-                            <div {...premiumCard()} style={{ padding: 16 }}>
-                                <Text strong>Первопричины: частота, доля, среднее время восстановления</Text>
+                            <Card
+                                {...premiumCard('slate')}
+                                title={(
+                                    <Space>
+                                        <span style={accentDot(accentColorOf('slate')!)} />
+                                        <span style={{ color: BRAND.ink }}>Первопричины: частота, доля, среднее время восстановления</span>
+                                    </Space>
+                                )}
+                            >
                                 <Table
-                                    style={{ marginTop: 12 }}
                                     size="small"
                                     pagination={false}
                                     rowKey="category"
+                                    // Пять колонок не влезают в половину ряда на планшете
+                                    // (768px: переполнение 119px) — скроллим таблицу, не страницу.
+                                    scroll={{ x: 520 }}
                                     locale={{ emptyText: 'За выбранный период сбоев не зарегистрировано' }}
                                     dataSource={analytics?.byCategory ?? []}
                                     columns={[
                                         { title: 'Первопричина', dataIndex: 'category', render: (c: string) => <Tag style={solidTagStyle(CATEGORY_TAG_COLOR[c])}>{CATEGORY_LABEL[c] ?? c}</Tag> },
                                         numericColumn({ title: 'Сбоев', dataIndex: 'count', width: 80 }),
-                                        { title: 'Доля', dataIndex: 'share', width: 90, render: (v: number) => `${v}%` },
-                                        { title: 'Открыто', dataIndex: 'openCount', width: 90 },
+                                        numericColumn({ title: 'Доля', dataIndex: 'share', width: 90, render: (v: number) => `${v}%` }),
+                                        numericColumn({ title: 'Открыто', dataIndex: 'openCount', width: 90 }),
                                         numericColumn({ title: 'MTTR, ч', dataIndex: 'avgMttrHours', width: 90, render: (v: number | null) => (v === null ? '—' : v) }),
                                     ]}
                                 />
-                                <div style={{ marginTop: 16 }}>
+                                <div style={{ marginTop: SPACE.base }}>
                                     <Text strong>Топ нестабильных ИС</Text>
-                                    <Space wrap style={{ marginTop: 8 }}>
+                                    <Space wrap style={{ marginTop: SPACE.snug }}>
                                         {(analytics?.topSystems ?? []).map((s) => (
-                                            <Tag key={s.systemName} style={{ padding: `${SPACE.tight}px ${SPACE.cozy}px`, fontSize: 13 }}>
-                                                {s.systemName}: <b>{s.count}</b>{s.openCount > 0 && <span style={{ color: RAG.bad.strong }}> · открыто {s.openCount}</span>}
+                                            <Tag key={s.systemName} style={{ padding: `${SPACE.tight}px ${SPACE.cozy}px`, ...TYPE.bodySm }}>
+                                                {s.systemName}: <b style={numericText}>{s.count}</b>
+                                                {s.openCount > 0 && <span style={{ color: RAG.bad.strong }}> · открыто {s.openCount}</span>}
                                             </Tag>
                                         ))}
                                     </Space>
                                 </div>
-                            </div>
+                            </Card>
                         </Col>
                     </Row>
 

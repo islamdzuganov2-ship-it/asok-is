@@ -259,13 +259,16 @@ const ManagerDashboard: React.FC = () => {
           </Text>
         </Col>
         {showData && (
-          <Col>
-            <Space>
+          <Col style={{ maxWidth: '100%' }}>
+            {/* wrap — на узком экране подпись и селектор встают в две строки, а не распирают ряд. */}
+            <Space wrap>
               <Text type="secondary"><DatabaseOutlined /> Система:</Text>
               <Select
                 value={systemId}
                 onChange={setSystemId}
-                style={{ minWidth: 280 }}
+                // Фиксированный minWidth заставлял страницу скроллиться вбок на узком экране
+                // (375px: переполнение 450px). Ширина есть, но не в ущерб вьюпорту (UI-13).
+                style={{ width: 280, maxWidth: '100%' }}
                 showSearch
                 optionFilterProp="label"
                 options={activeSystems.map((s) => ({ value: s.id, label: s.name }))}
@@ -316,7 +319,9 @@ const ManagerDashboard: React.FC = () => {
                 />
               </div>
               {/* Легенда-список: строка на характеристику (цвет + название + балл), клик = выбор */}
-              <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {/* minWidth: 0 — flex-элемент должен уметь сжиматься, иначе на узком экране
+                  распирает ряд и появляется горизонтальный скролл (UI-13). */}
+              <div style={{ flex: '1 1 280px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: SPACE.tight }}>
                 {system!.characteristics.map((c) => {
                   const active = c.key === charKey;
                   const tok = scoreTok(c.score);
