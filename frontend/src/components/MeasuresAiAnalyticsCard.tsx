@@ -8,7 +8,7 @@
 import React, { useMemo, useState } from 'react';
 import { Card, Button, Table, Tag, Typography, Alert, Spin, Space, Collapse } from 'antd';
 import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { ragToken, solidTagStyle } from '../theme/ragPalette';
+import { ragToken, solidTagStyle, ACCENT } from '../theme/ragPalette';
 import { premiumCard, accentDot, SPACE, TYPE } from '../theme/premium';
 import { numericColumn } from '../theme/table';
 import type { Proposal } from '../store/slices/governanceSlice';
@@ -91,7 +91,7 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
 
   return (
     <Card
-      title={<span><span style={accentDot('#6E89A6')} /><RobotOutlined /> Топ проблемных ИС — AI-аналитика по мерам</span>}
+      title={<span><span style={accentDot(ACCENT.slate.color)} /><RobotOutlined /> Топ проблемных ИС — AI-аналитика по мерам</span>}
       {...premiumCard('slate', { marginBottom: 16 })}
       styles={{ header: premiumCard('slate').styles.header, body: { padding: SPACE.airy, paddingTop: SPACE.cozy } }}
       extra={<Button type="primary" icon={<ThunderboltOutlined />} loading={loading} disabled={agg.length === 0} onClick={run}>
@@ -144,15 +144,15 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
                 <>
                   {data.fired_rules && data.fired_rules.length > 0 && (
                     <div style={{ marginBottom: 8 }}>
-                      <Text strong style={{ fontSize: 12 }}>Сработавшие правила (движок решает — LLM объясняет):</Text>
+                      <Text strong style={{ fontSize: TYPE.caption.fontSize }}>Сработавшие правила (движок решает — LLM объясняет):</Text>
                       {data.fired_rules.map((r, i) => (
-                        <div key={i}><Text type="secondary" style={{ fontSize: 12 }}>• {r}</Text></div>
+                        <div key={i}><Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>• {r}</Text></div>
                       ))}
                     </div>
                   )}
                   <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: data.mapped_risks?.length ? 8 : 0 }}>{data.analytics}</Paragraph>
                   {data.mapped_risks?.length > 0 && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
                       Риски: {data.mapped_risks.map((r) => r.title).join('; ')}
                     </Text>
                   )}
@@ -164,18 +164,18 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
                       style={{ marginTop: 8 }}
                       items={[{
                         key: 'trace',
-                        label: <Text type="secondary" style={{ fontSize: 12 }}>Ход рассуждения (аудируемая трасса)</Text>,
+                        label: <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Ход рассуждения (аудируемая трасса)</Text>,
                         children: (
                           <Space direction="vertical" size={6} style={{ width: '100%' }}>
                             {data.reasoning.stages.map((s) => (
                               <div key={s.code}>
-                                <Text strong style={{ fontSize: 12 }}>
+                                <Text strong style={{ fontSize: TYPE.caption.fontSize }}>
                                   {s.code} · {s.title}{' '}
                                   {s.used_llm
                                     ? <Tag color="blue" style={{ fontSize: TYPE.micro.fontSize }}>LLM</Tag>
                                     : <Tag style={{ fontSize: TYPE.micro.fontSize }}>детерм.</Tag>}
                                 </Text>
-                                <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap', fontSize: 12, marginBottom: 0 }}>
+                                <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap', fontSize: TYPE.caption.fontSize, marginBottom: 0 }}>
                                   {s.content}
                                 </Paragraph>
                               </div>

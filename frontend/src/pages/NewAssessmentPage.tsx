@@ -35,7 +35,7 @@ import {
 } from '../constants/qualityModel';
 import { subArtifacts, subDescription } from '../constants/subDescriptions';
 import ProfessionalJudgmentsPanel from '../components/ProfessionalJudgmentsPanel';
-import { premiumCard, accentDot, accentColorOf, GOLD, SPACE } from '../theme/premium';
+import { premiumCard, accentDot, accentColorOf, GOLD, SPACE, TYPE } from '../theme/premium';
 import { numericColumn } from '../theme/table';
 import { BRAND } from '../theme/ragPalette';
 
@@ -305,7 +305,7 @@ export const NewAssessmentPage: React.FC = () => {
         },
         {
             title: 'Комментарий', dataIndex: 'comment',
-            render: (c: string) => (c ? <Text style={{ fontSize: 12 }}>{c}</Text> : <Text type="secondary">—</Text>),
+            render: (c: string) => (c ? <Text style={{ fontSize: TYPE.caption.fontSize }}>{c}</Text> : <Text type="secondary">—</Text>),
         },
     ];
 
@@ -467,7 +467,7 @@ export const NewAssessmentPage: React.FC = () => {
                                 scroll={{ x: 900, y: 460 }}
                                 rowClassName={(rec) => (rec.x == null ? '' : 'ant-table-row-selected')}
                             />
-                            <Text type="secondary" style={{ fontSize: 12 }}>
+                            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
                                 Заполненные характеристики исчезают из списка добавления. Корректировать их можно
                                 комментариями во вкладке «Отчёты и реестры» → «Характеристики качества ИС».
                             </Text>
@@ -594,7 +594,7 @@ export const NewAssessmentPage: React.FC = () => {
                         <Checkbox>
                             Невозможно измерить&nbsp;
                             <Tooltip title="Нет возможности собрать данные. A/B не заполняются, комментарий с причиной обязателен.">
-                                <Text type="secondary" style={{ fontSize: 12 }}>(нет данных — почему?)</Text>
+                                <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>(нет данных — почему?)</Text>
                             </Tooltip>
                         </Checkbox>
                     </Form.Item>
@@ -645,7 +645,7 @@ export const NewAssessmentPage: React.FC = () => {
                         <Input placeholder="https://… или путь к файлу / № тикета" />
                     </Form.Item>
                     {!unmeasurable && (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
                             Тип формулы берётся из модели. X = A/B (прямая) или 1 − A/B (обратная).
                         </Text>
                     )}

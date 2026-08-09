@@ -14,6 +14,7 @@ import dayjs from 'dayjs';
 import { addProposal } from '../store/slices/governanceSlice';
 import { RootState } from '../store';
 import { ragToken, levelLabel, solidTagStyle } from '../theme/ragPalette';
+import { TYPE } from '../theme/premium';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -115,7 +116,7 @@ export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClo
             {target.score}% · {tok.label}
           </Tag>
         </Space>
-        <Text type="secondary" style={{ fontSize: 12 }}>
+        <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
           {target.systemName} · {target.characteristic}
         </Text>
       </Space>
@@ -158,7 +159,7 @@ export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClo
         )}
       </Form>
 
-      <Text type="secondary" style={{ fontSize: 12 }}>
+      <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
         После применения мера уйдёт топ-менеджменту со статусом «ожидает одобрения».
       </Text>
     </Modal>

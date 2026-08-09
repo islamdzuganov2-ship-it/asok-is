@@ -5,12 +5,15 @@ import ruRU from 'antd/locale/ru_RU';
 import { useSelector } from 'react-redux';
 import { RootState } from './store';
 import { AppLayout } from './components/AppLayout';
-import { BRAND } from './theme/ragPalette';
+import { BRAND, ACCENT, RAG } from './theme/ragPalette';
 import { SPACE, TYPE } from './theme/premium';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const ExecutiveDashboard = lazy(() => import('./pages/dashboard/ExecutiveDashboard'));
+const CtoDashboard = lazy(() => import('./pages/dashboard/CtoDashboard'));
+const CeoDashboard = lazy(() => import('./pages/dashboard/CeoDashboard'));
+const RiskOwnerDashboard = lazy(() => import('./pages/dashboard/RiskOwnerDashboard'));
 const ManagerDashboard = lazy(() => import('./pages/dashboard/ManagerDashboard'));
 const QualityDynamicsPage = lazy(() => import('./pages/dashboard/QualityDynamicsPage'));
 const TaskPlanDashboard = lazy(() => import('./pages/dashboard/TaskPlanDashboard'));
@@ -24,6 +27,8 @@ const AdminFlagsPage = lazy(() => import('./pages/AdminFlagsPage'));
 const ExcelReportsPage = lazy(() => import('./pages/ExcelReportsPage'));
 const RiskBasePage = lazy(() => import('./pages/RiskBasePage'));
 const RiskEconomicsPage = lazy(() => import('./pages/RiskEconomicsPage'));
+const UsersAdminPage = lazy(() => import('./pages/admin/UsersAdminPage'));
+const PermissionsMatrixPage = lazy(() => import('./pages/admin/PermissionsMatrixPage'));
 
 // `tip` у antd работает только во вложенном/полноэкранном режиме — иначе спиннер сыплет
 // предупреждениями в консоль на каждой ленивой загрузке. Подпись выводим сами (UI-10).
@@ -42,19 +47,40 @@ const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) =
     return isAuthenticated ? children : <Navigate to="/login" replace />;
 };
 
-// Ролевая маршрутизация для /dashboard: каждый пользователь попадает на «свой» дашборд
-// (устраняет путаницу «какой из дашбордов мой», ТЗ v11 R1.1).
-const EXECUTIVE_ROLES = ['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN'];
+// Посадочная страница /dashboard: каждая роль — на «свой» основной дашборд (ТЗ v11 R1.1),
+// но проверяем ПРАВО на него (супер-админ мог его снять) — иначе первый доступный по правам.
+const HOME_BY_ROLE: Record<string, { path: string; perm?: string }> = {
+    SUPER_ADMIN: { path: '/admin/users', perm: 'view.admin.users' },
+    ADMIN: { path: '/dashboard/analytics', perm: 'view.dashboard.analytics' },
+    CTO: { path: '/dashboard/cto', perm: 'view.dashboard.cto' },
+    CEO: { path: '/dashboard/ceo', perm: 'view.dashboard.ceo' },
+    QUALITY_MANAGER: { path: '/dashboard/manager', perm: 'view.dashboard.manager' },
+    RISK_MANAGER: { path: '/dashboard/risk', perm: 'view.dashboard.risk' },
+    TEST_ANALYST: { path: '/dashboard/analytics', perm: 'view.dashboard.analytics' },
+    AUDITOR: { path: '/dashboard/risk', perm: 'view.dashboard.risk' },
+};
+// Порядок «первого доступного» дашборда, если у роли нет своего.
+const DASHBOARD_FALLBACKS: Array<{ path: string; perm: string }> = [
+    { path: '/dashboard/cto', perm: 'view.dashboard.cto' },
+    { path: '/dashboard/ceo', perm: 'view.dashboard.ceo' },
+    { path: '/dashboard/manager', perm: 'view.dashboard.manager' },
+    { path: '/dashboard/risk', perm: 'view.dashboard.risk' },
+    { path: '/dashboard/analytics', perm: 'view.dashboard.analytics' },
+    { path: '/admin/users', perm: 'view.admin.users' },
+];
 const DashboardRouter: React.FC = () => {
-    const { role } = useSelector((state: RootState) => state.auth);
-    if (role && EXECUTIVE_ROLES.includes(role)) return <Navigate to="/dashboard/executive" replace />;
-    if (role === 'QUALITY_MANAGER') return <Navigate to="/dashboard/manager" replace />;
-    return <Navigate to="/dashboard/analytics" replace />;
+    const { role, permissions } = useSelector((state: RootState) => state.auth);
+    const home = role ? HOME_BY_ROLE[role] : undefined;
+    if (home && (!home.perm || permissions.includes(home.perm))) return <Navigate to={home.path} replace />;
+    const fb = DASHBOARD_FALLBACKS.find((f) => permissions.includes(f.perm));
+    return <Navigate to={fb ? fb.path : '/admin/flags'} replace />;  // «Настройка» доступна всем (view.settings)
 };
 
-const RequireRole: React.FC<{ allowedRoles: string[], children: React.ReactElement }> = ({ allowedRoles, children }) => {
-    const { role } = useSelector((state: RootState) => state.auth);
-    return (role && allowedRoles.includes(role)) ? children : <Navigate to="/dashboard" replace />;
+// Гейтинг по ПРАВУ (BL-008). perm — одно право или список (достаточно любого).
+const RequirePermission: React.FC<{ perm: string | string[]; children: React.ReactElement }> = ({ perm, children }) => {
+    const { permissions } = useSelector((state: RootState) => state.auth);
+    const need = Array.isArray(perm) ? perm : [perm];
+    return need.some((p) => permissions.includes(p)) ? children : <Navigate to="/dashboard" replace />;
 };
 
 export const App: React.FC = () => {
@@ -65,10 +91,10 @@ export const App: React.FC = () => {
                 token: {
                     // Приглушённая, пастельная палитра (менее «кричащие» тона).
                     colorPrimary: '#3A4F6B',
-                    colorSuccess: '#6F9F86',
-                    colorWarning: '#C9A14A',
-                    colorError: '#C06B5A',
-                    colorInfo: '#6E89A6',
+                    colorSuccess: RAG.good.color,
+                    colorWarning: RAG.medium.color,
+                    colorError: RAG.bad.color,
+                    colorInfo: ACCENT.slate.color,
                     // T-57: дефолтный вторичный текст antd — rgba(0,0,0,.45) ≈ 3.05:1 на полотне
                     // дашбордов, ниже WCAG AA. Подписи `type="secondary"` встречаются повсеместно
                     // (счётчики, сноски под графиками), поэтому чиним токеном, а не по местам.
@@ -91,25 +117,28 @@ export const App: React.FC = () => {
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/*" element={<RequireAuth><AppLayout><Suspense fallback={<PageLoader />}><Routes>
                             <Route path="dashboard" element={<DashboardRouter />} />
-                            <Route path="dashboard/analytics" element={<DashboardPage />} />
-                            <Route path="dashboard/executive" element={<RequireRole allowedRoles={['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><ExecutiveDashboard /></RequireRole>} />
-                            <Route path="dashboard/manager" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><ManagerDashboard /></RequireRole>} />
-                            <Route path="dashboard/manager/dynamics" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><QualityDynamicsPage /></RequireRole>} />
-                            <Route path="dashboard/taskplan" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><TaskPlanDashboard /></RequireRole>} />
-                            <Route path="dashboard/incidents" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><IncidentsAnalyticsPage /></RequireRole>} />
-                            <Route path="dashboard/risk-radar" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><RiskRadarPage /></RequireRole>} />
-                            <Route path="assessments/new" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><AssessmentWorkspacePage /></RequireRole>} />
-                            {/* ПОД РАЗВИТИЕ: «Оценка СИИ» (ГОСТ Р 59898-2021) и история ИИ-оценок.
-                                Пункт меню и переключатель в «Настройка» намеренно убраны из UI (раздел
-                                пока не нужен). Маршрут и страница (AiAssessmentPage) сохранены в коде;
-                                чтобы вернуть раздел — добавить пункт меню в AppLayout.tsx. */}
-                            <Route path="ai-assessments" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><AiAssessmentPage /></RequireRole>} />
-                            <Route path="assessments/:id/input" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'ADMIN']}><MetricsInputPage /></RequireRole>} />
-                            <Route path="assessments/:id/review" element={<RequireRole allowedRoles={['QUALITY_MANAGER', 'ADMIN']}><ExpertReviewPage /></RequireRole>} />
-                            <Route path="reports" element={<ExcelReportsPage />} />
-                            <Route path="risks" element={<RiskBasePage />} />
-                            <Route path="risk-economics" element={<RequireRole allowedRoles={['TEST_ANALYST', 'QUALITY_MANAGER', 'RISK_MANAGER', 'CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><RiskEconomicsPage /></RequireRole>} />
-                            <Route path="admin/flags" element={<RequireRole allowedRoles={['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN']}><AdminFlagsPage /></RequireRole>} />
+                            <Route path="dashboard/analytics" element={<RequirePermission perm="view.dashboard.analytics"><DashboardPage /></RequirePermission>} />
+                            <Route path="dashboard/cto" element={<RequirePermission perm="view.dashboard.cto"><CtoDashboard /></RequirePermission>} />
+                            <Route path="dashboard/ceo" element={<RequirePermission perm="view.dashboard.ceo"><CeoDashboard /></RequirePermission>} />
+                            <Route path="dashboard/risk" element={<RequirePermission perm="view.dashboard.risk"><RiskOwnerDashboard /></RequirePermission>} />
+                            {/* Управленческий дашборд — общий алиас (обратная совместимость), доступен CTO/CEO. */}
+                            <Route path="dashboard/executive" element={<RequirePermission perm={['view.dashboard.cto', 'view.dashboard.ceo']}><ExecutiveDashboard /></RequirePermission>} />
+                            <Route path="dashboard/manager" element={<RequirePermission perm="view.dashboard.manager"><ManagerDashboard /></RequirePermission>} />
+                            <Route path="dashboard/manager/dynamics" element={<RequirePermission perm="view.dashboard.dynamics"><QualityDynamicsPage /></RequirePermission>} />
+                            <Route path="dashboard/taskplan" element={<RequirePermission perm="view.dashboard.taskplan"><TaskPlanDashboard /></RequirePermission>} />
+                            <Route path="dashboard/incidents" element={<RequirePermission perm="view.dashboard.incidents"><IncidentsAnalyticsPage /></RequirePermission>} />
+                            <Route path="dashboard/risk-radar" element={<RequirePermission perm="view.dashboard.risk_radar"><RiskRadarPage /></RequirePermission>} />
+                            <Route path="assessments/new" element={<RequirePermission perm="view.assessments"><AssessmentWorkspacePage /></RequirePermission>} />
+                            {/* ПОД РАЗВИТИЕ: «Оценка СИИ» (ГОСТ Р 59898-2021) — маршрут сохранён, гейтится правом. */}
+                            <Route path="ai-assessments" element={<RequirePermission perm="view.ai_assessments"><AiAssessmentPage /></RequirePermission>} />
+                            <Route path="assessments/:id/input" element={<RequirePermission perm="view.assessments"><MetricsInputPage /></RequirePermission>} />
+                            <Route path="assessments/:id/review" element={<RequirePermission perm="assessment.review"><ExpertReviewPage /></RequirePermission>} />
+                            <Route path="reports" element={<RequirePermission perm="view.reports"><ExcelReportsPage /></RequirePermission>} />
+                            <Route path="risks" element={<RequirePermission perm="view.risks"><RiskBasePage /></RequirePermission>} />
+                            <Route path="risk-economics" element={<RequirePermission perm="view.risk_economics"><RiskEconomicsPage /></RequirePermission>} />
+                            <Route path="admin/flags" element={<RequirePermission perm="view.settings"><AdminFlagsPage /></RequirePermission>} />
+                            <Route path="admin/users" element={<RequirePermission perm="view.admin.users"><UsersAdminPage /></RequirePermission>} />
+                            <Route path="admin/permissions" element={<RequirePermission perm="view.admin.permissions"><PermissionsMatrixPage /></RequirePermission>} />
                             <Route index element={<Navigate to="/dashboard" replace />} />
                         </Routes></Suspense></AppLayout></RequireAuth>} />
                     </Routes>

@@ -21,7 +21,7 @@ import {
   type EditableProposalFields, type Proposal, type ProposalStatus,
 } from '../store/slices/governanceSlice';
 import { ragToken, solidTagStyle } from '../theme/ragPalette';
-import { SPACE } from '../theme/premium';
+import { SPACE, TYPE } from '../theme/premium';
 
 const { Text, Paragraph } = Typography;
 
@@ -50,7 +50,7 @@ interface Props {
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div style={{ marginBottom: SPACE.cozy }}>
-    <Text type="secondary" style={{ fontSize: 12 }}>{label}</Text>
+    <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{label}</Text>
     <div>{children}</div>
   </div>
 );
@@ -195,7 +195,7 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
             <Button type="primary" icon={<CheckOutlined />} onClick={saveEdit}>Сохранить правки</Button>
             <Button onClick={() => setEditing(false)}>Отмена</Button>
           </Space>
-          <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+          <Paragraph type="secondary" style={{ fontSize: TYPE.caption.fontSize, marginBottom: 0 }}>
             Каждое изменение будет записано в историю изменений (аудит) с указанием автора и времени.
           </Paragraph>
         </>
@@ -252,7 +252,7 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
                 </Space>
               </>
             ) : (
-              <Text type="secondary" style={{ fontSize: 12 }}>Ожидается решение</Text>
+              <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Ожидается решение</Text>
             )
           ) : (
             <Field label={`Решение (${p.decidedBy || '—'})`}>
@@ -295,7 +295,7 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
                   </Space>
                 </>
               ) : (
-                <Text type="secondary" style={{ fontSize: 12 }}>Ожидает отчёта менеджера по качеству о выполнении.</Text>
+                <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Ожидает отчёта менеджера по качеству о выполнении.</Text>
               )}
             </>
           )}
@@ -321,10 +321,10 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
                 <Space direction="vertical" size={2} style={{ width: '100%' }}>
                   <Space wrap size={6}>
                     <Tag>{fmtTime(h.at)}</Tag>
-                    <Text strong style={{ fontSize: 13 }}>{FIELD_LABELS[h.field] ?? h.field}</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{h.by}</Text>
+                    <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>{FIELD_LABELS[h.field] ?? h.field}</Text>
+                    <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{h.by}</Text>
                   </Space>
-                  <Text style={{ fontSize: 13 }}>
+                  <Text style={{ fontSize: TYPE.bodySm.fontSize }}>
                     <Text delete type="secondary">{h.from || '—'}</Text>
                     {' → '}
                     <Text strong>{h.to || '—'}</Text>

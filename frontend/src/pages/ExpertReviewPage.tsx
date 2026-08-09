@@ -3,7 +3,7 @@ import { Alert, Button, Card, Progress, Space, Spin, Table, Tag, Typography } fr
 import { useParams } from 'react-router-dom';
 import { CalculatedMetric, useGetCalculatedMetricsQuery } from '../store/api/apiSlice';
 import { ExpertJudgmentModal } from '../components/ExpertJudgmentModal';
-import { premiumCard, SPACE } from '../theme/premium';
+import { premiumCard, SPACE, TYPE } from '../theme/premium';
 
 const { Title, Text } = Typography;
 
@@ -63,7 +63,7 @@ export const ExpertReviewPage: React.FC = () => {
             render: (_: unknown, record: CalculatedMetric) => (
                 <Space direction="vertical" size="small">
                     {record.adjustedLevel && <Tag color={getLevelColor(record.adjustedLevel)}>{record.adjustedLevel}</Tag>}
-                    <Text type="secondary" style={{ fontSize: 12 }}>{record.expertComment || 'Нет комментария'}</Text>
+                    <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{record.expertComment || 'Нет комментария'}</Text>
                 </Space>
             ),
         },

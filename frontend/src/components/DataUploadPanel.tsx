@@ -19,7 +19,7 @@ import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { useImportIncidentsMutation } from '../store/api/apiSlice';
 import { matchColumn, type UploadSpec } from '../constants/uploadSpecs';
-import { SPACE } from '../theme/premium';
+import { SPACE, TYPE } from '../theme/premium';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -192,7 +192,7 @@ const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
               description="В режиме LLM запись в БД выполнит бэкенд после загрузки; сейчас показан предпросмотр." />
           )}
           {preview.unmatchedHeaders.length > 0 && (
-            <Paragraph type="secondary" style={{ fontSize: 12 }}>
+            <Paragraph type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
               Не распознаны (будут проигнорированы): {preview.unmatchedHeaders.join(', ')}
             </Paragraph>
           )}
@@ -201,7 +201,7 @@ const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
               <Button type="primary" icon={<CloudUploadOutlined />} loading={importing} disabled={!isLive} onClick={doImport}>
                 Импортировать в БД ({preview.total})
               </Button>
-              {!isLive && <Text type="secondary" style={{ fontSize: 12 }}>Импорт в БД доступен в режиме LLM (реальная БД)</Text>}
+              {!isLive && <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Импорт в БД доступен в режиме LLM (реальная БД)</Text>}
             </Space>
           )}
           {spec.kind === 'assessments' && preview.missingRequired.length === 0 && (
@@ -214,7 +214,7 @@ const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
               message={`Импортировано: ${importResult.created}, пропущено: ${importResult.skipped}`}
               description={importResult.errors.length ? (
                 <ul style={{ margin: 0, paddingLeft: SPACE.airy }}>
-                  {importResult.errors.slice(0, 10).map((e, i) => <li key={i}><Text type="secondary" style={{ fontSize: 12 }}>{e}</Text></li>)}
+                  {importResult.errors.slice(0, 10).map((e, i) => <li key={i}><Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{e}</Text></li>)}
                 </ul>
               ) : undefined}
             />
@@ -226,12 +226,12 @@ const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
             pagination={preview.rows.length > 20 ? { pageSize: 20 } : false}
             scroll={{ x: true }}
             columns={preview.mappedCols.map((mc) => ({
-              title: <span>{mc.label}{mc.fileHeader !== mc.label ? <Text type="secondary" style={{ fontSize: 11 }}> ← {mc.fileHeader}</Text> : null}</span>,
+              title: <span>{mc.label}{mc.fileHeader !== mc.label ? <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize }}> ← {mc.fileHeader}</Text> : null}</span>,
               dataIndex: mc.key,
               ellipsis: true,
             }))}
           />
-          <Text type="secondary" style={{ fontSize: 12 }}>Показаны первые {Math.min(20, preview.rows.length)} из {preview.total} строк.</Text>
+          <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Показаны первые {Math.min(20, preview.rows.length)} из {preview.total} строк.</Text>
         </Card>
       )}
     </div>

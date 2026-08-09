@@ -251,7 +251,7 @@ const AiAssessmentPage: React.FC = () => {
       title: 'Субхарактеристика', dataIndex: 'subcharacteristic', ellipsis: true,
       render: (v: string, rec) => (
         <Space size={4}>
-          <Text style={{ fontSize: 12 }}>{v}</Text>
+          <Text style={{ fontSize: TYPE.caption.fontSize }}>{v}</Text>
           {rec.is_ai_specific && <Tag color="purple" style={{ fontSize: TYPE.micro.fontSize }}>ИИ</Tag>}
         </Space>
       ),
@@ -283,7 +283,7 @@ const AiAssessmentPage: React.FC = () => {
     },
     {
       title: 'Комментарий', dataIndex: 'expert_comment', ellipsis: true,
-      render: (v: string | null) => v ? <Text style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">—</Text>,
+      render: (v: string | null) => v ? <Text style={{ fontSize: TYPE.caption.fontSize }}>{v}</Text> : <Text type="secondary">—</Text>,
     },
   ];
 
@@ -368,7 +368,7 @@ const AiAssessmentPage: React.FC = () => {
                 <Space direction="vertical" size={SPACE.tight} style={{ width: '100%', marginTop: SPACE.snug }}>
                   {calc.characteristics.map((c) => (
                     <div key={c.title} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ width: 260, fontSize: 12 }} ellipsis>{c.title}</Text>
+                      <Text style={{ width: 260, fontSize: TYPE.caption.fontSize }} ellipsis>{c.title}</Text>
                       <Progress percent={Math.round(c.score * 100)} size="small" style={{ flex: 1, maxWidth: 320 }}
                         strokeColor={ragToken(c.score * 100).color} />
                     </div>
@@ -465,7 +465,7 @@ const AiAssessmentPage: React.FC = () => {
                   <InputNumber min={0} max={1} step={0.01} style={{ width: 140 }} placeholder="0.05" />
                 </Form.Item>
               </Space>
-              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, display: 'block', marginBottom: 8 }}>
                 X = 1 при совпадении с эталоном, убывает к границе допуска. Без эталона X = само значение метрики.
               </Text>
             </>
@@ -500,7 +500,7 @@ const AiAssessmentPage: React.FC = () => {
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           {allCharacteristics.map((c) => (
             <div key={c} style={{ display: 'flex', alignItems: 'center', gap: SPACE.cozy }}>
-              <Text style={{ flex: 1, fontSize: 13 }} ellipsis title={c}>{c}</Text>
+              <Text style={{ flex: 1, fontSize: TYPE.bodySm.fontSize }} ellipsis title={c}>{c}</Text>
               <InputNumber
                 min={0} max={1} step={0.05} style={{ width: 120 }}
                 value={charWeights[c] ?? undefined}

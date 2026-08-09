@@ -21,7 +21,7 @@ import { RootState } from '../../store';
 import {
   MANAGER_SCALE_SYSTEMS, DYNAMICS, QUARTERS, detectAnomalies, type DynSeries,
 } from '../../data/mockScaleData';
-import { BRAND, RAG, ragToken, solidTagStyle } from '../../theme/ragPalette';
+import { BRAND, RAG, ragToken, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE, SPACE } from '../../theme/premium';
 import Sparkline from '../../components/Sparkline';
 import CollapsibleCard from '../../components/CollapsibleCard';
@@ -30,9 +30,9 @@ import { reasonKey, selectReasons } from '../../store/slices/dynamicsSlice';
 
 const { Title, Text } = Typography;
 
-const LINE_COLORS = ['#6F9F86', '#C9A14A', '#C06B5A', '#6E89A6', '#9DBE86', '#B98AAD', '#5B6675', '#D49479'];
+const LINE_COLORS = [RAG.good.color, RAG.medium.color, RAG.bad.color, ACCENT.slate.color, '#9DBE86', '#B98AAD', BRAND.inkSoft, '#D49479'];
 const ALL_SYSTEMS = '__ALL__';
-const ANOMALY_COLOR = '#C06B5A';
+const ANOMALY_COLOR = RAG.bad.color;
 
 const lastValue = (series: number[]) => {
   for (let i = series.length - 1; i >= 0; i -= 1) if (series[i] >= 0) return series[i];
@@ -264,7 +264,7 @@ const QualityDynamicsPage: React.FC = () => {
       <Card
         title={
           <Space>
-            <span style={accentDot('#6E89A6')} />
+            <span style={accentDot(ACCENT.slate.color)} />
             <span style={{ color: BRAND.ink }}>Качество по характеристикам во времени</span>
           </Space>
         }

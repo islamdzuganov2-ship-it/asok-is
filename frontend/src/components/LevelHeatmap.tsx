@@ -7,7 +7,8 @@
  * «бублике»), поэтому «Низкий уровень» = красный и там, и там (согласованность).
  */
 import React from 'react';
-import { LEVEL_COLORS, LEVEL_TAG_COLORS } from '../theme/ragPalette';
+import { LEVEL_COLORS, LEVEL_TAG_COLORS, BRAND } from '../theme/ragPalette';
+import { TYPE } from '../theme/premium';
 
 export const BUCKET_LEVEL = [
   'Невозможно измерить',
@@ -57,7 +58,7 @@ const short = (c: string) => ABBR[c] ?? c;
 
 const thBase: React.CSSProperties = {
   position: 'sticky', top: 0, zIndex: 2, background: '#fff',
-  fontWeight: 500, fontSize: 11, color: '#5B6675',
+  fontWeight: 500, fontSize: TYPE.micro.fontSize, color: BRAND.inkSoft,
   padding: '8px', borderBottom: '1px solid #E8EAED', textAlign: 'center',
   width: 86, minWidth: 86, whiteSpace: 'nowrap', verticalAlign: 'middle',
 };
@@ -83,7 +84,7 @@ const LevelHeatmap: React.FC<Props> = ({
               >
                 <div>{short(c)}</div>
                 {sc !== undefined && (
-                  <div style={{ fontSize: 11, fontWeight: 500, color: scoreTextColor(sc) }}>
+                  <div style={{ fontSize: TYPE.micro.fontSize, fontWeight: 500, color: scoreTextColor(sc) }}>
                     {sc < 0 ? 'н/д' : `${sc}%`}
                   </div>
                 )}
@@ -97,7 +98,7 @@ const LevelHeatmap: React.FC<Props> = ({
           <tr key={sys}>
             <td style={{
               position: 'sticky', left: 0, zIndex: 1, background: '#fff',
-              fontSize: 12, color: '#2B3A4B', padding: '4px 12px',
+              fontSize: TYPE.caption.fontSize, color: BRAND.ink, padding: '4px 12px',
               borderBottom: '1px solid #F0F1F3', whiteSpace: 'nowrap',
             }} title={sys}>{sys}</td>
             {xLabels.map((c, x) => {
@@ -116,7 +117,7 @@ const LevelHeatmap: React.FC<Props> = ({
                       height: 26, borderRadius: 3,
                       background: level ? LEVEL_COLORS[level] : '#F1F2F3',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 11, fontWeight: 500, color: '#2B3A4B',
+                      fontSize: TYPE.micro.fontSize, fontWeight: 500, color: BRAND.ink,
                       cursor: onCellClick ? 'pointer' : 'default',
                     }}
                   >

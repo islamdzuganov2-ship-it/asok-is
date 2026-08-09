@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { Button, Space, Modal, Input, message, Tag } from 'antd';
 import { LikeOutlined, DislikeOutlined, EditOutlined } from '@ant-design/icons';
+import { TYPE } from '../theme/premium';
 
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
@@ -57,7 +58,7 @@ const ConclusionFeedback: React.FC<Props> = ({ fingerprint, currentText }) => {
   return (
     <div style={{ marginTop: 8 }}>
       <Space size={6} wrap>
-        <span style={{ fontSize: 12, color: '#888' }}>Оценка заключения (обучает «мозг»):</span>
+        <span style={{ fontSize: TYPE.caption.fontSize, color: '#888' }}>Оценка заключения (обучает «мозг»):</span>
         <Button size="small" icon={<LikeOutlined />} loading={busy} onClick={() => send('accept')}>Принять</Button>
         <Button size="small" icon={<EditOutlined />} onClick={() => { setText(currentText || ''); setEditing(true); }}>Поправить</Button>
         <Button size="small" danger icon={<DislikeOutlined />} loading={busy} onClick={() => send('reject')}>Отклонить</Button>

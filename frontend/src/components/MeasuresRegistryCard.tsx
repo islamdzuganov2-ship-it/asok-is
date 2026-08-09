@@ -13,8 +13,8 @@ import React, { useMemo, useState } from 'react';
 import { Card, List, Input, Select, Space, Tag, Button, Typography, Empty, Row, Col } from 'antd';
 import { AuditOutlined, RightOutlined, ClockCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import type { Proposal, ProposalStatus } from '../store/slices/governanceSlice';
-import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
-import { premiumCard, accentDot } from '../theme/premium';
+import { BRAND, RAG, ragToken, solidTagStyle, ACCENT } from '../theme/ragPalette';
+import { premiumCard, accentDot, TYPE } from '../theme/premium';
 
 const STATUS_TAG: Record<ProposalStatus, { color: string; label: string }> = {
   PENDING_APPROVAL: { color: 'gold', label: 'Ожидает решения' },
@@ -94,10 +94,10 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
           styles={{ body: { padding: '8px 12px' } }}
         >
           <Space>
-            <span style={{ color, fontSize: 18 }}>{icon}</span>
+            <span style={{ color, fontSize: TYPE.metricSm.fontSize }}>{icon}</span>
             <div>
-              <Text strong style={{ fontSize: 18, color }}>{n}</Text>
-              <div><Text type="secondary" style={{ fontSize: 12 }}>{label}</Text></div>
+              <Text strong style={{ fontSize: TYPE.metricSm.fontSize, color }}>{n}</Text>
+              <div><Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{label}</Text></div>
             </div>
           </Space>
         </Card>
@@ -109,8 +109,8 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
       {...premiumCard('ink', { marginTop: 16 })}
       title={
         <span style={{ color: BRAND.ink }}>
-          <span style={accentDot('#6E89A6')} /><AuditOutlined /> Реестр мер качества{' '}
-          <Text type="secondary" style={{ fontSize: 12 }}>(всего: {proposals.length})</Text>
+          <span style={accentDot(ACCENT.slate.color)} /><AuditOutlined /> Реестр мер качества{' '}
+          <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>(всего: {proposals.length})</Text>
         </span>
       }
     >
@@ -169,7 +169,7 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
                       </Space>
                     }
                     description={
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
                         {p.systemName} · {p.characteristic}{p.dueDate ? ` · срок: ${p.dueDate}` : ''}
                         {p.decidedBy ? ` · решение: ${p.decidedBy}` : ''}
                       </Text>

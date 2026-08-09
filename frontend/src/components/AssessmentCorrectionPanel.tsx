@@ -272,7 +272,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
     {
       title: 'Уровень', dataIndex: 'qualityLevel', width: 170,
       render: (level: string | null | undefined) => (level
-        ? <Tag color={LEVEL_COLOR[level] ?? 'default'} style={{ fontSize: 11 }}>{level}</Tag>
+        ? <Tag color={LEVEL_COLOR[level] ?? 'default'} style={{ fontSize: TYPE.micro.fontSize }}>{level}</Tag>
         : <Text type="secondary">—</Text>),
     },
     {

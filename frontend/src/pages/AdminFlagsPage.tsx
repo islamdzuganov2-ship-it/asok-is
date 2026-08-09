@@ -4,8 +4,8 @@ import { LineChartOutlined, ScheduleOutlined, DashboardOutlined, ThunderboltOutl
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { setExecFeature, type ExecFeatureKey } from '../store/slices/uiSlice';
-import { accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE } from '../theme/premium';
-import { RAG } from '../theme/ragPalette';
+import { accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
+import { RAG, ACCENT, BRAND } from '../theme/ragPalette';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -13,7 +13,7 @@ const { Title, Text, Paragraph } = Typography;
 const DynamicsPreview: React.FC<{ on: boolean }> = ({ on }) => (
   <svg width="100%" height="60" viewBox="0 0 160 60" preserveAspectRatio="none">
     {[15, 30, 45].map((y) => <line key={y} x1="0" y1={y} x2="160" y2={y} stroke="#EEF0F2" strokeWidth="1" />)}
-    <polyline points="0,44 32,36 64,40 96,22 128,26 160,12" fill="none" stroke={on ? '#6E89A6' : '#C2C8D0'} strokeWidth="2.5" />
+    <polyline points="0,44 32,36 64,40 96,22 128,26 160,12" fill="none" stroke={on ? ACCENT.slate.color : '#C2C8D0'} strokeWidth="2.5" />
     {[[0, 44], [32, 36], [64, 40], [96, 22], [128, 26], [160, 12]].map(([x, y], i) => (
       <circle key={i} cx={x} cy={y} r="3" fill={on ? '#3A4F6B' : '#C2C8D0'} />
     ))}
@@ -24,19 +24,19 @@ const DynamicsPreview: React.FC<{ on: boolean }> = ({ on }) => (
 const TaskPlanPreview: React.FC<{ on: boolean }> = ({ on }) => (
   <svg width="100%" height="60" viewBox="0 0 160 60" preserveAspectRatio="none">
     <line x1="96" y1="0" x2="96" y2="60" stroke="#F0C5BC" strokeWidth="2" />
-    <rect x="6" y="8" width="70" height="9" rx="4" fill={on ? '#6E89A6' : '#D5DAE0'} />
-    <rect x="30" y="26" width="96" height="9" rx="4" fill={on ? '#C9A14A' : '#D5DAE0'} />
-    <rect x="52" y="44" width="60" height="9" rx="4" fill={on ? '#C06B5A' : '#D5DAE0'} />
+    <rect x="6" y="8" width="70" height="9" rx="4" fill={on ? ACCENT.slate.color : BRAND.borderSoft} />
+    <rect x="30" y="26" width="96" height="9" rx="4" fill={on ? RAG.medium.color : BRAND.borderSoft} />
+    <rect x="52" y="44" width="60" height="9" rx="4" fill={on ? RAG.bad.color : BRAND.borderSoft} />
   </svg>
 );
 
 // Мини-превью «Аналитический дашборд» — бублик распределения + столбцы.
 const AnalyticsPreview: React.FC<{ on: boolean }> = ({ on }) => (
   <svg width="100%" height="60" viewBox="0 0 160 60" preserveAspectRatio="none">
-    <circle cx="28" cy="30" r="16" fill="none" stroke={on ? '#6E89A6' : '#D5DAE0'} strokeWidth="8" strokeDasharray="64 36" transform="rotate(-90 28 30)" />
+    <circle cx="28" cy="30" r="16" fill="none" stroke={on ? ACCENT.slate.color : BRAND.borderSoft} strokeWidth="8" strokeDasharray="64 36" transform="rotate(-90 28 30)" />
     {[[72, 34], [96, 22], [120, 30], [144, 16]].map(([x, h], i) => (
       <rect key={i} x={x} y={52 - h} width="14" height={h} rx="3"
-        fill={on ? ['#6E89A6', '#6F9F86', '#C9A14A', '#C06B5A'][i] : '#D5DAE0'} />
+        fill={on ? [ACCENT.slate.color, RAG.good.color, RAG.medium.color, RAG.bad.color][i] : BRAND.borderSoft} />
     ))}
   </svg>
 );
@@ -44,11 +44,11 @@ const AnalyticsPreview: React.FC<{ on: boolean }> = ({ on }) => (
 // Мини-превью «Аналитика сбоев» — донат первопричин + столбцы MTTR.
 const IncidentsPreview: React.FC<{ on: boolean }> = ({ on }) => (
   <svg width="100%" height="60" viewBox="0 0 160 60" preserveAspectRatio="none">
-    <circle cx="30" cy="30" r="16" fill="none" stroke={on ? '#7E57C2' : '#D5DAE0'} strokeWidth="8" strokeDasharray="30 70" transform="rotate(-90 30 30)" />
-    <circle cx="30" cy="30" r="16" fill="none" stroke={on ? '#6E89A6' : '#E3E6EA'} strokeWidth="8" strokeDasharray="18 82" strokeDashoffset="-30" transform="rotate(-90 30 30)" />
+    <circle cx="30" cy="30" r="16" fill="none" stroke={on ? ACCENT.violet.color : BRAND.borderSoft} strokeWidth="8" strokeDasharray="30 70" transform="rotate(-90 30 30)" />
+    <circle cx="30" cy="30" r="16" fill="none" stroke={on ? ACCENT.slate.color : '#E3E6EA'} strokeWidth="8" strokeDasharray="18 82" strokeDashoffset="-30" transform="rotate(-90 30 30)" />
     {[[74, 28], [98, 18], [122, 34], [146, 22]].map(([x, h], i) => (
       <rect key={i} x={x} y={52 - h} width="14" height={h} rx="3"
-        fill={on ? ['#7E57C2', '#C9A14A', '#6F9F86', '#C06B5A'][i] : '#D5DAE0'} />
+        fill={on ? [ACCENT.violet.color, RAG.medium.color, RAG.good.color, RAG.bad.color][i] : BRAND.borderSoft} />
     ))}
   </svg>
 );
@@ -111,16 +111,16 @@ const AdminFlagsPage: React.FC = () => {
                 styles={{ body: { padding: 0 } }}
                 style={{ borderColor: on ? '#8FB9A2' : PREMIUM.border, overflow: 'hidden', borderRadius: PREMIUM.radius, boxShadow: PREMIUM.shadow.card }}
               >
-                <div style={{ padding: 16, background: on ? '#F5FAF7' : '#FAFBFC', borderBottom: '1px solid #EEF0F2' }}>
+                <div style={{ padding: 16, background: on ? '#F5FAF7' : BRAND.surfaceSoft, borderBottom: '1px solid #EEF0F2' }}>
                   <Preview on={on} />
                 </div>
                 <div style={{ padding: 16 }}>
                   <Space align="start" style={{ justifyContent: 'space-between', width: '100%' }}>
                     <Space>
                       <span style={{
-                        width: 40, height: 40, borderRadius: 10, fontSize: 20, display: 'inline-flex',
+                        width: 40, height: 40, borderRadius: 10, fontSize: TYPE.pageTitle.fontSize, display: 'inline-flex',
                         alignItems: 'center', justifyContent: 'center',
-                        background: on ? '#E5F2EA' : '#F0F1F3', color: on ? RAG.good.strong : RAG.muted.strong,
+                        background: on ? '#E5F2EA' : BRAND.dividerSoft, color: on ? RAG.good.strong : RAG.muted.strong,
                       }}>{f.icon}</span>
                       <div>
                         <Text strong>{f.title}</Text><br />
@@ -131,7 +131,7 @@ const AdminFlagsPage: React.FC = () => {
                     </Space>
                     <Switch checked={on} onChange={(v) => dispatch(setExecFeature({ key: f.key, value: v }))} />
                   </Space>
-                  <Paragraph type="secondary" style={{ fontSize: 13, marginTop: SPACE.cozy, marginBottom: 0 }}>{f.desc}</Paragraph>
+                  <Paragraph type="secondary" style={{ fontSize: TYPE.bodySm.fontSize, marginTop: SPACE.cozy, marginBottom: 0 }}>{f.desc}</Paragraph>
                 </div>
               </Card>
             </Col>

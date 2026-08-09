@@ -16,7 +16,7 @@ import { RootState } from '../store';
 import { selectVisibleProposals } from '../store/slices/governanceSlice';
 import { ANALYTICS_SCALE } from '../data/mockScaleData';
 import LevelHeatmap, { LEVEL_COLORS, LEVEL_TAG_COLORS } from '../components/LevelHeatmap';
-import { critTagStyle, levelLabel, solidTagStyle, ragToken, RAG, BRAND } from '../theme/ragPalette';
+import { critTagStyle, levelLabel, solidTagStyle, ragToken, RAG, BRAND, ACCENT } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
 import { numericColumn } from '../theme/table';
 import KpiCard from '../components/KpiCard';
@@ -127,30 +127,22 @@ const DashboardPage: React.FC = () => {
       .filter(([, v]) => v > 0)
       .map(([name, value]) => ({ name, value, itemStyle: { color: LEVEL_COLORS[name] ?? '#d9d9d9' } }));
     donutChart.current.setOption({
-      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      // confine: true — держит всплывашку ВНУТРИ контейнера графика. Без него ECharts ставит
+      // её у курсора, и у левого края она вылезала за карточку и обрезалась
+      // («й уровень: 253» вместо «Средний уровень: 253»).
+      tooltip: { trigger: 'item', confine: true, formatter: '{b}: {c} ({d}%)' },
       // Встроенную легенду отключаем — она перекрывала бублик. Легенда — HTML-строкой ниже.
       legend: { show: false },
       series: [{
         type: 'pie', radius: ['45%', '72%'], center: ['50%', '50%'], data: seriesData,
+        // Подписи на самом графике ОТКЛЮЧЕНЫ полностью — и обычные, и при наведении.
+        // Контейнер бублика 200px: любая подпись сектора ECharts прижимал к краю и резал
+        // многоточием («Вы…» вместо «Выше среднего»). Держать её негде и незачем — то же
+        // самое уже написано дважды: во всплывашке и в легенде-списке справа.
+        // При наведении остаётся только подсветка сектора.
         label: { show: false },
         labelLine: { show: false },
-        // При наведении подпись показываем В ЦЕНТРЕ бублика, а не у сектора: внешняя подпись
-        // выносилась за пределы контейнера и обрезалась («Вы…» вместо «Выше среднего»),
-        // а на узкой колонке ещё и наползала на соседние элементы.
-        emphasis: {
-          scale: true,
-          scaleSize: 4,
-          label: {
-            show: true,
-            position: 'center',
-            formatter: (p: any) => `{name|${p.name}}\n{val|${p.value}}  {pct|${p.percent}%}`,
-            rich: {
-              name: { fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft, lineHeight: 18 },
-              val: { fontSize: TYPE.metricMd.fontSize, fontWeight: TYPE.metricMd.fontWeight, color: BRAND.ink },
-              pct: { fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft },
-            },
-          },
-        },
+        emphasis: { scale: true, scaleSize: 4, label: { show: false } },
       }],
     });
     donutChart.current.resize();
@@ -333,7 +325,7 @@ const DashboardPage: React.FC = () => {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={10}>
           <Card
-            title={<span><span style={accentDot('#6E89A6')} />Распределение по уровням качества</span>}
+            title={<span><span style={accentDot(ACCENT.slate.color)} />Распределение по уровням качества</span>}
             {...premiumCard('slate')}
             style={{ ...premiumCard('slate').style, height: 380 }}
           >
@@ -345,10 +337,10 @@ const DashboardPage: React.FC = () => {
                     <div ref={donutRef} style={{ width: 200, height: 200, flex: '0 0 200px' }} />
                     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {levelDist.map((r) => (
-                        <span key={r.level} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#5B6675' }}>
+                        <span key={r.level} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft }}>
                           <span style={{ width: 10, height: 10, borderRadius: 3, background: LEVEL_COLORS[r.level], flex: '0 0 auto' }} />
                           <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.level}</span>
-                          <b style={{ color: '#2B3A4B' }}>{r.count}</b>
+                          <b style={{ color: BRAND.ink }}>{r.count}</b>
                           <span style={{ color: BRAND.inkSoft, width: 38, textAlign: 'right' }}>{r.pct}%</span>
                         </span>
                       ))}
@@ -381,7 +373,7 @@ const DashboardPage: React.FC = () => {
 
         <Col xs={24}>
           <Card
-            title={<span><span style={accentDot('#6E89A6')} />Тепловая карта: характеристики качества ИС</span>}
+            title={<span><span style={accentDot(ACCENT.slate.color)} />Тепловая карта: характеристики качества ИС</span>}
             {...premiumCard('slate')}
             styles={{ header: premiumCard('slate').styles.header, body: { padding: SPACE.airy, paddingTop: SPACE.cozy } }}
           >

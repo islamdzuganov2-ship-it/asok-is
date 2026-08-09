@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Badge, Button, Dropdown, Layout, Menu, Switch, Tooltip, Typography } from 'antd';
+import { Badge, Button, Dropdown, Layout, Menu, Spin, Switch, Tooltip, Typography } from 'antd';
 import {
     DashboardOutlined,
     FormOutlined,
@@ -16,15 +16,19 @@ import {
     HomeOutlined,
     ThunderboltOutlined,
     AlertOutlined,
+    TeamOutlined,
+    SafetyOutlined,
+    SafetyCertificateOutlined,
     // ExperimentOutlined — под развитие: иконка пункта «Оценка СИИ» (пока не выведен в меню).
 } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { RootState } from '../store';
 import { useAppDispatch } from '../store/hooks';
-import { logout } from '../store/slices/authSlice';
+import { logout, setPermissions } from '../store/slices/authSlice';
 import { setDataMode } from '../store/slices/uiSlice';
 import { syncProposals } from '../store/slices/governanceSlice';
+import { useGetMyPermissionsQuery } from '../store/api/apiSlice';
 import { roleLabel } from '../constants/roles';
 import NotificationBell from './NotificationBell';
 import { PREMIUM, GOLD, TYPE, SPACE } from '../theme/premium';
@@ -51,10 +55,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const dispatch = useAppDispatch();
-    const { role, fullName } = useSelector((state: RootState) => state.auth);
+    const { role, fullName, permissions, permissionsLoaded } = useSelector((state: RootState) => state.auth);
     const dataMode = useSelector((state: RootState) => state.ui.dataMode);
-    const { execAnalytics, execDynamics, execTaskPlan, execIncidents } = useSelector((state: RootState) => state.ui);
     const userRole = role || 'GUEST';
+
+    // Права пользователя (BL-008): грузим с сервера и кладём в стор (обновляются и при возврате
+    // во вкладку — refetchOnFocus в apiSlice), чтобы правки супер-админа применялись без F5.
+    const { data: myPerms } = useGetMyPermissionsQuery(undefined, { skip: !role });
+    useEffect(() => { if (myPerms) dispatch(setPermissions(myPerms.permissions)); }, [myPerms, dispatch]);
 
     // Синхронизация мер governance из БД при live-режиме (T-10): петля работает между ролями и
     // устройствами (меры/решения/эскалации — на бэкенде). В mock — локальный демо-набор.
@@ -88,59 +96,58 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ? 'Проверка LLM…'
         : llmReady ? `LLM загружена: ${modelDesc || 'модель'}` : 'LLM не загружена — будет честный fallback';
 
-    // Ролевые меню. C-level/ADMIN — управленческий слой; менеджер/аналитик — операционный.
-    const isExec = ['CTO', 'CEO', 'CIO', 'EXECUTIVE', 'ADMIN'].includes(userRole);
-    const isManager = userRole === 'QUALITY_MANAGER';
+    // До загрузки прав пользователя — экран-заглушка (гейтинг маршрутов зависит от permissions).
+    if (!permissionsLoaded) {
+        return (
+            <div style={{
+                display: 'flex', flexDirection: 'column', gap: SPACE.cozy,
+                justifyContent: 'center', alignItems: 'center', height: '100vh',
+                background: PREMIUM.gradient.canvas,
+            }}>
+                <Spin size="large" />
+                <span style={{ ...TYPE.caption, color: BRAND.inkSoft }}>Загрузка прав доступа…</span>
+            </div>
+        );
+    }
 
-    // Топ-менеджер: всегда «Управленческий дашборд» + «Настройка»; остальные борды — по галочке в настройках.
-    const execMenu = [
-        { key: '/dashboard/executive', icon: <FundOutlined />, label: 'Управленческий дашборд' },
-        ...(execAnalytics ? [{ key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' }] : []),
-        ...(execDynamics ? [{ key: '/dashboard/manager/dynamics', icon: <LineChartOutlined />, label: 'Динамика качества' }] : []),
-        ...(execTaskPlan ? [{ key: '/dashboard/taskplan', icon: <ScheduleOutlined />, label: 'План задач' }] : []),
-        ...(execIncidents ? [
-            { key: '/dashboard/incidents', icon: <ThunderboltOutlined />, label: 'Аналитика сбоев' },
-            { key: '/dashboard/risk-radar', icon: <AlertOutlined />, label: 'Риск-радар' },
-        ] : []),
-        { key: '/risk-economics', icon: <AuditOutlined />, label: 'Риск-экономика' },
-        { key: '/admin/flags', icon: <SettingOutlined />, label: 'Настройка' },
-    ];
-    // ПОД РАЗВИТИЕ: раздел «Оценка СИИ» (ГОСТ Р 59898-2021) и история ИИ-оценок пока НЕ выведены
-    // в интерфейс (страница и маршрут /ai-assessments сохранены в коде — см. App.tsx). Когда
-    // раздел понадобится, добавить сюда пункт меню:
-    //   { key: '/ai-assessments', icon: <ExperimentOutlined />, label: 'Оценка СИИ' }
-    // Логичная группировка меню МК (ТЗ v15, T-25): Основное · Сбор и анализ данных ·
-    // Формирование тех. долга. Заголовки групп скрываются при сворачивании сайдбара.
-    const managerMenu = [
-        {
-            type: 'group' as const, label: collapsed ? undefined : groupLabel('Основное'),
-            children: [{ key: '/dashboard/manager', icon: <HomeOutlined />, label: 'Основное' }],
-        },
-        {
-            type: 'group' as const, label: collapsed ? undefined : groupLabel('Сбор и анализ данных'),
-            children: [
-                { key: '/assessments/new', icon: <FormOutlined />, label: 'Внесение данных' },
-                { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
-                { key: '/dashboard/manager/dynamics', icon: <LineChartOutlined />, label: 'Динамика качества' },
-                { key: '/dashboard/incidents', icon: <ThunderboltOutlined />, label: 'Аналитика сбоев' },
-                { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
-                { key: '/risk-economics', icon: <AuditOutlined />, label: 'Риск-экономика' },
-                { key: '/dashboard/risk-radar', icon: <AlertOutlined />, label: 'Риск-радар' },
-            ],
-        },
-        {
-            type: 'group' as const, label: collapsed ? undefined : groupLabel('Формирование тех. долга'),
-            children: [{ key: '/dashboard/taskplan', icon: <ScheduleOutlined />, label: 'План задач' }],
-        },
-    ];
-    const analystMenu = [
-        { key: '/dashboard/analytics', icon: <DashboardOutlined />, label: 'Аналитический дашборд' },
-        { key: '/assessments/new', icon: <FormOutlined />, label: 'Внесение данных' },
-        { key: '/risks', icon: <WarningOutlined />, label: 'База рисков' },
-        { key: '/risk-economics', icon: <AuditOutlined />, label: 'Риск-экономика' },
-    ];
+    // Меню строится ПО ПРАВАМ (BL-008): пункт виден, если у роли есть указанное право.
+    // Раньше меню ветвилось по роли (isExec/isManager) — теперь состав задаёт матрица прав,
+    // которую супер-админ настраивает в разделе «Права». Оценка СИИ (view.ai_assessments) в меню
+    // намеренно не выводится (раздел под развитие), но маршрут доступен по праву.
+    const has = (perm: string) => permissions.includes(perm);
+    const mi = (key: string, icon: React.ReactNode, label: string) => ({ key, icon, label });
+    const group = (label: string, children: Array<{ key: string; icon: React.ReactNode; label: string }>) =>
+        children.length ? [{ type: 'group' as const, label: collapsed ? undefined : groupLabel(label), children }] : [];
 
-    const menuItems = isExec ? execMenu : isManager ? managerMenu : analystMenu;
+    const dashboards = [
+        ...(has('view.dashboard.cto') ? [mi('/dashboard/cto', <FundOutlined />, 'Дашборд CTO')] : []),
+        ...(has('view.dashboard.ceo') ? [mi('/dashboard/ceo', <FundOutlined />, 'Дашборд CEO')] : []),
+        ...(has('view.dashboard.manager') ? [mi('/dashboard/manager', <HomeOutlined />, 'Основное')] : []),
+        ...(has('view.dashboard.risk') ? [mi('/dashboard/risk', <SafetyCertificateOutlined />, 'Основное — риск')] : []),
+        ...(has('view.dashboard.analytics') ? [mi('/dashboard/analytics', <DashboardOutlined />, 'Аналитический дашборд')] : []),
+        ...(has('view.dashboard.dynamics') ? [mi('/dashboard/manager/dynamics', <LineChartOutlined />, 'Динамика качества')] : []),
+        ...(has('view.dashboard.incidents') ? [mi('/dashboard/incidents', <ThunderboltOutlined />, 'Аналитика сбоев')] : []),
+        ...(has('view.dashboard.risk_radar') ? [mi('/dashboard/risk-radar', <AlertOutlined />, 'Риск-радар')] : []),
+        ...(has('view.dashboard.taskplan') ? [mi('/dashboard/taskplan', <ScheduleOutlined />, 'План задач')] : []),
+    ];
+    const sections = [
+        ...(has('view.assessments') ? [mi('/assessments/new', <FormOutlined />, 'Внесение данных')] : []),
+        ...(has('view.risks') ? [mi('/risks', <WarningOutlined />, 'База рисков')] : []),
+        ...(has('view.risk_economics') ? [mi('/risk-economics', <AuditOutlined />, 'Риск-экономика')] : []),
+        ...(has('view.reports') ? [mi('/reports', <FileExcelOutlined />, 'Отчёты')] : []),
+    ];
+    const adminItems = [
+        ...(has('view.admin.users') ? [mi('/admin/users', <TeamOutlined />, 'Пользователи')] : []),
+        ...(has('view.admin.permissions') ? [mi('/admin/permissions', <SafetyOutlined />, 'Права')] : []),
+    ];
+    const settingsItems = has('view.settings') ? [mi('/admin/flags', <SettingOutlined />, 'Настройка')] : [];
+
+    const menuItems = [
+        ...group('Дашборды', dashboards),
+        ...group('Сбор и анализ данных', sections),
+        ...group('Администрирование', adminItems),
+        ...settingsItems,
+    ];
 
     const handleLogout = () => {
         dispatch(logout());
@@ -166,7 +173,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 {/* Премиальный логотип: графит-плашка с золотым акцентом */}
                 <div style={{ height: 56, margin: `${SPACE.base}px ${SPACE.base}px ${SPACE.cozy}px`, display: 'flex', alignItems: 'center', gap: SPACE.cozy, justifyContent: collapsed ? 'center' : 'flex-start' }}>
                     <div style={{ width: 32, height: 32, borderRadius: 9, background: PREMIUM.gradient.ink, border: `1px solid ${GOLD.line}`, boxShadow: `0 0 0 3px ${GOLD.glow}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
-                        <span style={{ color: GOLD.soft, fontWeight: 800, fontSize: 14 }}>А</span>
+                        <span style={{ color: GOLD.soft, fontWeight: 800, fontSize: TYPE.body.fontSize }}>А</span>
                     </div>
                     {!collapsed && (
                         <div style={{ lineHeight: 1.15 }}>

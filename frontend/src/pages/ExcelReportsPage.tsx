@@ -16,7 +16,7 @@ import {
     useSaveAssessmentMetricsMutation,
 } from '../store/api/apiSlice';
 import { RootState } from '../store';
-import { accentDot, pageTitle, GOLD, SPACE, premiumCard } from '../theme/premium';
+import { accentDot, pageTitle, GOLD, SPACE, premiumCard, TYPE } from '../theme/premium';
 import { BRAND, RAG } from '../theme/ragPalette';
 import { numericColumn } from '../theme/table';
 import {
@@ -287,7 +287,7 @@ export const ExcelReportsPage: React.FC = () => {
                 const st = measureStatusByChar.get(normChar(row.characteristic || ''));
                 return st
                     ? <Tag color={PROPOSAL_STATUS_TAG[st].color}>{PROPOSAL_STATUS_TAG[st].label}</Tag>
-                    : <Text type="secondary" style={{ fontSize: 12 }}>нет меры</Text>;
+                    : <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>нет меры</Text>;
             },
         },
     ];
@@ -321,10 +321,10 @@ export const ExcelReportsPage: React.FC = () => {
                             </Button>
                         </Space>
                     ) : (
-                        <Text type="secondary" style={{ fontSize: 12 }}>Ожидает решения топ-менеджмента</Text>
+                        <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Ожидает решения топ-менеджмента</Text>
                     )
                 ) : (
-                    <Text type="secondary" style={{ fontSize: 12 }}>{rec.decidedBy || '—'}</Text>
+                    <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{rec.decidedBy || '—'}</Text>
                 ),
         },
     ];
@@ -484,7 +484,7 @@ export const ExcelReportsPage: React.FC = () => {
                                             />
                                             {(dynamics?.measures?.length ?? 0) > 0 && (
                                                 <div>
-                                                    <Text strong style={{ fontSize: 13 }}>
+                                                    <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>
                                                         Меры по характеристикам (T-15: сопоставьте дату меры с трендом характеристики после неё — стало ли лучше):
                                                     </Text>
                                                     <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -492,7 +492,7 @@ export const ExcelReportsPage: React.FC = () => {
                                                             <Tag
                                                                 key={i}
                                                                 color={PROPOSAL_STATUS_TAG[m.status as ProposalStatus]?.color || 'default'}
-                                                                style={{ padding: `${SPACE.tight}px ${SPACE.cozy}px`, fontSize: 12 }}
+                                                                style={{ padding: `${SPACE.tight}px ${SPACE.cozy}px`, fontSize: TYPE.caption.fontSize }}
                                                             >
                                                                 {m.characteristic} · {m.title} · {m.createdAt.slice(0, 10)} · {PROPOSAL_STATUS_TAG[m.status as ProposalStatus]?.label || m.status}
                                                             </Tag>

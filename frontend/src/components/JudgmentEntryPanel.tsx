@@ -27,7 +27,7 @@ import { DEMO_PENDING_JUDGMENTS } from '../data/mockAssessments';
 import { CHARACTERISTICS } from '../constants/qualityModel';
 import { groupJudgmentsByPeriod, pendingJudgmentKey, withoutJudged } from '../constants/assessmentWorkflow';
 import { ragToken } from '../theme/ragPalette';
-import { SPACE } from '../theme/premium';
+import { SPACE, TYPE } from '../theme/premium';
 import { numericColumn } from '../theme/table';
 
 const { Title, Text } = Typography;
@@ -176,7 +176,7 @@ const JudgmentEntryPanel: React.FC = () => {
           : 'Суждения внесены по всем метрикам в выборке'}
         description={(
           <Space direction="vertical" size={2}>
-            <Text style={{ fontSize: 12 }}>
+            <Text style={{ fontSize: TYPE.caption.fontSize }}>
               Суждение обязательно по каждой подхарактеристике оценки. Внесённая запись сразу уходит
               из списка — связка «оценка ↔ суждение» сохраняется в периоде оценки.
             </Text>
@@ -186,7 +186,7 @@ const JudgmentEntryPanel: React.FC = () => {
               </Checkbox>
             )}
             {!canEdit && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
                 Внесение суждений доступно менеджеру по качеству и администратору — поля только для чтения.
               </Text>
             )}

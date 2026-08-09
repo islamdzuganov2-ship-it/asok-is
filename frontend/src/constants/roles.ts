@@ -4,13 +4,16 @@
  * Легаси-коды верхнего уровня (CTO/CEO/CIO/EXECUTIVE) приравнены к «Топ-менеджмент».
  */
 export const ROLE_LABELS: Record<string, string> = {
-  ADMIN: 'Топ-менеджмент',
-  CTO: 'Топ-менеджмент',
-  CEO: 'Топ-менеджмент',
+  SUPER_ADMIN: 'Супер-администратор',
+  ADMIN: 'Администратор',
+  CTO: 'CTO',
+  CEO: 'CEO',
   CIO: 'Топ-менеджмент',
   EXECUTIVE: 'Топ-менеджмент',
   QUALITY_MANAGER: 'Менеджер по качеству',
   TEST_ANALYST: 'Аналитик',
+  RISK_MANAGER: 'Владелец риска',
+  AUDITOR: 'Аудитор',
   GUEST: 'Гость',
 };
 

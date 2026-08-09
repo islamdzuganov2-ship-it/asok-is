@@ -19,6 +19,8 @@ import { RootState } from '../store';
 import { selectVisibleProposals } from '../store/slices/governanceSlice';
 import { reasonKey, selectReasons } from '../store/slices/dynamicsSlice';
 import { DYNAMICS, QUARTERS, detectAnomalies } from '../data/mockScaleData';
+import { TYPE } from '../theme/premium';
+import { ACCENT, RAG } from '../theme/ragPalette';
 
 const { Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -70,14 +72,14 @@ const NotificationBell: React.FC = () => {
     if (isExec) {
       proposals.filter((p) => p.status === 'PENDING_APPROVAL').forEach((p) => {
         out.push({
-          key: `pend-${p.id}`, icon: <AuditOutlined />, color: '#C9A14A',
+          key: `pend-${p.id}`, icon: <AuditOutlined />, color: RAG.medium.color,
           text: `Необработанная заявка: «${p.riskTitle || p.metricName}» (${p.systemName})`,
           to: '/dashboard/executive',
         });
       });
       proposals.filter((p) => p.escalated && !p.escalationDecision).forEach((p) => {
         out.push({
-          key: `escpend-${p.id}`, icon: <RiseOutlined />, color: '#7E57C2',
+          key: `escpend-${p.id}`, icon: <RiseOutlined />, color: ACCENT.violet.color,
           text: `Эскалация ожидает решения: «${p.riskTitle || p.metricName}» (${p.systemName})`,
           to: '/dashboard/taskplan',
         });
@@ -107,14 +109,14 @@ const NotificationBell: React.FC = () => {
           .sort((a, b) => b.missing - a.missing);
         bySystem.slice(0, 6).forEach((x) => {
           out.push({
-            key: `anom-${x.name}`, icon: <WarningOutlined />, color: '#C06B5A',
+            key: `anom-${x.name}`, icon: <WarningOutlined />, color: RAG.bad.color,
             text: `Заполните причину аномального изменения качества: «${x.name}» — точек без причины: ${x.missing} (напр. ${x.sample})`,
             to: '/dashboard/manager/dynamics',
           });
         });
         if (bySystem.length > 6) {
           out.push({
-            key: 'anom-more', icon: <WarningOutlined />, color: '#C06B5A',
+            key: 'anom-more', icon: <WarningOutlined />, color: RAG.bad.color,
             text: `…и ещё систем с аномалиями без причины: ${bySystem.length - 6}. Откройте «Динамика качества».`,
             to: '/dashboard/manager/dynamics',
           });
@@ -123,7 +125,7 @@ const NotificationBell: React.FC = () => {
       // Незаполненные профессиональные суждения — на каких системах пусто.
       judg.forEach((j) => {
         out.push({
-          key: `judg-${j.period_id}`, icon: <FormOutlined />, color: '#C06B5A',
+          key: `judg-${j.period_id}`, icon: <FormOutlined />, color: RAG.bad.color,
           text: `Не заполнены проф. суждения: ${j.system_name} · ${j.period} (${j.filled}/${j.total})`,
           to: '/assessments/new',
         });
@@ -134,16 +136,16 @@ const NotificationBell: React.FC = () => {
         const overdue = due ? due.getTime() < now : false;
         const soon = due ? due.getTime() - now < 7 * DAY && due.getTime() >= now : false;
         if (p.escalated && p.escalationDecision) {
-          out.push({ key: `escd-${p.id}`, icon: <RiseOutlined />, color: '#7E57C2',
+          out.push({ key: `escd-${p.id}`, icon: <RiseOutlined />, color: ACCENT.violet.color,
             text: `Решение по эскалации получено — отработать: «${p.riskTitle || p.metricName}» (${p.systemName})`, to: '/dashboard/taskplan' });
         } else if (p.escalated) {
           // ожидает решения топ-менеджмента — уведомление показывается топ-менеджеру
         } else if (overdue || soon) {
-          out.push({ key: `due-${p.id}`, icon: <ClockCircleOutlined />, color: overdue ? '#C06B5A' : '#C9A14A',
+          out.push({ key: `due-${p.id}`, icon: <ClockCircleOutlined />, color: overdue ? RAG.bad.color : RAG.medium.color,
             text: `Срок задачи «${p.riskTitle || p.metricName}» (${p.systemName}): ${p.dueDate}${overdue ? ' — просрочено' : ' — скоро'}`,
             to: '/dashboard/taskplan' });
         } else {
-          out.push({ key: `task-${p.id}`, icon: <ScheduleOutlined />, color: '#6E89A6',
+          out.push({ key: `task-${p.id}`, icon: <ScheduleOutlined />, color: ACCENT.slate.color,
             text: `Назначенная задача из плана: «${p.riskTitle || p.metricName}» (${p.systemName})${p.dueDate ? `, срок ${p.dueDate}` : ''}`,
             to: '/dashboard/taskplan' });
         }
@@ -178,7 +180,7 @@ const NotificationBell: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                 {/* ui-audit-ignore UI-05 — оптическая подгонка иконки под базовую линию текста. */}
                 <span style={{ color: n.color, marginRight: 8, marginTop: 2 }}>{n.icon}</span>
-                <Text style={{ fontSize: 13 }}>{n.text}</Text>
+                <Text style={{ fontSize: TYPE.bodySm.fontSize }}>{n.text}</Text>
               </div>
             </List.Item>
           )}
@@ -199,7 +201,7 @@ const NotificationBell: React.FC = () => {
   return (
     <Popover content={content} trigger="click" placement="bottomRight" title={title}>
       <Badge count={visibleNotes.length} size="small" offset={[-2, 2]}>
-        <Button type="text" icon={<BellOutlined style={{ fontSize: 18 }} />} />
+        <Button type="text" icon={<BellOutlined style={{ fontSize: TYPE.metricSm.fontSize }} />} />
       </Badge>
     </Popover>
   );

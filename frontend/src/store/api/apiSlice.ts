@@ -284,6 +284,24 @@ export interface SystemDynamics {
     measures: MeasureMarker[];
 }
 
+// ─── RBAC / администрирование (BL-008) ───
+export interface MyPermissions { role: string; permissions: string[] }
+export interface AdminUser {
+    id: string;
+    username: string;
+    email?: string | null;
+    full_name?: string | null;
+    role: string;
+    is_active: boolean;
+}
+export interface UserCreateDto {
+    username: string; password: string; email?: string; full_name?: string; role: string;
+}
+export interface UserUpdateDto { full_name?: string; role?: string; is_active?: boolean }
+export interface PermissionDef { key: string; group: string; label: string; description: string }
+export interface PermissionCatalog { groups: string[]; permissions: PermissionDef[]; roles: string[] }
+export type PermissionMatrix = Record<string, string[]>;
+
 export const apiSlice = createApi({
     reducerPath: 'api',
     baseQuery: fetchBaseQuery({
@@ -305,7 +323,7 @@ export const apiSlice = createApi({
     refetchOnFocus: true,
     refetchOnReconnect: true,
     refetchOnMountOrArgChange: 30,
-    tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems', 'Incidents'],
+    tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems', 'Incidents', 'Users', 'Permissions', 'MyPermissions'],
     endpoints: (builder) => ({
         getExecutiveDashboard: builder.query<DashboardData, void>({
             query: () => '/reports/executive-dashboard',
@@ -508,6 +526,42 @@ export const apiSlice = createApi({
             query: (systemId) => `/reports/system-dynamics?system_id=${systemId}`,
             providesTags: ['Dashboard'],
         }),
+        // ─── RBAC / администрирование (BL-008) ───
+        getMyPermissions: builder.query<MyPermissions, void>({
+            query: () => '/iam/me/permissions',
+            providesTags: ['MyPermissions'],
+        }),
+        getUsers: builder.query<AdminUser[], void>({
+            query: () => '/iam/users',
+            providesTags: ['Users'],
+        }),
+        createUser: builder.mutation<AdminUser, UserCreateDto>({
+            query: (body) => ({ url: '/iam/users', method: 'POST', body }),
+            invalidatesTags: ['Users'],
+        }),
+        updateUser: builder.mutation<AdminUser, { id: string; body: UserUpdateDto }>({
+            query: ({ id, body }) => ({ url: `/iam/users/${id}`, method: 'PATCH', body }),
+            invalidatesTags: ['Users'],
+        }),
+        resetUserPassword: builder.mutation<{ ok: boolean }, { id: string; password: string }>({
+            query: ({ id, password }) => ({ url: `/iam/users/${id}/reset-password`, method: 'POST', body: { password } }),
+        }),
+        deleteUser: builder.mutation<{ ok: boolean }, string>({
+            query: (id) => ({ url: `/iam/users/${id}`, method: 'DELETE' }),
+            invalidatesTags: ['Users'],
+        }),
+        getPermissionCatalog: builder.query<PermissionCatalog, void>({
+            query: () => '/iam/permissions/catalog',
+            providesTags: ['Permissions'],
+        }),
+        getPermissionMatrix: builder.query<PermissionMatrix, void>({
+            query: () => '/iam/permissions/matrix',
+            providesTags: ['Permissions'],
+        }),
+        setRolePermissions: builder.mutation<PermissionMatrix, { role: string; permissions: string[] }>({
+            query: ({ role, permissions }) => ({ url: `/iam/permissions/matrix/${role}`, method: 'PUT', body: { permissions } }),
+            invalidatesTags: ['Permissions', 'MyPermissions'],
+        }),
     }),
 });
 
@@ -543,4 +597,14 @@ export const {
     useResolveIncidentMutation,
     useGetTriggeredRisksQuery,
     useGetSystemDynamicsQuery,
+    useGetMyPermissionsQuery,
+    useLazyGetMyPermissionsQuery,
+    useGetUsersQuery,
+    useCreateUserMutation,
+    useUpdateUserMutation,
+    useResetUserPasswordMutation,
+    useDeleteUserMutation,
+    useGetPermissionCatalogQuery,
+    useGetPermissionMatrixQuery,
+    useSetRolePermissionsMutation,
 } = apiSlice;

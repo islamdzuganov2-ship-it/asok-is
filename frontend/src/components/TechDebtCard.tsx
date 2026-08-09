@@ -10,7 +10,7 @@ import { Card, Modal, Progress, Select, Space, Table, Tag, Typography } from 'an
 import type { ColumnsType } from 'antd/es/table';
 import { FundOutlined } from '@ant-design/icons';
 import type { Proposal } from '../store/slices/governanceSlice';
-import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
+import { BRAND, RAG, ragToken, solidTagStyle, ACCENT } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
 import { numericColumn } from '../theme/table';
 
@@ -27,7 +27,7 @@ type Bucket = 'pending' | 'awaiting' | 'done' | 'overdue';
 
 const STATUS_ROWS: { b: Bucket; label: string; color: string }[] = [
   { b: 'pending', label: 'Ожидают решения', color: RAG.medium.color },
-  { b: 'awaiting', label: 'Одобрены, ждут выполнения', color: '#6E89A6' },
+  { b: 'awaiting', label: 'Одобрены, ждут выполнения', color: ACCENT.slate.color },
   { b: 'done', label: 'Выполнено', color: RAG.good.color },
   { b: 'overdue', label: 'Просрочено / не выполнено', color: RAG.bad.color },
 ];
@@ -84,7 +84,7 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
     { title: 'Срок', dataIndex: 'dueDate', width: 104 },
   ];
 
-  const barText: React.CSSProperties = { fontSize: 12, color: BRAND.inkSoft };
+  const barText: React.CSSProperties = { fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft };
 
   return (
     <Card
@@ -94,7 +94,7 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
     >
       {/* Период — отдельной строкой под заголовком, не конкурирует с названием */}
       <Space size={SPACE.snug} style={{ marginBottom: SPACE.base }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>Период:</Text>
+        <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Период:</Text>
         <Select allowClear placeholder="Год" size="small" style={{ width: 92 }} value={year} onChange={setYear}
           options={years.map((y) => ({ value: String(y), label: String(y) }))} />
         <Select allowClear placeholder="Квартал" size="small" style={{ width: 104 }} value={quarter} onChange={setQuarter}
@@ -121,7 +121,7 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <span style={{ width: 9, height: 9, borderRadius: '50%', background: r.color, flex: '0 0 auto' }} />
-              <Text style={{ fontSize: 13, color: BRAND.ink }}>{r.label}</Text>
+              <Text style={{ fontSize: TYPE.bodySm.fontSize, color: BRAND.ink }}>{r.label}</Text>
             </span>
             <Text strong style={{ ...TYPE.metricSm, color: r.color, marginLeft: 8 }}>{lists[r.b].length}</Text>
           </div>

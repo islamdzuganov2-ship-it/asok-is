@@ -55,7 +55,7 @@ const CollapsibleCard: React.FC<Props> = ({
       <Tooltip title={isOpen ? 'Свернуть' : 'Развернуть'}>
         <DownOutlined
           style={{
-            fontSize: 12, color: BRAND.inkSoft, transition: 'transform .25s ease',
+            fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft, transition: 'transform .25s ease',
             transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', flex: '0 0 auto',
           }}
         />

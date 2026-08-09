@@ -17,6 +17,7 @@ from app.modules.iam.deps import get_current_user, require_permission
 from app.modules.iam.models import User
 from app.modules.iam.permissions import PERMISSIONS, group_order
 from app.modules.iam.permissions_service import (
+    BuiltinRoleError,
     get_matrix,
     get_role_permissions,
     set_role_permissions,
@@ -94,7 +95,10 @@ async def update_role_permissions(
     _: dict = Depends(require_permission("admin.permissions.manage")),
 ) -> dict[str, list[str]]:
     _validate_role(role)
-    saved = await set_role_permissions(db, role, payload.permissions)
+    try:
+        saved = await set_role_permissions(db, role, payload.permissions)
+    except BuiltinRoleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {role: saved}
 
 

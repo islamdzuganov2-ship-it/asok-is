@@ -12,7 +12,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined, InboxOutlined } from '@ant-design/icons';
 import { Card } from 'antd';
-import { premiumCard, accentDot, pageContainer, pageTitle, GOLD } from '../theme/premium';
+import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE } from '../theme/premium';
 
 const { Title, Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -174,7 +174,7 @@ const RiskBasePage: React.FC = () => {
         cancelText="Отмена"
         width={640}
       >
-        <Paragraph type="secondary" style={{ fontSize: 12 }}>
+        <Paragraph type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
           Заполните карточку риска. Поля «Ключевые слова» и «Меры минимизации» используются LLM.
         </Paragraph>
         <Form form={form} layout="vertical" initialValues={{ severity: 'medium', likelihood: 'medium', category: 'общее' }}>

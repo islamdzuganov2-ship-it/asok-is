@@ -15,7 +15,7 @@ from app.infrastructure.database import get_db
 from app.main import app
 from app.modules.iam import User
 from app.modules.iam import permissions_service as ps
-from app.modules.iam.permissions import ALL_PERMISSION_KEYS, DEFAULT_ROLE_PERMISSIONS
+from app.modules.iam.permissions import ADMIN_PERMISSIONS, ALL_PERMISSION_KEYS, DEFAULT_ROLE_PERMISSIONS
 from app.modules.iam.security import create_access_token
 
 API = "/api/v1"
@@ -64,6 +64,13 @@ async def test_resolver_role_defaults(db_session):
         assert set(await ps.get_role_permissions(db_session, role)) == DEFAULT_ROLE_PERMISSIONS[role], role
 
 
+async def test_resolver_admin_is_builtin(db_session):
+    # ADMIN — встроенная роль: широкий доступ мимо матрицы, но БЕЗ управления доступом.
+    perms = await ps.get_role_permissions(db_session, User.ROLE_ADMIN)
+    assert perms == ADMIN_PERMISSIONS
+    assert "governance.decide" in perms and "admin.users.manage" not in perms
+
+
 async def test_resolver_unknown_role_empty(db_session):
     await ps.seed_rbac_defaults(db_session)
     assert await ps.get_role_permissions(db_session, "NOPE") == frozenset()
@@ -82,12 +89,11 @@ async def test_set_role_permissions_filters_and_persists(db_session):
     assert await ps.get_role_permissions(db_session, "TEST_ANALYST") == frozenset(saved)
 
 
-async def test_set_role_permissions_protects_superadmin(db_session):
+async def test_set_role_permissions_rejects_builtin(db_session):
     await ps.seed_rbac_defaults(db_session)
-    saved = await ps.set_role_permissions(db_session, "SUPER_ADMIN", [])  # пытаемся всё снять
-    for must in ("admin.users.manage", "admin.permissions.manage",
-                 "view.admin.users", "view.admin.permissions"):
-        assert must in saved
+    for role in ("ADMIN", "SUPER_ADMIN"):
+        with pytest.raises(ps.BuiltinRoleError):
+            await ps.set_role_permissions(db_session, role, [])
 
 
 # ═══════════════ /me/permissions и enforcement ═══════════════
@@ -179,13 +185,12 @@ async def test_matrix_edit_reflects_and_resets_cache(aclient, db_session):
     assert seen2["permissions"] == ["view.reports"]  # кэш сброшен → assessment.edit исчез
 
 
-async def test_matrix_put_protects_superadmin(aclient, db_session):
+async def test_matrix_put_rejects_builtin_roles(aclient, db_session):
     await ps.seed_rbac_defaults(db_session)
     su = _auth(await _login(aclient, "superadmin", "Super123!"))
-    saved = (await aclient.put(f"{API}/iam/permissions/matrix/SUPER_ADMIN", headers=su,
-                               json={"permissions": []})).json()["SUPER_ADMIN"]
-    for must in ("admin.users.manage", "admin.permissions.manage"):
-        assert must in saved
+    for role in ("ADMIN", "SUPER_ADMIN"):
+        r = await aclient.put(f"{API}/iam/permissions/matrix/{role}", headers=su, json={"permissions": []})
+        assert r.status_code == 400, role
 
 
 async def test_matrix_invalid_role_422(aclient, db_session):

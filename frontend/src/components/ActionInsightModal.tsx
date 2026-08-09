@@ -15,7 +15,7 @@ import {
 import { useSelector, shallowEqual } from 'react-redux';
 import { selectVisibleProposals, type Proposal } from '../store/slices/governanceSlice';
 import { ragToken, levelLabel, solidTagStyle } from '../theme/ragPalette';
-import { SPACE } from '../theme/premium';
+import { SPACE, TYPE } from '../theme/premium';
 import { guidanceFor } from '../constants/characteristicGuidance';
 import type { ExecSystemInsight } from '../data/mockDashboards';
 import { MeasureDecisionModal } from './MeasureDecisionModal';
@@ -38,7 +38,7 @@ const Block: React.FC<{ icon: React.ReactNode; title: string; children: React.Re
   icon, title, children,
 }) => (
   <div style={{ marginBottom: SPACE.base }}>
-    <Text type="secondary" style={{ fontSize: 12 }}>
+    <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
       {icon} {title}
     </Text>
     {/* ui-audit-ignore UI-05 — подпись блока и содержимое склеены намеренно: 2px убирают
@@ -88,7 +88,7 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
         )}
         {characteristic && <Tag>{characteristic}</Tag>}
       </Space>
-      <Paragraph type="secondary" style={{ fontSize: 13, marginTop: 8 }}>
+      <Paragraph type="secondary" style={{ fontSize: TYPE.bodySm.fontSize, marginTop: 8 }}>
         {summaryText}
       </Paragraph>
 
@@ -120,7 +120,7 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
 
       <Divider style={{ margin: '12px 0' }} />
 
-      <Text type="secondary" style={{ fontSize: 12 }}>
+      <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
         <ClockCircleOutlined /> Меры{characteristic ? ` по характеристике «${characteristic}»` : ''}, ожидающие вашего решения
       </Text>
 
@@ -145,8 +145,8 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
                   Рассмотреть <RightOutlined />
                 </Button>
               </Space>
-              <Paragraph style={{ fontSize: 13, margin: '4px 0' }}>{p.expectation}</Paragraph>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Paragraph style={{ fontSize: TYPE.bodySm.fontSize, margin: '4px 0' }}>{p.expectation}</Paragraph>
+              <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
                 Обоснование: {p.rationale}
               </Text>
             </List.Item>

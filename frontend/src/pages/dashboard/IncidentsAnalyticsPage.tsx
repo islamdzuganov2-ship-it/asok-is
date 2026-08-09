@@ -34,7 +34,7 @@ import { MOCK_INCIDENTS, INCIDENT_CATEGORIES, computeIncidentAnalytics } from '.
 import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE, TYPE } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import KpiCard from '../../components/KpiCard';
-import { BRAND, RAG, solidTagStyle } from '../../theme/ragPalette';
+import { BRAND, RAG, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 import { numericColumn, numericText } from '../../theme/table';
 
 const { Title, Text, Paragraph } = Typography;
@@ -49,11 +49,11 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 // Цвет первопричины в ГРАФИКЕ (сектора/столбцы) — ≥3:1 с белым (WCAG 1.4.11).
 const CATEGORY_COLOR: Record<string, string> = {
-    RELEASE: '#7E57C2', INFRASTRUCTURE: '#6E89A6', PERFORMANCE: '#B88E32', NETWORK: '#6F9F86', POWER: '#C06B5A', OTHER: '#8C96A0',
+    RELEASE: ACCENT.violet.color, INFRASTRUCTURE: ACCENT.slate.color, PERFORMANCE: '#B88E32', NETWORK: RAG.good.color, POWER: RAG.bad.color, OTHER: RAG.muted.color,
 };
 // Тот же оттенок для ПЛАШКИ с белым текстом — углублён до ≥4.5:1 (T-57).
 const CATEGORY_TAG_COLOR: Record<string, string> = {
-    RELEASE: '#7E57C2', INFRASTRUCTURE: '#56799F', PERFORMANCE: '#947125', NETWORK: '#4C8165', POWER: '#C0553F', OTHER: '#667797',
+    RELEASE: ACCENT.violet.color, INFRASTRUCTURE: ACCENT.slate.strong, PERFORMANCE: '#947125', NETWORK: '#4C8165', POWER: '#C0553F', OTHER: '#667797',
 };
 const SEVERITY_LABEL: Record<string, string> = { critical: 'критический', high: 'высокий', medium: 'средний', low: 'низкий' };
 const SEVERITY_COLOR: Record<string, string> = { critical: 'red', high: 'volcano', medium: 'gold', low: 'blue' };
@@ -114,7 +114,8 @@ const IncidentsAnalyticsPage: React.FC = () => {
     );
 
     const donutOption = useMemo(() => ({
-        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        // confine: true — всплывашка не должна вылезать за контейнер и обрезаться (UI-15).
+        tooltip: { trigger: 'item', confine: true, formatter: '{b}: {c} ({d}%)' },
         legend: { bottom: 0, icon: 'circle', textStyle: { color: BRAND.ink } },
         series: [{
             type: 'pie', radius: ['52%', '78%'], center: ['50%', '44%'], avoidLabelOverlap: true,
@@ -310,7 +311,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
                         subtitle="Клик по строке — карточка сбоя. Свернуть/раскрыть — кнопкой слева."
                         extra={(
                             <Space>
-                                <Text type="secondary" style={{ fontSize: 12 }}>Первопричина:</Text>
+                                <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Первопричина:</Text>
                                 <Select
                                     allowClear size="small" style={{ minWidth: 210 }} placeholder="Все первопричины"
                                     value={categoryFilter} onChange={setCategoryFilter}

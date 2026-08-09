@@ -29,9 +29,9 @@ const parseRu = (d?: string): Date | null => {
 
 type Zone = 'overdue' | 'risk' | 'plan';
 const ZONE: Record<Zone, { color: string; label: string }> = {
-  overdue: { color: '#C06B5A', label: 'просрочено' },
-  risk:    { color: '#C9A14A', label: 'в зоне риска' },
-  plan:    { color: '#6F9F86', label: 'в плане' },
+  overdue: { color: RAG.bad.color, label: 'просрочено' },
+  risk:    { color: RAG.medium.color, label: 'в зоне риска' },
+  plan:    { color: RAG.good.color, label: 'в плане' },
 };
 const ZONE_RANK: Zone[] = ['overdue', 'risk', 'plan']; // худшая → лучшая
 
@@ -108,10 +108,10 @@ const TaskBubbleTimeline: React.FC<Props> = ({ tasks, onOpen }) => {
       <div style={{ minWidth: 820 }}>
         {/* Шкала месяцев */}
         <div style={{ display: 'flex', height: 20 }}>
-          <div style={{ width: LABEL_W, flex: '0 0 auto', fontSize: 12, color: BRAND.inkSoft, fontWeight: 500 }}>Ответственный</div>
+          <div style={{ width: LABEL_W, flex: '0 0 auto', fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft, fontWeight: 500 }}>Ответственный</div>
           <div style={{ position: 'relative', flex: 1 }}>
             {months.map((m) => (
-              <span key={m.label + m.pct} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: 11, color: BRAND.inkSoft, transform: 'translateX(-50%)' }}>{m.label}</span>
+              <span key={m.label + m.pct} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: TYPE.micro.fontSize, color: BRAND.inkSoft, transform: 'translateX(-50%)' }}>{m.label}</span>
             ))}
           </div>
         </div>
@@ -120,7 +120,7 @@ const TaskBubbleTimeline: React.FC<Props> = ({ tasks, onOpen }) => {
           {/* Подписи ответственных */}
           <div style={{ width: LABEL_W, flex: '0 0 auto' }}>
             {owners.map((o, i) => (
-              <div key={o} style={{ height: ROW_H, display: 'flex', alignItems: 'center', fontSize: 13, color: BRAND.ink, borderTop: i ? '1px solid #F0F2F4' : 'none', paddingRight: SPACE.cozy, overflow: 'hidden' }}>
+              <div key={o} style={{ height: ROW_H, display: 'flex', alignItems: 'center', fontSize: TYPE.bodySm.fontSize, color: BRAND.ink, borderTop: i ? '1px solid #F0F2F4' : 'none', paddingRight: SPACE.cozy, overflow: 'hidden' }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o}</span>
               </div>
             ))}
@@ -207,7 +207,7 @@ const TaskBubbleTimeline: React.FC<Props> = ({ tasks, onOpen }) => {
                       opacity: isHover ? 0 : 1, transition: 'opacity .18s ease', pointerEvents: isHover ? 'none' : 'auto',
                     }}
                   >
-                    <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, color: BRAND.ink }}>{n}</div>
+                    <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: TYPE.caption.fontSize, color: BRAND.ink }}>{n}</div>
                   </div>
 
                   {/* Разлетающиеся пузырьки — выбираются кликом */}

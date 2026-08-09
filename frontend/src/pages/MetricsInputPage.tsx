@@ -156,7 +156,7 @@ const MetricsInputPage: React.FC = () => {
       key: 'num',
       width: 48,
       render: (_: unknown, __: MetricRow, idx: number) => (
-        <Text type="secondary" style={{ fontSize: 11 }}>{idx + 1}</Text>
+        <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize }}>{idx + 1}</Text>
       ),
     },
     {
@@ -174,7 +174,7 @@ const MetricsInputPage: React.FC = () => {
               </div>
             )}
           >
-            <Text style={{ fontSize: 12 }}>{name} <InfoCircleOutlined style={{ color: '#bbb' }} /></Text>
+            <Text style={{ fontSize: TYPE.caption.fontSize }}>{name} <InfoCircleOutlined style={{ color: '#bbb' }} /></Text>
           </Tooltip>
         );
       },
@@ -263,7 +263,7 @@ const MetricsInputPage: React.FC = () => {
       width: 180,
       render: (level: string | null | undefined) =>
         level
-          ? <Tag color={LEVEL_TAG_COLOR[level] ?? 'default'} style={{ fontSize: 11 }}>{level}</Tag>
+          ? <Tag color={LEVEL_TAG_COLOR[level] ?? 'default'} style={{ fontSize: TYPE.micro.fontSize }}>{level}</Tag>
           : <Text type="secondary">—</Text>,
     },
     {

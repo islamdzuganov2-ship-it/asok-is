@@ -415,7 +415,7 @@ const ManagerDashboard: React.FC = () => {
           {...premiumCard('terracotta', { marginTop: 16 })}
           title={
             <Space wrap>
-              <span style={accentDot('#C06B5A')} />
+              <span style={accentDot(RAG.bad.color)} />
               <span style={{ color: BRAND.ink }}>Меры и намерения — характеристика «{characteristic!.title}»</span>
               {subName && <Tag>{subName}</Tag>}
             </Space>

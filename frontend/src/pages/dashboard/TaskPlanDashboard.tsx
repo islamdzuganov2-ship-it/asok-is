@@ -26,7 +26,7 @@ import { RootState } from '../../store';
 import {
   selectVisibleProposals, updateTask, setExecution, escalateTask, decideEscalation, resolveEscalation, type Proposal,
 } from '../../store/slices/governanceSlice';
-import { BRAND, RAG } from '../../theme/ragPalette';
+import { BRAND, RAG, ACCENT } from '../../theme/ragPalette';
 import { pageContainer, pageTitle, GOLD, accentDot, SPACE, TYPE } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import TaskBubbleTimeline from '../../components/TaskBubbleTimeline';
@@ -48,19 +48,19 @@ type Kind = 'done' | 'overdue' | 'escalated' | 'progress' | 'pending';
 // `color`/`light` — маркеры и легенда (графика, ≥3:1). `bar`/`barEnd` — заливка полосы Ганта,
 // на которой лежит БЕЛЫЙ текст: прежний градиент шёл от пастели (≈1.8:1) и текст пропадал (T-57).
 const KIND_META: Record<Kind, { color: string; light: string; bar: string; barEnd: string; label: string }> = {
-  progress:  { color: '#6E89A6', light: '#A9BDD1', bar: '#56799F', barEnd: '#47678B', label: 'в работе' },
-  done:      { color: '#6F9F86', light: '#A9CBB8', bar: '#4C8165', barEnd: '#3E6C54', label: 'выполнено' },
-  overdue:   { color: '#C06B5A', light: '#DDA095', bar: '#C0553F', barEnd: '#A64733', label: 'просрочено' },
-  escalated: { color: '#7E57C2', light: '#B39DDB', bar: '#7E57C2', barEnd: '#6A45AB', label: 'эскалация' },
-  pending:   { color: '#C9A14A', light: '#E0C589', bar: '#947125', barEnd: '#7C5E1E', label: 'ожидает решения' },
+  progress:  { color: ACCENT.slate.color, light: '#A9BDD1', bar: ACCENT.slate.strong, barEnd: '#47678B', label: 'в работе' },
+  done:      { color: RAG.good.color, light: '#A9CBB8', bar: '#4C8165', barEnd: '#3E6C54', label: 'выполнено' },
+  overdue:   { color: RAG.bad.color, light: '#DDA095', bar: '#C0553F', barEnd: '#A64733', label: 'просрочено' },
+  escalated: { color: ACCENT.violet.color, light: '#B39DDB', bar: ACCENT.violet.color, barEnd: ACCENT.violet.strong, label: 'эскалация' },
+  pending:   { color: RAG.medium.color, light: '#E0C589', bar: '#947125', barEnd: '#7C5E1E', label: 'ожидает решения' },
 };
 
 // 3-цветная «зона» задачи для пузырьков (T-24).
 type Health = 'overdue' | 'risk' | 'plan';
 const HEALTH: Record<Health, { color: string; label: string }> = {
-  overdue: { color: '#C06B5A', label: 'просрочено' },
-  risk:    { color: '#C9A14A', label: 'в зоне риска' },
-  plan:    { color: '#6F9F86', label: 'в плане' },
+  overdue: { color: RAG.bad.color, label: 'просрочено' },
+  risk:    { color: RAG.medium.color, label: 'в зоне риска' },
+  plan:    { color: RAG.good.color, label: 'в плане' },
 };
 
 const TaskPlanDashboard: React.FC = () => {
@@ -190,7 +190,7 @@ const TaskPlanDashboard: React.FC = () => {
       {(Object.keys(HEALTH) as Health[]).map((h) => (
         <Space key={h} size={5}>
           <span style={{ width: 10, height: 10, borderRadius: '50%', background: HEALTH[h].color, boxShadow: `0 0 6px ${HEALTH[h].color}`, display: 'inline-block' }} />
-          <Text type="secondary" style={{ fontSize: 12 }}>{HEALTH[h].label}</Text>
+          <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{HEALTH[h].label}</Text>
         </Space>
       ))}
     </Space>
@@ -205,7 +205,7 @@ const TaskPlanDashboard: React.FC = () => {
         return (
           <Space size={6}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: HEALTH[h].color, boxShadow: `0 0 5px ${HEALTH[h].color}`, display: 'inline-block', flex: '0 0 auto' }} />
-            {r.p.escalated && <RiseOutlined style={{ color: '#7E57C2' }} />}
+            {r.p.escalated && <RiseOutlined style={{ color: ACCENT.violet.color }} />}
             <Text style={{ color: BRAND.ink }}>{r.p.riskTitle || r.p.metricName}</Text>
           </Space>
         );
@@ -261,10 +261,10 @@ const TaskPlanDashboard: React.FC = () => {
           <div style={{ minWidth: 900 }}>
             {/* Шкала месяцев */}
             <div style={{ display: 'flex', height: 22 }}>
-              <div style={{ width: LABEL_W, flex: '0 0 auto', fontSize: 12, color: BRAND.inkSoft, fontWeight: 500 }}>Задача · ответственный</div>
+              <div style={{ width: LABEL_W, flex: '0 0 auto', fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft, fontWeight: 500 }}>Задача · ответственный</div>
               <div style={{ position: 'relative', flex: 1 }}>
                 {months.map((m) => (
-                  <span key={m.label + m.pct} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: 11, color: BRAND.inkSoft, transform: 'translateX(-50%)' }}>{m.label}</span>
+                  <span key={m.label + m.pct} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: TYPE.micro.fontSize, color: BRAND.inkSoft, transform: 'translateX(-50%)' }}>{m.label}</span>
                 ))}
               </div>
             </div>
@@ -295,14 +295,14 @@ const TaskPlanDashboard: React.FC = () => {
                   : daysLeft <= 7 ? { t: `${daysLeft}д`, c: RAG.medium.strong }
                   : { t: `${daysLeft}д`, c: BRAND.inkSoft };
                 return (
-                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', height: rowH, background: idx % 2 ? '#FAFBFC' : '#fff' }}>
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', height: rowH, background: idx % 2 ? BRAND.surfaceSoft : '#fff' }}>
                     <div style={{ width: LABEL_W, flex: '0 0 auto', paddingRight: 12, overflow: 'hidden' }}>
                       <Tooltip title={`${p.riskTitle || p.metricName} · ${p.characteristic}`}>
-                        <div style={{ fontSize: 13, color: BRAND.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {p.escalated && <RiseOutlined style={{ color: '#7E57C2', marginRight: 4 }} />}{p.riskTitle || p.metricName}
+                        <div style={{ fontSize: TYPE.bodySm.fontSize, color: BRAND.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {p.escalated && <RiseOutlined style={{ color: ACCENT.violet.color, marginRight: 4 }} />}{p.riskTitle || p.metricName}
                         </div>
                       </Tooltip>
-                      <div style={{ fontSize: 11, color: BRAND.inkSoft, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: TYPE.micro.fontSize, color: BRAND.inkSoft, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {p.owner || 'ответственный не назначен'}
                       </div>
                     </div>
@@ -340,7 +340,7 @@ const TaskPlanDashboard: React.FC = () => {
 
             <Space size={SPACE.base} style={{ marginTop: SPACE.base }} wrap>
               {(Object.keys(KIND_META) as Kind[]).map((k) => (
-                <Space key={k} size={5}><span style={{ width: 14, height: 10, background: `linear-gradient(180deg, ${KIND_META[k].light}, ${KIND_META[k].color})`, borderRadius: 5, display: 'inline-block' }} /><Text type="secondary" style={{ fontSize: 12 }}>{KIND_META[k].label}</Text></Space>
+                <Space key={k} size={5}><span style={{ width: 14, height: 10, background: `linear-gradient(180deg, ${KIND_META[k].light}, ${KIND_META[k].color})`, borderRadius: 5, display: 'inline-block' }} /><Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{KIND_META[k].label}</Text></Space>
               ))}
             </Space>
           </div>
@@ -368,11 +368,11 @@ const TaskPlanDashboard: React.FC = () => {
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setListOpen(!listOpen); } }}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', marginBottom: listOpen ? 8 : 0 }}
               >
-                <DownOutlined style={{ fontSize: 12, color: BRAND.inkSoft, transition: 'transform .25s ease', transform: listOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
+                <DownOutlined style={{ fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft, transition: 'transform .25s ease', transform: listOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
                 <span style={accentDot(GOLD.base)} />
                 <UnorderedListOutlined style={{ color: BRAND.inkSoft }} />
                 <Text strong style={{ color: BRAND.ink }}>Список задач ({tasks.length})</Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>· клик по строке — открыть задачу</Text>
+                <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>· клик по строке — открыть задачу</Text>
               </div>
               {listOpen && (
                 <Table

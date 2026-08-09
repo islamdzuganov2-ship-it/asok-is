@@ -193,6 +193,26 @@ const RULES = [
     },
   },
   {
+    code: 'UI-15',
+    title: 'Всплывашка графика без confine',
+    why: 'у края контейнера ECharts обрезает подсказку по границе — текст теряется',
+    severity: 'major',
+    check(text, file) {
+      if (isThemeFile(file)) return [];
+      const all = lines(text);
+      const out = [];
+      for (const [n, l] of all) {
+        if (!/tooltip:\s*\{/.test(l)) continue;
+        // Конфиг может занимать несколько строк — смотрим до закрытия блока.
+        const block = all.slice(n - 1, Math.min(all.length, n + 5)).map(([, s]) => s).join(' ');
+        if (/show:\s*false/.test(block)) continue; // всплывашка выключена
+        if (/confine:\s*true/.test(block)) continue;
+        out.push({ line: n, snippet: l.trim().slice(0, 90) });
+      }
+      return out;
+    },
+  },
+  {
     code: 'UI-08',
     title: 'Число без табличных цифр',
     why: 'в пропорциональном шрифте цифры разной ширины — колонка «дрожит» при обновлении',

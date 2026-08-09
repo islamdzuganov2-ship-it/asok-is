@@ -71,6 +71,14 @@ PROTECTED_SUPERADMIN_PERMISSIONS: frozenset[str] = frozenset({
     "admin.users.manage", "admin.permissions.manage",
 })
 
+# Встроенные роли — их права ФИКСИРОВАНЫ в коде (не редактируются матрицей):
+#   · SUPER_ADMIN — весь каталог (управляет пользователями и правами);
+#   · ADMIN — широкий функциональный доступ, но БЕЗ управления доступом (это прерогатива
+#     SUPER_ADMIN). Держим в коде: демо-режим без токена работает как ADMIN, и это гарантирует
+#     стабильный «широкий» доступ независимо от матрицы.
+ADMIN_PERMISSIONS: frozenset[str] = ALL_PERMISSION_KEYS - PROTECTED_SUPERADMIN_PERMISSIONS
+BUILTIN_ROLES: frozenset[str] = frozenset({"ADMIN", "SUPER_ADMIN"})
+
 
 def group_order() -> list[str]:
     """Порядок групп для UI (по первому появлению в каталоге)."""
@@ -81,18 +89,12 @@ def group_order() -> list[str]:
     return seen
 
 
-# ── Дефолтная матрица (сохраняет прежнее поведение) ────────────────────────────
-# Ключи — коды ролей из User.ALL_ROLES. SUPER_ADMIN сеется отдельно (все права).
+# ── Дефолтная матрица РЕДАКТИРУЕМЫХ ролей (сохраняет прежнее поведение) ─────────
+# ADMIN и SUPER_ADMIN — встроенные (BUILTIN_ROLES), их права вычисляются в коде и здесь
+# не задаются. Ключи ниже — коды остальных ролей из User.ALL_ROLES.
 _VIEW_COMMON = {"view.reports", "view.risks", "view.settings"}
 
 DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
-    # ADMIN — широкий функциональный доступ, НО без управления пользователями/правами
-    # (это прерогатива SUPER_ADMIN). Дашборды видит все.
-    "ADMIN": (
-        ALL_PERMISSION_KEYS
-        - {"view.admin.users", "view.admin.permissions",
-           "admin.users.manage", "admin.permissions.manage"}
-    ),
     "CTO": {
         "view.dashboard.cto", "view.dashboard.analytics", "view.dashboard.dynamics",
         "view.dashboard.taskplan", "view.dashboard.incidents", "view.dashboard.risk_radar",

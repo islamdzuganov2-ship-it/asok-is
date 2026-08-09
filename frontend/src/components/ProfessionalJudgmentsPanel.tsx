@@ -130,7 +130,7 @@ const ProfessionalJudgmentsPanel: React.FC<Props> = ({ periodId, periodLabel }) 
                   const has = (textOf(c.title, s.name) || '').trim().length > 0;
                   return (
                     <div key={s.name}>
-                      <Text style={{ fontSize: 13 }}>
+                      <Text style={{ fontSize: TYPE.bodySm.fontSize }}>
                         {s.name} {!has && <Tag color="orange" style={{ fontSize: TYPE.micro.fontSize }}>нужно суждение</Tag>}
                       </Text>
                       <Input.TextArea
@@ -175,7 +175,7 @@ const ProfessionalJudgmentsPanel: React.FC<Props> = ({ periodId, periodLabel }) 
                 description={
                   <Space direction="vertical" size={2}>
                     {conclusion.fired_rules.map((r, i) => (
-                      <Text key={i} style={{ fontSize: 12 }}>• {r}</Text>
+                      <Text key={i} style={{ fontSize: TYPE.caption.fontSize }}>• {r}</Text>
                     ))}
                   </Space>
                 }
@@ -196,7 +196,7 @@ const ProfessionalJudgmentsPanel: React.FC<Props> = ({ periodId, periodLabel }) 
                 />
               </>
             )}
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
               Суждений учтено: {conclusion.judgments_count}. LLM: {conclusion.llm ? 'да' : 'fallback'}.
               {conclusion.confidence ? ` Уверенность: ${conclusion.confidence}.` : ''}
             </Text>

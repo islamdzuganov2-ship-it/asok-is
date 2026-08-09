@@ -12,7 +12,7 @@ import { Alert, Card, Col, Empty, List, Row, Select, Space, Spin, Tag, Typograph
 import { AlertOutlined, SafetyCertificateOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useGetSystemsQuery, useGetTriggeredRisksQuery } from '../../store/api/apiSlice';
 import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE, TYPE, PREMIUM } from '../../theme/premium';
-import { RAG, solidTagStyle } from '../../theme/ragPalette';
+import { RAG, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -21,7 +21,7 @@ const SEVERITY: Record<string, { label: string; color: string; order: number }> 
     critical: { label: 'критический', color: '#A32B1F', order: 0 },
     high: { label: 'высокий', color: RAG.bad.strong, order: 1 },
     medium: { label: 'средний', color: RAG.medium.strong, order: 2 },
-    low: { label: 'низкий', color: '#56799F', order: 3 },
+    low: { label: 'низкий', color: ACCENT.slate.strong, order: 3 },
 };
 
 const RiskRadarPage: React.FC = () => {
@@ -95,18 +95,18 @@ const RiskRadarPage: React.FC = () => {
                                             <Tag style={solidTagStyle(sev.color)}>{sev.label}</Tag>
                                             {r.characteristic && <Tag>{r.characteristic}</Tag>}
                                             <Text strong>{r.title}</Text>
-                                            <Text type="secondary" style={{ fontSize: 12 }}>({r.code})</Text>
+                                            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>({r.code})</Text>
                                         </Space>
                                         <Space size={6} align="start">
                                             {/* ui-audit-ignore UI-05 — оптическая подгонка иконки
                                                 под базовую линию текста; сетка её раскосит. */}
                                             <ThunderboltOutlined style={{ color: RAG.bad.color, marginTop: 3 }} />
-                                            <Text style={{ fontSize: 13 }}>
+                                            <Text style={{ fontSize: TYPE.bodySm.fontSize }}>
                                                 <Text type="secondary">Сработал по: </Text>{r.triggered_by}
                                             </Text>
                                         </Space>
                                         {r.consequence && (
-                                            <Text type="secondary" style={{ fontSize: 13 }}>
+                                            <Text type="secondary" style={{ fontSize: TYPE.bodySm.fontSize }}>
                                                 <AlertOutlined /> Последствие: {r.consequence}
                                             </Text>
                                         )}

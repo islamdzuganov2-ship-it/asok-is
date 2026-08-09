@@ -10,7 +10,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, List, Tag, Typography, Space, Empty, Button, Input, Switch } from 'antd';
 import { FormOutlined } from '@ant-design/icons';
-import { premiumCard, accentDot } from '../theme/premium';
+import { premiumCard, accentDot, TYPE } from '../theme/premium';
+import { ACCENT } from '../theme/ragPalette';
 
 const { Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -65,7 +66,7 @@ const FilledJudgmentsCard: React.FC<Props> = ({ systemName, characteristic, sub,
     <Card
       title={
         <Space wrap size={6}>
-          <span style={accentDot('#6E89A6')} />
+          <span style={accentDot(ACCENT.slate.color)} />
           <FormOutlined />
           <span>
             Профессиональные суждения{systemName ? ` — «${systemName}»` : ''}
@@ -80,7 +81,7 @@ const FilledJudgmentsCard: React.FC<Props> = ({ systemName, characteristic, sub,
           {characteristic && (
             <Space size={6}>
               <Switch size="small" checked={onlyChar} onChange={setOnlyChar} />
-              <Text type="secondary" style={{ fontSize: 12 }}>только выбранная характеристика</Text>
+              <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>только выбранная характеристика</Text>
             </Space>
           )}
           {items.length > 0 && <Input.Search placeholder="поиск" allowClear size="small" style={{ width: 180 }} onChange={(e) => setQ(e.target.value)} />}
@@ -104,10 +105,10 @@ const FilledJudgmentsCard: React.FC<Props> = ({ systemName, characteristic, sub,
                 <Space direction="vertical" size={2} style={{ width: '100%' }}>
                   <Space wrap size={4}>
                     <Tag color="blue">{j.characteristic}</Tag>
-                    <Text strong style={{ fontSize: 13 }}>{j.subcharacteristic}</Text>
+                    <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>{j.subcharacteristic}</Text>
                     <Tag>{j.period}</Tag>
                   </Space>
-                  <Paragraph style={{ marginBottom: 0, fontSize: 13 }}>{j.judgment_text}</Paragraph>
+                  <Paragraph style={{ marginBottom: 0, fontSize: TYPE.bodySm.fontSize }}>{j.judgment_text}</Paragraph>
                 </Space>
               </List.Item>
             )}

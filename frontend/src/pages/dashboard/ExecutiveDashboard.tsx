@@ -13,7 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { RootState } from '../../store';
 import { ExecSystemInsight, ExecutiveDashboardData } from '../../data/mockDashboards';
 import { EXECUTIVE_SCALE, HEATMAP_CHARS_FULL } from '../../data/mockScaleData';
-import { RAG, ragToken, levelLabel, BRAND, critTagStyle, solidTagStyle } from '../../theme/ragPalette';
+import { RAG, ragToken, levelLabel, BRAND, critTagStyle, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, TYPE, SPACE } from '../../theme/premium';
 import { numericColumn } from '../../theme/table';
 import { ActionInsightModal } from '../../components/ActionInsightModal';
@@ -277,7 +277,7 @@ const ExecutiveDashboard: React.FC = () => {
                 />
               )}
               {!liveLoading && !liveError && live && (
-                <Paragraph style={{ marginTop: 8, marginBottom: 0, fontSize: 13 }}>{live.aiInsights}</Paragraph>
+                <Paragraph style={{ marginTop: 8, marginBottom: 0, fontSize: TYPE.bodySm.fontSize }}>{live.aiInsights}</Paragraph>
               )}
             </div>
           </Space>
@@ -292,7 +292,7 @@ const ExecutiveDashboard: React.FC = () => {
         <Col>
           <Title level={5} style={{ color: BRAND.ink, margin: 0 }}>
             <FireOutlined style={{ color: RAG.medium.color }} /> Топ проблемных ИС — требуют внимания
-            <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>(по критичности · всего систем: {data.systems.length})</Text>
+            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, marginLeft: 8 }}>(по критичности · всего систем: {data.systems.length})</Text>
           </Title>
         </Col>
         <Col>
@@ -327,11 +327,11 @@ const ExecutiveDashboard: React.FC = () => {
                 <Paragraph
                   type="secondary"
                   ellipsis={{ rows: 3 }}
-                  style={{ fontSize: 13, marginBottom: 8 }}
+                  style={{ fontSize: TYPE.bodySm.fontSize, marginBottom: 8 }}
                 >
                   {sys.aiSummary}
                 </Paragraph>
-                <Text strong style={{ fontSize: 13 }}>
+                <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>
                   → {sys.recommendation}
                 </Text>
               </Card>
@@ -344,7 +344,7 @@ const ExecutiveDashboard: React.FC = () => {
         {/* Тепловая карта */}
         <Col xs={24} lg={15}>
           <Card
-            title={<span style={{ color: BRAND.ink }}><span style={accentDot('#6E89A6')} /><AppstoreOutlined /> Тепловая карта характеристик</span>}
+            title={<span style={{ color: BRAND.ink }}><span style={accentDot(ACCENT.slate.color)} /><AppstoreOutlined /> Тепловая карта характеристик</span>}
             extra={<Button type="link" size="small" onClick={() => navigate('/dashboard/analytics')}>Детали →</Button>}
             {...premiumCard('slate')}
             styles={{ header: premiumCard('slate').styles.header, body: { padding: SPACE.airy, overflowX: 'auto' } }}
@@ -352,9 +352,9 @@ const ExecutiveDashboard: React.FC = () => {
             <table style={{ borderCollapse: 'separate', borderSpacing: '0 8px', width: '100%' }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', fontWeight: 500, color: BRAND.inkSoft, fontSize: 12 }}>Система</th>
+                  <th style={{ textAlign: 'left', fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize }}>Система</th>
                   {data.heatmap.characteristics.map((c) => (
-                    <th key={c} title={c} style={{ fontWeight: 500, color: BRAND.inkSoft, fontSize: 12, padding: '0 4px' }}>{abbr(c)}</th>
+                    <th key={c} title={c} style={{ fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize, padding: '0 4px' }}>{abbr(c)}</th>
                   ))}
                 </tr>
               </thead>
@@ -366,7 +366,7 @@ const ExecutiveDashboard: React.FC = () => {
                       <td
                         onClick={() => { if (sys) { setActiveChar(undefined); setActiveCharScore(undefined); setActive(sys); } }}
                         title="Открыть карточку ИС (кто отвечает, действия, все меры)"
-                        style={{ fontSize: 13, color: BRAND.ink, paddingRight: 12, cursor: sys ? 'pointer' : 'default' }}
+                        style={{ fontSize: TYPE.bodySm.fontSize, color: BRAND.ink, paddingRight: 12, cursor: sys ? 'pointer' : 'default' }}
                       >{r.system}</td>
                       {r.cells.map((cell, i) => {
                         const measured = cellHasMeasure(r.system, heatCharsFull[i]);
@@ -402,12 +402,12 @@ const ExecutiveDashboard: React.FC = () => {
               {(['good', 'medium', 'bad'] as const).map((k) => (
                 <Space key={k} size={6}>
                   <RagDot score={k === 'good' ? 90 : k === 'medium' ? 60 : 20} size={10} />
-                  <Text type="secondary" style={{ fontSize: 12 }}>{RAG[k].label}</Text>
+                  <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{RAG[k].label}</Text>
                 </Space>
               ))}
               <Space size={6}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: RAG.good.color, boxShadow: '0 0 0 2px #fff', display: 'inline-block' }} />
-                <Text type="secondary" style={{ fontSize: 12 }}>мера ожидает решения</Text>
+                <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>мера ожидает решения</Text>
               </Space>
             </Space>
             {orderedHeatRows.length > 5 && (

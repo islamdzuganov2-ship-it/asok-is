@@ -7,7 +7,7 @@ import React from 'react';
 import { Modal, Typography, Tag, Space, Input } from 'antd';
 import { useDispatch, useSelector } from 'react-redux';
 import { ragToken } from '../theme/ragPalette';
-import { SPACE } from '../theme/premium';
+import { SPACE, TYPE } from '../theme/premium';
 import { QUARTERS, detectAnomalies, type DynSeries } from '../data/mockScaleData';
 import { reasonKey, selectReasons, setReason } from '../store/slices/dynamicsSlice';
 
@@ -55,7 +55,7 @@ export const DynamicsModal: React.FC<Props> = ({ open, system, series, onClose }
                 {isAnomaly && (
                   <Tag color="volcano">аномальное изменение{missingReason ? ' — укажите причину' : ''}</Tag>
                 )}
-                {i === 0 && <Text type="secondary" style={{ fontSize: 12 }}>(первая оценка)</Text>}
+                {i === 0 && <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>(первая оценка)</Text>}
               </Space>
               <Input.TextArea
                 rows={1}
