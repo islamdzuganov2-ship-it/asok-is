@@ -75,3 +75,17 @@ class RolePermission(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False,
     )
+
+
+class UserPreference(Base):
+    """Персональные настройки интерфейса (BL-008, Фаза 4): состав и порядок виджетов дашбордов
+    у конкретного пользователя. Одна строка на пользователя; `prefs` — свободный JSON вида
+    {"dashboards": {"<key>": {"widgets": [{"id","enabled","order"}]}}}. Реестр виджетов на фронте
+    задаёт дефолты, prefs их переопределяют."""
+    __tablename__ = "user_preferences"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    prefs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False,
+    )

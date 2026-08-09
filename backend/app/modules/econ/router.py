@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.database import get_db
 from app.modules.econ import service
 from app.modules.econ.dashboard_service import cost_dashboard
+from app.modules.econ.manager_metrics_service import ManagerMetricsOut, manager_metrics
+from app.modules.econ.weights_service import WeightsResult, compute_subchar_weights
 from app.modules.econ.schemas import (
     BpCostIn,
     BpCostOut,
@@ -49,6 +51,30 @@ async def get_cost_dashboard(
 ) -> CostDashboardOut:
     """Агрегаты для CTO/CEO: портфельный ALE, тепловая карта, топ рисков, воронка, деградация."""
     return await cost_dashboard(db)
+
+
+# ═══════════════ Эффективность руководителей (задача 12, §7.1) — ДИАГНОСТИКА ═══════════════
+
+@router.get("/manager-metrics", response_model=ManagerMetricsOut)
+async def get_manager_metrics(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> ManagerMetricsOut:
+    """По владельцам: нагрузка/просрочка/выполнено, ΔALE под управлением, доли решений (без мотивации)."""
+    return await manager_metrics(db)
+
+
+# ═══════════ Веса подхарактеристик (задача 13, RE-15, §4.3) — СОВЕТЧИК, Score не трогаем ═══════════
+
+@router.get("/weights", response_model=WeightsResult)
+async def get_subchar_weights(
+    criticality: str = "BUSINESS_CRITICAL",
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> WeightsResult:
+    """Гибрид-веса: α·профиль(класс ИС) + (1−α)·фактика(доля в ALE), α=max(α_min, N₀/(N₀+N)).
+    Отдельный советчик — интегральный Score НЕ пересчитывается (решение заказчика)."""
+    return await compute_subchar_weights(db, criticality=criticality)
 
 
 # ═══════════════════════ Финпараметры ═══════════════════════

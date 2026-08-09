@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
 from app.modules.iam.deps import get_current_user, require_permission
-from app.modules.iam.models import User
+from app.modules.iam.models import User, UserPreference
 from app.modules.iam.permissions import PERMISSIONS, group_order
 from app.modules.iam.permissions_service import (
     BuiltinRoleError,
@@ -27,6 +27,8 @@ from app.modules.iam.schemas import (
     PasswordResetIn,
     PermissionCatalogOut,
     PermissionOut,
+    PreferencesIn,
+    PreferencesOut,
     RolePermsIn,
     UserAdminOut,
     UserCreateIn,
@@ -63,6 +65,41 @@ async def my_permissions(
     role = roles[0] if roles else ""
     perms = await get_role_permissions(db, role)
     return MePermissionsOut(role=role, permissions=sorted(perms))
+
+
+def _current_uid(current_user: dict) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(current_user.get("id")))
+    except (ValueError, TypeError):
+        return None
+
+
+@router.get("/me/preferences", response_model=PreferencesOut)
+async def get_my_preferences(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PreferencesOut:
+    uid = _current_uid(current_user)
+    row = await db.get(UserPreference, uid) if uid else None
+    return PreferencesOut(prefs=row.prefs if row else {})
+
+
+@router.put("/me/preferences", response_model=PreferencesOut)
+async def put_my_preferences(
+    payload: PreferencesIn,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PreferencesOut:
+    uid = _current_uid(current_user)
+    if uid is None:
+        raise HTTPException(status_code=400, detail="Не удалось определить пользователя")
+    row = await db.get(UserPreference, uid)
+    if row is None:
+        db.add(UserPreference(user_id=uid, prefs=payload.prefs))
+    else:
+        row.prefs = payload.prefs
+    await db.commit()
+    return PreferencesOut(prefs=payload.prefs)
 
 
 # ═══════════════════════ Каталог прав и матрица ═══════════════════════

@@ -302,6 +302,12 @@ export interface PermissionDef { key: string; group: string; label: string; desc
 export interface PermissionCatalog { groups: string[]; permissions: PermissionDef[]; roles: string[] }
 export type PermissionMatrix = Record<string, string[]>;
 
+// Персональные настройки виджетов дашбордов (BL-008, Фаза 4).
+export interface WidgetPref { id: string; enabled: boolean; order: number }
+export interface DashboardPrefs { widgets: WidgetPref[] }
+export interface UserPrefs { dashboards?: Record<string, DashboardPrefs>; [k: string]: unknown }
+export interface PreferencesResponse { prefs: UserPrefs }
+
 export const apiSlice = createApi({
     reducerPath: 'api',
     baseQuery: fetchBaseQuery({
@@ -323,7 +329,7 @@ export const apiSlice = createApi({
     refetchOnFocus: true,
     refetchOnReconnect: true,
     refetchOnMountOrArgChange: 30,
-    tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems', 'Incidents', 'Users', 'Permissions', 'MyPermissions'],
+    tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems', 'Incidents', 'Users', 'Permissions', 'MyPermissions', 'Preferences'],
     endpoints: (builder) => ({
         getExecutiveDashboard: builder.query<DashboardData, void>({
             query: () => '/reports/executive-dashboard',
@@ -562,6 +568,14 @@ export const apiSlice = createApi({
             query: ({ role, permissions }) => ({ url: `/iam/permissions/matrix/${role}`, method: 'PUT', body: { permissions } }),
             invalidatesTags: ['Permissions', 'MyPermissions'],
         }),
+        getMyPreferences: builder.query<PreferencesResponse, void>({
+            query: () => '/iam/me/preferences',
+            providesTags: ['Preferences'],
+        }),
+        putMyPreferences: builder.mutation<PreferencesResponse, { prefs: UserPrefs }>({
+            query: (body) => ({ url: '/iam/me/preferences', method: 'PUT', body }),
+            invalidatesTags: ['Preferences'],
+        }),
     }),
 });
 
@@ -607,4 +621,6 @@ export const {
     useGetPermissionCatalogQuery,
     useGetPermissionMatrixQuery,
     useSetRolePermissionsMutation,
+    useGetMyPreferencesQuery,
+    usePutMyPreferencesMutation,
 } = apiSlice;

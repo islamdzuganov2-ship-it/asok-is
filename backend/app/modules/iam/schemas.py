@@ -91,3 +91,11 @@ class RolePermsIn(BaseModel):
 class MePermissionsOut(BaseModel):
     role: str
     permissions: list[str]
+
+
+class PreferencesOut(BaseModel):
+    prefs: dict
+
+
+class PreferencesIn(BaseModel):
+    prefs: dict
