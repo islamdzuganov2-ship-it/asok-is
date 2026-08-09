@@ -33,6 +33,11 @@ def _invalidate() -> None:
     _CACHE_LOADED = False
 
 
+def reset_cache() -> None:
+    """Полный сброс кэша прав. Для тестов (изоляция) и ручной инвалидации."""
+    _invalidate()
+
+
 async def _ensure_loaded(db: AsyncSession) -> None:
     global _CACHE_LOADED
     if _CACHE_LOADED:

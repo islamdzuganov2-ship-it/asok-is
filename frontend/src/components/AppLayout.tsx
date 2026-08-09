@@ -204,13 +204,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.snug, flex: '0 0 auto' }}>
                                 <Badge color={llmStatusColor} />
                                 <RobotOutlined style={{ color: dataMode === 'live' ? BRAND.ink : BRAND.inkSoft }} />
-                                <Text type="secondary" style={TYPE.caption}>Демо</Text>
+                                <Text type="secondary" className="header-mode-label" style={TYPE.caption}>Демо</Text>
                                 <Switch
                                     size="small"
                                     checked={dataMode === 'live'}
                                     onChange={(v) => dispatch(setDataMode(v ? 'live' : 'mock'))}
                                 />
-                                <Text type="secondary" style={TYPE.caption}>LLM</Text>
+                                <Text type="secondary" className="header-mode-label" style={TYPE.caption}>LLM</Text>
                             </div>
                         </Tooltip>
                         <NotificationBell />

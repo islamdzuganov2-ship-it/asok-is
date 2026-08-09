@@ -16,12 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
 from app.modules.econ import service
+from app.modules.econ.dashboard_service import cost_dashboard
 from app.modules.econ.schemas import (
     BpCostIn,
     BpCostOut,
     BusinessProcessCreate,
     BusinessProcessOut,
     BusinessProcessUpdate,
+    CostDashboardOut,
     EconConfigItem,
     EconConfigValueIn,
     SupportRateIn,
@@ -36,6 +38,17 @@ router = APIRouter()
 
 REF_ROLES = ("RISK_MANAGER", "QUALITY_MANAGER", "ADMIN")   # ведут справочники контура
 CONFIG_ROLES = ("RISK_MANAGER", "ADMIN")                   # правят финпараметры (риск-аппетит/пороги)
+
+
+# ═══════════════════════ Дашборд стоимости (§5, RE-16) ═══════════════════════
+
+@router.get("/dashboard", response_model=CostDashboardOut)
+async def get_cost_dashboard(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> CostDashboardOut:
+    """Агрегаты для CTO/CEO: портфельный ALE, тепловая карта, топ рисков, воронка, деградация."""
+    return await cost_dashboard(db)
 
 
 # ═══════════════════════ Финпараметры ═══════════════════════

@@ -135,3 +135,44 @@ class EconConfigItem(_CamelModel):
 class EconConfigValueIn(_CamelModel):
     value: object | None = None
     description: str | None = None
+
+
+# ── Дашборд стоимости (§5, RE-16) ──
+class TopRiskOut(_CamelModel):
+    code: str
+    title: str
+    owner: str | None = None
+    system: str | None = None
+    ale_avg: float
+    regulatory: bool
+
+
+class SystemAleOut(_CamelModel):
+    system: str
+    ale: float
+
+
+class HeatCellOut(_CamelModel):
+    system: str
+    subcharacteristic: str
+    ale: float
+
+
+class VerdictBreakdownOut(_CamelModel):
+    eliminate: int
+    compensate: int
+    accept: int
+
+
+class CostDashboardOut(_CamelModel):
+    portfolio_ale: float            # «одна цифра для CEO» — суммарный ALE активных рисков
+    risks_count: int
+    degradation_total: float        # накопленная деградация (C_ТС сбоев-деградаций)
+    nonconformities_total: int
+    verified: int
+    closure_rate: float             # % замкнутости контура
+    blocking_count: int             # незакрытые критические (блокирующие) несоответствия
+    verdict: VerdictBreakdownOut    # устранено / компенсировано / принято
+    top_risks: list[TopRiskOut]
+    by_system: list[SystemAleOut]
+    heatmap: list[HeatCellOut]      # ИС × подхарактеристика → ALE

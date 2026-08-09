@@ -5,6 +5,7 @@ from app.modules.assessment.router import router as assessments_router  # дом
 from app.modules.dataio.router import router as excel_router  # домен dataio мигрирован (ТЗ v13)
 from app.modules.econ.router import router as econ_router  # риск-эконом. контур (BL-007)
 from app.modules.governance.router import router as governance_router  # governance-петля в БД (T-10)
+from app.modules.iam.admin_router import router as iam_admin_router  # управление доступом (BL-008)
 from app.modules.iam.router import router as auth_router  # домен iam мигрирован (ТЗ v13)
 from app.modules.incidents.router import router as incidents_router  # аналитика техсбоев (T-21)
 from app.modules.nonconformity.router import router as nonconformity_router  # замыкание контура (BL-007)
@@ -17,6 +18,7 @@ from app.modules.systems.router import router as systems_router  # домен sy
 api_router = APIRouter()
 
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
+api_router.include_router(iam_admin_router, prefix="/iam", tags=["iam-admin"])
 api_router.include_router(systems_router, prefix="/systems", tags=["systems"])
 api_router.include_router(assessments_router, prefix="/assessments", tags=["assessments"])
 api_router.include_router(ai_assessments_router, prefix="/ai-assessments", tags=["ai-assessments"])

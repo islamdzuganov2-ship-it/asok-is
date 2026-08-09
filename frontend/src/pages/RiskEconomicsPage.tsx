@@ -14,8 +14,8 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined, ReloadOutlined, InboxOutlined } from '@ant-design/icons';
 import KpiCard from '../components/KpiCard';
-import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, SPACE, TYPE } from '../theme/premium';
-import { numericColumn } from '../theme/table';
+import { premiumCard, accentDot, accentColorOf, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
+import { numericColumn, numericText } from '../theme/table';
 import { BRAND } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
@@ -44,6 +44,14 @@ interface Nonconformity {
 interface FunnelStage { status: string; count: number }
 interface ClosureFunnel { total: number; verified: number; closureRate: number; stages: FunnelStage[] }
 interface AleResult { incidentsCounted: number; incidentsCosted: number; aro?: number | null; aleAvg?: number | null }
+interface TopRisk { code: string; title: string; owner?: string | null; system?: string | null; aleAvg: number; regulatory: boolean }
+interface HeatCell { system: string; subcharacteristic: string; ale: number }
+interface CostDashboard {
+  portfolioAle: number; risksCount: number; degradationTotal: number;
+  nonconformitiesTotal: number; verified: number; closureRate: number; blockingCount: number;
+  verdict: { eliminate: number; compensate: number; accept: number };
+  topRisks: TopRisk[]; bySystem: { system: string; ale: number }[]; heatmap: HeatCell[];
+}
 
 // ─── Подача ───
 const fmtMoney = (v?: number | null): string =>
@@ -85,7 +93,7 @@ async function api<T>(path: string, opts?: RequestInit): Promise<T> {
 }
 
 const RiskEconomicsPage: React.FC = () => {
-  const [tab, setTab] = useState('risks');
+  const [tab, setTab] = useState('dashboard');
   return (
     <div style={pageContainer}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -102,6 +110,7 @@ const RiskEconomicsPage: React.FC = () => {
           activeKey={tab}
           onChange={setTab}
           items={[
+            { key: 'dashboard', label: 'Дашборд стоимости', children: <DashboardTab /> },
             { key: 'risks', label: 'Рисковые события', children: <RiskEventsTab /> },
             { key: 'refs', label: 'Справочники', children: <ReferencesTab /> },
             { key: 'closure', label: 'Замыкание контура', children: <ClosureTab /> },
@@ -109,6 +118,128 @@ const RiskEconomicsPage: React.FC = () => {
         />
       </Space>
     </div>
+  );
+};
+
+// ════════════════════════ Дашборд стоимости (§5) ════════════════════════
+const fmtMln = (v: number): string =>
+  v >= 1_000_000
+    ? `${(v / 1_000_000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} млн`
+    : new Intl.NumberFormat('ru-RU').format(Math.round(v));
+
+const DashboardTab: React.FC = () => {
+  const [d, setD] = useState<CostDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError(null);
+    api<CostDashboard>('/econ/dashboard')
+      .then((r) => { if (alive) setD(r); })
+      .catch((e: any) => { if (alive) setError(e.message); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const topCols: ColumnsType<TopRisk> = [
+    { title: 'Код', dataIndex: 'code', width: 130 },
+    {
+      title: 'Риск', dataIndex: 'title',
+      render: (t: string, r: TopRisk) => (
+        <Space size={4}>{r.regulatory && <Tag color="volcano">рег.</Tag>}<Text strong>{t}</Text></Space>
+      ),
+    },
+    { title: 'ИС', dataIndex: 'system', width: 140, render: (s?: string) => s || '—' },
+    { title: 'Владелец', dataIndex: 'owner', width: 160, render: (o?: string) => o || '—' },
+    numericColumn({ title: 'ALE, ₽/год', dataIndex: 'aleAvg', width: 150, render: (v: number) => fmtMoney(v) }),
+  ];
+
+  // Пивот тепловой карты: ИС (строки) × подхарактеристика (столбцы).
+  const heat = d?.heatmap ?? [];
+  const systems = Array.from(new Set(heat.map((h) => h.system)));
+  const subchars = Array.from(new Set(heat.map((h) => h.subcharacteristic)));
+  const maxAle = Math.max(1, ...heat.map((h) => h.ale));
+  const cellAle = (s: string, sub: string) => heat.find((h) => h.system === s && h.subcharacteristic === sub)?.ale ?? 0;
+
+  return (
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      {error && <Alert type="error" showIcon message="Ошибка загрузки дашборда" description={error} closable />}
+
+      {/* KPI-ряд — «одна цифра, которую CEO уносит с совещания» */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: SPACE.base }}>
+        <KpiCard loading={loading} title="Портфельный ALE, ₽/год" value={d ? fmtMoney(d.portfolioAle) : '—'}
+          hint={d ? `${d.risksCount} рисковых событий` : undefined} />
+        <KpiCard loading={loading} title="Замкнутость контура" value={d ? `${d.closureRate}%` : '—'}
+          hint={d ? `${d.verified} из ${d.nonconformitiesTotal} верифицировано` : undefined} />
+        <KpiCard loading={loading} title="Накопленная деградация, ₽" value={d ? fmtMoney(d.degradationTotal) : '—'}
+          hint="сверх учтённых простоев" />
+        <KpiCard loading={loading} title="Блокирующие дефекты" value={d ? d.blockingCount : '—'}
+          color={d && d.blockingCount > 0 ? accentColorOf('terracotta') : undefined} hint="критические, не закрыты" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: SPACE.base }}>
+        <Card {...premiumCard('sage')} title="Решения по несоответствиям">
+          <Space size="large" style={{ width: '100%', justifyContent: 'space-around' }}>
+            <Statistic title="Устранить" value={d?.verdict.eliminate ?? 0} valueStyle={{ ...TYPE.metricSm, color: BRAND.ink }} />
+            <Statistic title="Компенсировать" value={d?.verdict.compensate ?? 0} valueStyle={{ ...TYPE.metricSm, color: BRAND.ink }} />
+            <Statistic title="Принять" value={d?.verdict.accept ?? 0} valueStyle={{ ...TYPE.metricSm, color: BRAND.ink }} />
+          </Space>
+        </Card>
+        <Card {...premiumCard('slate')} title="ALE по системам" styles={{ body: { padding: SPACE.airy } }}>
+          {(d?.bySystem ?? []).slice(0, 5).map((s) => (
+            <div key={s.system} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: SPACE.snug }}>
+              <Text>{s.system}</Text><Text strong style={numericText}>{fmtMoney(s.ale)}</Text>
+            </div>
+          ))}
+          {(!d || d.bySystem.length === 0) && <Text type="secondary">Нет данных</Text>}
+        </Card>
+      </div>
+
+      {/* Тепловая карта концентрации риска (§5, виджет 2) */}
+      <Card {...premiumCard('gold')} title="Тепловая карта риска: ИС × подхарактеристика (ALE)"
+        styles={{ body: { padding: SPACE.airy } }}>
+        {systems.length === 0 ? (
+          <Text type="secondary">Нет привязок рисков к подхарактеристикам — добавьте связи на вкладке «Рисковые события».</Text>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `minmax(140px, 1.4fr) repeat(${subchars.length}, minmax(96px, 1fr))`, gap: 4 }}>
+              <div />
+              {subchars.map((sc) => (
+                <div key={sc} style={{ ...TYPE.micro, color: BRAND.inkSoft, textAlign: 'center', padding: SPACE.tight }}>{sc}</div>
+              ))}
+              {systems.map((s) => (
+                <React.Fragment key={s}>
+                  <div style={{ ...TYPE.captionStrong, color: BRAND.ink, display: 'flex', alignItems: 'center' }}>{s}</div>
+                  {subchars.map((sc) => {
+                    const v = cellAle(s, sc);
+                    const a = v / maxAle;
+                    return (
+                      <div key={sc} title={v > 0 ? fmtMoney(v) : undefined} style={{
+                        background: v > 0 ? `rgba(185,154,85,${(0.15 + a * 0.75).toFixed(2)})` : PREMIUM.surfaceSoft,
+                        borderRadius: PREMIUM.radiusSm, padding: SPACE.snug, textAlign: 'center',
+                        ...TYPE.caption, ...numericText, color: BRAND.ink,
+                      }}>
+                        {v > 0 ? fmtMln(v) : '·'}
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Топ рисков по стоимости (§5, виджет 3) */}
+      <Card {...premiumCard('terracotta')} title="Топ рисков по стоимости" styles={{ body: { padding: 0 } }}>
+        <Table<TopRisk>
+          columns={topCols} dataSource={d?.topRisks ?? []} rowKey="code" loading={loading} size="small"
+          pagination={false} scroll={{ x: 780 }}
+          locale={{ emptyText: 'Нет рисковых событий с посчитанным ALE.' }}
+        />
+      </Card>
+    </Space>
   );
 };
 

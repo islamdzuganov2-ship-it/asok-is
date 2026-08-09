@@ -41,3 +41,53 @@ class DemoUserCredentials(BaseModel):
     username: str
     password: str
     role: str
+
+
+# ── Администрирование (BL-008): пользователи и матрица прав ──────────────────────
+class UserAdminOut(BaseModel):
+    id: str
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    role: str
+    is_active: bool
+
+
+class UserCreateIn(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=6, max_length=128)
+    email: Optional[str] = Field(default=None, max_length=255)
+    full_name: Optional[str] = Field(default=None, max_length=255)
+    role: str
+
+
+class UserUpdateIn(BaseModel):
+    full_name: Optional[str] = Field(default=None, max_length=255)
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class PasswordResetIn(BaseModel):
+    password: str = Field(..., min_length=6, max_length=128)
+
+
+class PermissionOut(BaseModel):
+    key: str
+    group: str
+    label: str
+    description: str = ""
+
+
+class PermissionCatalogOut(BaseModel):
+    groups: list[str]
+    permissions: list[PermissionOut]
+    roles: list[str]
+
+
+class RolePermsIn(BaseModel):
+    permissions: list[str]
+
+
+class MePermissionsOut(BaseModel):
+    role: str
+    permissions: list[str]
