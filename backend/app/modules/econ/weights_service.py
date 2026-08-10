@@ -15,15 +15,16 @@
 α считается ОТДЕЛЬНО по каждой подхарактеристике: быстро набирающая статистику надёжность не должна
 «протащить» за собой защищённость без данных. `α_min` (0.3) не даёт риск-весам обнулить редкие классы.
 
-Самодостаточный модуль: НЕ монтируется в роутер (по договорённости — без правки общих файлов). Читает
-константу QUALITY_MODEL и МОДЕЛИ risk напрямую (не фасады) — как dashboard_service, чтобы econ остался
-нижним слоем. Обёртка-эндпойнт добавляется отдельным шагом при согласовании.
+Читает константу QUALITY_MODEL и МОДЕЛИ risk напрямую (не фасады) — как dashboard_service, чтобы econ
+остался нижним слоем. Отдаётся как СОВЕТЧИК: `GET /econ/weights?criticality=` показывает объяснённые
+веса, но интегральный Score по ним НЕ пересчитывается (решение заказчика) — существующие оценки целы.
 """
 from __future__ import annotations
 
 from collections import defaultdict
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,7 +113,12 @@ def _normalize(d: dict) -> dict:
 
 # ─────────────────────────── Результат ───────────────────────────
 
-class SubcharWeight(BaseModel):
+class _CamelModel(BaseModel):
+    """camelCase наружу — единый контракт с фронтом (как в остальных DTO контура)."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+
+
+class SubcharWeight(_CamelModel):
     characteristic: str
     subcharacteristic: str
     n_incidents: int          # N(i) — дедуп. ТС, отнесённые к подхарактеристике
@@ -122,7 +128,7 @@ class SubcharWeight(BaseModel):
     final_weight: float       # итог гибрида, нормирован (Σ = 1)
 
 
-class WeightsResult(BaseModel):
+class WeightsResult(_CamelModel):
     criticality: str
     alpha_min: float
     n0: int

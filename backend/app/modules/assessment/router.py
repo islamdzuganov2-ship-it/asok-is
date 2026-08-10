@@ -15,7 +15,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.iam import require_permission
+from app.modules.iam import get_current_user, require_permission
 from app.modules.quality import (
     ABBR,
     CHARACTERISTICS,
@@ -54,6 +54,7 @@ from app.shared.periods import (
 )
 from app.modules.dataio.importer import ensure_period_values, get_or_create_metric
 from app.modules.llm import gate as llm_gate
+from app.modules.llm import personas as llm_personas
 from app.modules.llm import reasoning as llm_reasoning
 from app.modules.llm import service as llm_service
 
@@ -705,11 +706,13 @@ async def save_judgments(
     return await get_judgments(period_id, db)
 
 
-async def _gate_rules_block(db: AsyncSession, period: AssessmentPeriod) -> str:
+async def _gate_context(db: AsyncSession, period: AssessmentPeriod) -> tuple:
     """Прогоняет детерминированный движок правил (gate) на ПОСЧИТАННЫХ метриках периода.
 
-    Возвращает текст сработавших правил (rules_block) — повод для объяснения LLM. Вердикт
-    Severity/Coverage/Regression выносит Python-движок, а не модель (см. modules/llm/gate.py).
+    Возвращает (GateResult, измерено подхарактеристик, всего подхарактеристик). Текст
+    сработавших правил — повод для объяснения LLM; сама серьёзность и счётчики покрытия
+    нужны матрицам решений (modules/llm/decisions.py). Вердикт Severity/Coverage/Regression
+    выносит Python-движок, а не модель (см. modules/llm/gate.py).
     """
     rows = (await db.execute(
         select(AssessmentValue.calculated_x).where(AssessmentValue.period_id == period.id)
@@ -737,19 +740,25 @@ async def _gate_rules_block(db: AsyncSession, period: AssessmentPeriod) -> str:
                 prev_q = sum(float(x) for x in prev_vals) / len(prev_vals)
                 delta_pp = (q - prev_q) * 100.0
 
-    return llm_gate.evaluate_gate(
+    result = llm_gate.evaluate_gate(
         q=q, measured_subs=len(measured), total_subs=total, delta_pp=delta_pp,
-    ).as_block()
+    )
+    return result, len(measured), total
 
 
 @router.get("/{period_id}/judgment-conclusion")
-async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(get_db),
+                                  current_user: dict = Depends(get_current_user)) -> dict:
     """Заключение по профсуждениям через КОНВЕЙЕР многоаспектного рассуждения (BL-005).
 
-    ISO 25010/38500: факты входа → проблема → первопричина → ролевые точки зрения →
-    контроль достоверности (grounding) → синтез мер → саморефлексия → заключение ЛПР.
-    В ответе — аудируемая трасса (`reasoning`). Самообучение: суждения прошлых периодов
-    передаются как история (RAG).
+    ISO 25010/38500: факты входа → проблема → первопричина → уточняющие вопросы → ролевые
+    точки зрения → контроль достоверности (grounding) → синтез мер → саморефлексия →
+    заключение ЛПР. В ответе — аудируемая трасса (`reasoning`). Самообучение: суждения
+    прошлых периодов передаются как история (RAG).
+
+    ТЗ v18: заключение формируется ПОД РОЛЬ запросившего (persona) — топ-менеджеру короткий
+    вывод с решением, менеджеру качества разбор по характеристикам, риск-менеджеру риск-сценарий.
+    Данные при этом одни и те же: меняется адресация вывода, а не состав фактов.
     """
     period = await _require_period(db, period_id)
     system = await db.get(System, period.system_id)
@@ -802,13 +811,22 @@ async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(ge
         )
 
     # Rule Engine (детерминированный): решает, ЧТО объяснять; вердикт выносит Python, не LLM.
-    rules_block = await _gate_rules_block(db, period)
+    gate_result, measured_subs, total_subs = await _gate_context(db, period)
+    rules_block = gate_result.as_block()
+    criticality = ""
+    if system is not None and system.criticality_class is not None:
+        criticality = getattr(system.criticality_class, "value", str(system.criticality_class))
+
+    # Персона адресата — из роли запросившего (RBAC → персона, см. modules/llm/personas.py).
+    roles = current_user.get("roles") or []
+    persona = llm_personas.resolve(roles[0] if roles else "")
 
     result = await asyncio.to_thread(
         llm_reasoning.generate_reasoned_conclusion,
         system_name, period.period, judgments_block, risks_block, history_block,
         "",  # карточки мер живут во фронтовом контуре governance — честно «данные отсутствуют»
         metrics_block, rules_block,
+        gate_result.severity, criticality, measured_subs, total_subs, persona.code,
     )
     return {
         "period_id": str(period_id),
@@ -818,6 +836,8 @@ async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(ge
         "reasoning": result["trace"],
         "confidence": result["confidence"],
         "fingerprint": result["fingerprint"],
+        "persona": {"code": persona.code, "title": persona.title, "audience": persona.audience},
+        "decisions": result["decisions"],
         "fired_rules": [ln.lstrip("- ") for ln in rules_block.splitlines() if ln.strip()],
         "mapped_risks": [
             {"title": r.title, "characteristic": r.characteristic, "mitigation": r.mitigation}

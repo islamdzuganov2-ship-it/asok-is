@@ -29,6 +29,7 @@ const RiskBasePage = lazy(() => import('./pages/RiskBasePage'));
 const RiskEconomicsPage = lazy(() => import('./pages/RiskEconomicsPage'));
 const UsersAdminPage = lazy(() => import('./pages/admin/UsersAdminPage'));
 const PermissionsMatrixPage = lazy(() => import('./pages/admin/PermissionsMatrixPage'));
+const LlmQualityPage = lazy(() => import('./pages/admin/LlmQualityPage'));
 
 // `tip` у antd работает только во вложенном/полноэкранном режиме — иначе спиннер сыплет
 // предупреждениями в консоль на каждой ленивой загрузке. Подпись выводим сами (UI-10).
@@ -139,6 +140,7 @@ export const App: React.FC = () => {
                             <Route path="admin/flags" element={<RequirePermission perm="view.settings"><AdminFlagsPage /></RequirePermission>} />
                             <Route path="admin/users" element={<RequirePermission perm="view.admin.users"><UsersAdminPage /></RequirePermission>} />
                             <Route path="admin/permissions" element={<RequirePermission perm="view.admin.permissions"><PermissionsMatrixPage /></RequirePermission>} />
+                            <Route path="admin/llm-quality" element={<RequirePermission perm="view.admin.llm_quality"><LlmQualityPage /></RequirePermission>} />
                             <Route index element={<Navigate to="/dashboard" replace />} />
                         </Routes></Suspense></AppLayout></RequireAuth>} />
                     </Routes>

@@ -39,7 +39,9 @@ def setup_function():
 
 def test_trace_contains_all_stages_in_order():
     trace = run_reasoning(_inp(), use_llm=False)
-    assert [s.code for s in trace.stages] == ["E0", "E1", "E2", "E3", "E4", "E5", "E6", "E7"]
+    assert [s.code for s in trace.stages] == [
+        "E0", "E1", "E2", "E2Q", "E3", "E4", "E5", "E6", "E7",
+    ]
     assert trace.conclusion == trace.stage("E7").content
     assert trace.conclusion.strip()
 
@@ -207,7 +209,8 @@ def test_measures_driven_reasoning_without_judgments():
 def test_generate_reasoned_conclusion_shape_and_cache(monkeypatch):
     monkeypatch.setattr(llm, "complete", lambda *a, **k: None)
     r1 = generate_reasoned_conclusion("ЕХД", "Q2-2026", JUDGMENTS, RISKS)
-    assert set(r1) == {"conclusion", "trace", "confidence", "llm", "fingerprint"}
+    assert set(r1) == {"conclusion", "trace", "confidence", "llm", "fingerprint",
+                       "persona", "decisions"}
     assert r1["trace"]["stages"][0]["code"] == "E0"
     assert len(r1["trace"]["lenses"]) >= 3
     r2 = generate_reasoned_conclusion("ЕХД", "Q2-2026", JUDGMENTS, RISKS)
@@ -221,6 +224,127 @@ def test_training_block_contains_stage_trace():
     assert "Первопричина" in block
     assert "Линза: Менеджер качества" in block
     assert "Саморефлексия" in block
+
+
+# ─── ТЗ v18: лестница «почему», уточняющие вопросы, персоны, матрицы решений ─────────
+
+_LADDER = (
+    "ПРОБЛЕМА: просела тестируемость, регресс выполняется вручную.\n"
+    "ПЕРВОПРИЧИНА:\n"
+    "ПОЧЕМУ-1: регресс выполняется вручную\n"
+    "ПОЧЕМУ-2: нет автотестов на критичные сценарии\n"
+    "ПОЧЕМУ-3: не выделен ресурс на автоматизацию\n"
+    "ПОЧЕМУ-4: данных для следующего «почему» нет\n"
+)
+
+
+def test_why_ladder_counts_only_proven_steps():
+    chain = reasoning.parse_why_chain(_LADDER, max_depth=5)
+    # Ступень-заглушка «данных нет» лестницу завершает и в глубину не засчитывается.
+    assert chain == ["регресс выполняется вручную",
+                     "нет автотестов на критичные сценарии",
+                     "не выделен ресурс на автоматизацию"]
+
+
+def test_why_ladder_stops_on_numbering_gap():
+    text = "ПОЧЕМУ-1: первая\nПОЧЕМУ-3: третья без второй"
+    assert reasoning.parse_why_chain(text) == ["первая"]
+
+
+def test_why_ladder_respects_persona_depth():
+    text = "\n".join(f"ПОЧЕМУ-{i}: ступень {i}" for i in range(1, 6))
+    assert len(reasoning.parse_why_chain(text, max_depth=3)) == 3
+    assert len(reasoning.parse_why_chain(text, max_depth=5)) == 5
+
+
+def test_why_ladder_tolerates_loose_formatting():
+    text = "**ПОЧЕМУ 1** — не выделен ресурс\n2. что-то постороннее"
+    assert reasoning.parse_why_chain(text) == ["не выделен ресурс"]
+
+
+def test_why_depth_recorded_in_trace(monkeypatch):
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: _LADDER)
+    trace = run_reasoning(_inp())
+    assert trace.why_depth == 3
+    assert "Управляемая первопричина (3-я ступень)" in trace.stage("E2").content
+
+
+def test_deterministic_run_has_no_invented_why_depth():
+    trace = run_reasoning(_inp(), use_llm=False)
+    assert trace.why_depth == 0        # без модели ступени не выдумываются
+    assert trace.stage("E2").fell_back
+
+
+def test_qa_stage_asks_only_about_present_data():
+    # Мер и истории нет, но есть риски и два суждения → вопросы только про них.
+    trace = run_reasoning(_inp(measures_block="", history_block=""), use_llm=False)
+    questions = " ".join(q.question for q in trace.questions)
+    assert "рисков" in questions or "риск" in questions
+    assert "прошлыми периодами" not in questions   # истории нет — спрашивать бессмысленно
+
+
+def test_qa_stage_marks_unanswered_questions_honestly(monkeypatch):
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: None)
+    trace = run_reasoning(_inp())
+    assert trace.questions, "вопросы должны формироваться и без модели"
+    assert all(not q.resolved for q in trace.questions)
+    assert "данные отсутствуют" in trace.stage("E2Q").content
+
+
+def test_qa_stage_records_answers(monkeypatch):
+    def fake(prompt, system=None, max_tokens=None, temperature=None):
+        if "ОТВЕТ-1" in prompt:
+            return "ОТВЕТ-1: меры закрывают причину частично.\nОТВЕТ-2: риск подтверждается суждениями."
+        return None
+    monkeypatch.setattr(llm, "complete", fake)
+    trace = run_reasoning(_inp())
+    resolved = [q for q in trace.questions if q.resolved]
+    assert resolved, "ответы модели должны попадать в трассу"
+    assert trace.stage("E2Q").used_llm
+
+
+def test_persona_changes_lenses_and_budget():
+    top = run_reasoning(_inp(), use_llm=False, persona="TOP_MANAGER")
+    quality = run_reasoning(_inp(), use_llm=False, persona="QUALITY_MANAGER")
+    assert top.persona == "TOP_MANAGER" and quality.persona == "QUALITY_MANAGER"
+    assert len(top.lenses) == 3 and len(quality.lenses) == 4
+    assert {lens.code for lens in top.lenses} == {"CIO", "RISK", "QUALITY"}
+
+
+def test_unknown_persona_falls_back_to_default():
+    trace = run_reasoning(_inp(), use_llm=False, persona="НЕТ_ТАКОЙ")
+    assert trace.persona == "QUALITY_MANAGER"
+
+
+def test_principles_audit_only_for_top_manager():
+    top = run_reasoning(_inp(), use_llm=False, persona="TOP_MANAGER")
+    quality = run_reasoning(_inp(), use_llm=False, persona="QUALITY_MANAGER")
+    assert top.principles_audit and "coverage" in top.principles_audit
+    assert quality.principles_audit == {}
+
+
+def test_decision_matrices_applied_and_exposed():
+    trace = run_reasoning(
+        _inp(severity="high", criticality="MISSION CRITICAL"), use_llm=False)
+    assert trace.decisions["triage"]["tier"] == "правление"
+    assert trace.decisions["triage"]["sla_days"] == 7
+    assert "Решение (матрица)" in trace.conclusion
+    assert "правление" in trace.conclusion
+
+
+def test_decision_matrix_is_not_overridden_by_llm(monkeypatch):
+    # Модель «предлагает» другой уровень решения — таблица остаётся источником истины.
+    monkeypatch.setattr(llm, "complete",
+                        lambda *a, **k: "ЗАКЛЮЧЕНИЕ: решение принимать не требуется.")
+    trace = run_reasoning(_inp(severity="high", criticality="MISSION CRITICAL"))
+    assert trace.decisions["triage"]["tier"] == "правление"
+    assert "уровень — правление" in trace.conclusion
+
+
+def test_trace_dict_carries_v18_fields():
+    d = run_reasoning(_inp(), use_llm=False).to_dict()
+    for key in ("persona", "why_chain", "why_depth", "questions", "decisions", "principles"):
+        assert key in d, f"в трассе нет поля {key}"
 
 
 # ─── Критерий 5: нет терминологии управленческих методологий в выводе ─────────────────

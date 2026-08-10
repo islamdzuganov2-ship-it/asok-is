@@ -308,6 +308,75 @@ export interface DashboardPrefs { widgets: WidgetPref[] }
 export interface UserPrefs { dashboards?: Record<string, DashboardPrefs>; [k: string]: unknown }
 export interface PreferencesResponse { prefs: UserPrefs }
 
+// ── Самооценка LLM по ISO/IEC 25010 (ТЗ v18 п.10) ──────────────────────────────────
+// score = null означает «невозможно измерить» — это ЧЕСТНЫЙ статус, а не отсутствие данных:
+// подхарактеристика либо неприменима к LLM-компоненту, либо требует инференса, который в
+// данном прогоне не выполнялся. В UI такие строки показываются отдельным статусом.
+export interface LlmSubcheck {
+    subcharacteristic: string;
+    what: string;
+    status: 'measured' | 'not_measurable';
+    score: number | null;
+    evidence: string;
+}
+export interface LlmCharacteristicCheck {
+    characteristic: string;
+    score: number | null;
+    measured: number;
+    total: number;
+    subcharacteristics: LlmSubcheck[];
+}
+export interface LlmModelProfile {
+    file_name?: string; name?: string; architecture?: string; quant?: string;
+    params?: string; size_mb?: number; n_ctx?: number; n_ctx_train?: number;
+    n_gpu_layers?: number; has_chat_template?: boolean;
+}
+export interface LlmQualityReport {
+    id: string;
+    generated_at: string;
+    duration_s: number;
+    mode: 'full' | 'static';
+    trigger: string;
+    model: LlmModelProfile | null;
+    model_available: boolean;
+    integral: number | null;
+    coverage: number;
+    measured: number;
+    total: number;
+    characteristics: LlmCharacteristicCheck[];
+    verdict: string;
+    notes: string[];
+}
+export interface LlmQualityHistoryRow {
+    id: string; generated_at: string; mode: string; trigger: string;
+    integral: number | null; coverage: number; duration_s: number; model?: string;
+}
+export interface LlmQualityResponse {
+    report: LlmQualityReport | null;
+    history: LlmQualityHistoryRow[];
+    schedule: string;
+}
+export interface LlmQualityRunResponse {
+    status: 'QUEUED' | 'COMPLETED';
+    mode: string;
+    task_id?: string;
+    report?: LlmQualityReport;
+    hint?: string;
+}
+export interface LlmPipelineSource {
+    code: string; title: string; mechanism: string; storage: string;
+    feeds: string[]; level: string; level_title: string; state: string;
+    module: string; note: string;
+}
+export interface LlmPipelineResponse {
+    levels: { code: string; title: string; weights_change: boolean; runtime: boolean; description: string }[];
+    sources: LlmPipelineSource[];
+    active_count: number;
+    continuous_finetuning: boolean;
+    rag_mechanism: string;
+    personas: { code: string; title: string; audience: string; roles: string[]; why_depth: number }[];
+}
+
 export const apiSlice = createApi({
     reducerPath: 'api',
     baseQuery: fetchBaseQuery({
@@ -329,7 +398,7 @@ export const apiSlice = createApi({
     refetchOnFocus: true,
     refetchOnReconnect: true,
     refetchOnMountOrArgChange: 30,
-    tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems', 'Incidents', 'Users', 'Permissions', 'MyPermissions', 'Preferences'],
+    tagTypes: ['Assessment', 'Dashboard', 'Metrics', 'Systems', 'Incidents', 'Users', 'Permissions', 'MyPermissions', 'Preferences', 'LlmQuality'],
     endpoints: (builder) => ({
         getExecutiveDashboard: builder.query<DashboardData, void>({
             query: () => '/reports/executive-dashboard',
@@ -576,6 +645,21 @@ export const apiSlice = createApi({
             query: (body) => ({ url: '/iam/me/preferences', method: 'PUT', body }),
             invalidatesTags: ['Preferences'],
         }),
+        // ТЗ v18 п.10 — самооценка LLM по ISO/IEC 25010 (только суперадминистратор).
+        getLlmQuality: builder.query<LlmQualityResponse, void>({
+            query: () => '/reports/llm-quality',
+            providesTags: ['LlmQuality'],
+        }),
+        runLlmQuality: builder.mutation<LlmQualityRunResponse, { mode: 'full' | 'static' }>({
+            query: ({ mode }) => ({ url: `/reports/llm-quality/run?mode=${mode}`, method: 'POST' }),
+            // Полный прогон уходит в фон и отчёт появится позже — инвалидация здесь обновляет
+            // экран сразу после быстрого («static») прогона, а фоновой результат подхватится
+            // следующим запросом страницы.
+            invalidatesTags: ['LlmQuality'],
+        }),
+        getLlmPipeline: builder.query<LlmPipelineResponse, void>({
+            query: () => '/reports/llm-pipeline',
+        }),
     }),
 });
 
@@ -623,4 +707,7 @@ export const {
     useSetRolePermissionsMutation,
     useGetMyPreferencesQuery,
     usePutMyPreferencesMutation,
+    useGetLlmQualityQuery,
+    useRunLlmQualityMutation,
+    useGetLlmPipelineQuery,
 } = apiSlice;

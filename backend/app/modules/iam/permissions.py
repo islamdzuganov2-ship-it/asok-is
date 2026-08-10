@@ -43,6 +43,8 @@ PERMISSIONS: list[Permission] = [
     Permission("view.settings", "Разделы", "Настройка (персональная)"),
     Permission("view.admin.users", "Администрирование", "Раздел «Пользователи»"),
     Permission("view.admin.permissions", "Администрирование", "Раздел «Права»"),
+    Permission("view.admin.llm_quality", "Администрирование", "Раздел «Качество LLM»",
+               "Дашборд самооценки LLM-подсистемы по ISO/IEC 25010 (только суперадминистратор)"),
     # Действия (запись/операции)
     Permission("assessment.edit", "Оценка", "Вносить и править оценки"),
     Permission("assessment.review", "Оценка", "Экспертное ревью оценок"),
@@ -58,6 +60,7 @@ PERMISSIONS: list[Permission] = [
     Permission("nonconformity.decide", "Риск-экономика", "Решение по несоответствию / принятие риска"),
     Permission("risk.verify", "Риск-экономика", "Верифицировать меры/несоответствия (аудитор)"),
     Permission("llm.reload", "Система", "Перезагружать LLM-модель"),
+    Permission("llm.quality.run", "Система", "Запускать самооценку LLM по ISO/IEC 25010"),
     Permission("risk.reembed", "Система", "Пересчёт эмбеддингов базы рисков"),
     Permission("admin.users.manage", "Администрирование", "Заводить и менять пользователей"),
     Permission("admin.permissions.manage", "Администрирование", "Раздавать права ролям"),
@@ -66,9 +69,13 @@ PERMISSIONS: list[Permission] = [
 ALL_PERMISSION_KEYS: frozenset[str] = frozenset(p.key for p in PERMISSIONS)
 
 # Права управления доступом — их у SUPER_ADMIN нельзя снять (защита от самоблокировки).
+# Сюда же отнесены права на самооценку LLM: ТЗ v18 п.10 требует, чтобы дашборд качества
+# LLM был доступен ИСКЛЮЧИТЕЛЬНО суперадминистратору. Попадание в этот набор означает,
+# что право не входит даже в ADMIN_PERMISSIONS (см. ниже) и не раздаётся матрицей.
 PROTECTED_SUPERADMIN_PERMISSIONS: frozenset[str] = frozenset({
     "view.admin.users", "view.admin.permissions",
     "admin.users.manage", "admin.permissions.manage",
+    "view.admin.llm_quality", "llm.quality.run",
 })
 
 # Встроенные роли — их права ФИКСИРОВАНЫ в коде (не редактируются матрицей):

@@ -18,6 +18,7 @@ import {
     AlertOutlined,
     TeamOutlined,
     SafetyOutlined,
+    ExperimentOutlined,
     SafetyCertificateOutlined,
     // ExperimentOutlined — под развитие: иконка пункта «Оценка СИИ» (пока не выведен в меню).
 } from '@ant-design/icons';
@@ -139,6 +140,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const adminItems = [
         ...(has('view.admin.users') ? [mi('/admin/users', <TeamOutlined />, 'Пользователи')] : []),
         ...(has('view.admin.permissions') ? [mi('/admin/permissions', <SafetyOutlined />, 'Права')] : []),
+        // Пункт виден только суперадминистратору: право view.admin.llm_quality исключительное
+        // и матрицей другим ролям не выдаётся (ТЗ v18 п.10).
+        ...(has('view.admin.llm_quality') ? [mi('/admin/llm-quality', <ExperimentOutlined />, 'Качество LLM')] : []),
     ];
     const settingsItems = has('view.settings') ? [mi('/admin/flags', <SettingOutlined />, 'Настройка')] : [];
 
