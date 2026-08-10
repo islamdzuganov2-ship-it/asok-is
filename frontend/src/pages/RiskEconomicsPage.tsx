@@ -16,7 +16,7 @@ import { PlusOutlined, ReloadOutlined, InboxOutlined } from '@ant-design/icons';
 import KpiCard from '../components/KpiCard';
 import { premiumCard, accentDot, accentColorOf, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
 import { numericColumn, numericText } from '../theme/table';
-import { BRAND } from '../theme/ragPalette';
+import { BRAND, RAG } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -41,6 +41,12 @@ interface Nonconformity {
   subcharacteristic: string; level: string; status: string; owner: string;
   evaluatedAle?: number | null; evidenceType?: string | null; isBlocking: boolean;
 }
+// Эффективность руководителей (задача 12, §7.1) — диагностика без привязки к мотивации.
+interface ManagerMetricRow {
+  owner: string; openCount: number; overdueCount: number; completedCount: number;
+  avgAgeDays: number | null; deltaAleManaged: number; acceptShare: number; compensatingShare: number;
+}
+interface ManagerMetrics { mode: string; note: string; generatedAt: string; rows: ManagerMetricRow[] }
 interface FunnelStage { status: string; count: number }
 interface ClosureFunnel { total: number; verified: number; closureRate: number; stages: FunnelStage[] }
 interface AleResult { incidentsCounted: number; incidentsCosted: number; aro?: number | null; aleAvg?: number | null }
@@ -675,6 +681,97 @@ const ClosureTab: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+    </Space>
+  );
+};
+
+// ════════════ Эффективность руководителей (задача 12, §7.1) — ДИАГНОСТИКА ════════════
+const ManagersTab: React.FC = () => {
+  const [d, setD] = useState<ManagerMetrics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError(null);
+    api<ManagerMetrics>('/econ/manager-metrics')
+      .then((r) => { if (alive) setD(r); })
+      .catch((e: any) => { if (alive) setError(e.message); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const rows = d?.rows ?? [];
+  const totals = useMemo(() => ({
+    owners: rows.length,
+    open: rows.reduce((s, r) => s + r.openCount, 0),
+    overdue: rows.reduce((s, r) => s + r.overdueCount, 0),
+    delta: rows.reduce((s, r) => s + r.deltaAleManaged, 0),
+  }), [rows]);
+
+  const columns: ColumnsType<ManagerMetricRow> = [
+    { title: 'Владелец', dataIndex: 'owner', width: 200, render: (o: string) => <Text strong>{o}</Text> },
+    numericColumn({ title: 'Нагрузка', dataIndex: 'openCount', width: 110 }),
+    numericColumn({
+      title: 'Просрочено', dataIndex: 'overdueCount', width: 120,
+      render: (v: number) => (
+        <Text style={{ color: v > 0 ? RAG.bad.strong : BRAND.inkSoft }}>{v}</Text>
+      ),
+    }),
+    numericColumn({
+      title: 'Выполнено', dataIndex: 'completedCount', width: 120,
+      render: (v: number) => (
+        <Text style={{ color: v > 0 ? RAG.good.strong : BRAND.inkSoft }}>{v}</Text>
+      ),
+    }),
+    numericColumn({
+      title: 'Средний возраст, дн', dataIndex: 'avgAgeDays', width: 170,
+      render: (v: number | null) => fmtNum(v, 1),
+    }),
+    numericColumn({
+      title: 'Δ ALE под управлением', dataIndex: 'deltaAleManaged', width: 200,
+      render: (v: number) => fmtMoney(v),
+    }),
+    numericColumn({
+      title: 'Доля «принять», %', dataIndex: 'acceptShare', width: 160,
+      // Высокая доля «принять» — сигнал: проблемы прячут вместо решения (§7.1).
+      render: (v: number) => (
+        <Text style={{ color: v >= 50 ? RAG.medium.strong : BRAND.inkSoft }}>{fmtNum(v, 1)}</Text>
+      ),
+    }),
+    numericColumn({
+      title: 'Доля компенсирующих, %', dataIndex: 'compensatingShare', width: 200,
+      // Много компенсирующих — лечение симптомов вместо причин (§7.1).
+      render: (v: number) => (
+        <Text style={{ color: v >= 50 ? RAG.medium.strong : BRAND.inkSoft }}>{fmtNum(v, 1)}</Text>
+      ),
+    }),
+  ];
+
+  return (
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space size="middle" wrap>
+        <KpiCard title="Руководителей" value={totals.owners} loading={loading} />
+        <KpiCard title="Открытых задач" value={totals.open} loading={loading} />
+        <KpiCard title="Просрочено" value={totals.overdue} loading={loading}
+          color={totals.overdue > 0 ? RAG.bad.strong : undefined} />
+        <KpiCard title="Δ ALE под управлением" value={fmtMln(totals.delta)} hint="₽/год"
+          loading={loading} />
+      </Space>
+
+      <Alert type="info" showIcon
+        message="Диагностический режим — без привязки к мотивации"
+        description={d?.note ?? 'Метрики выводятся пакетом, не по одной: при прямой привязке к премии любая из них ломается (дробление мер, срок с запасом, завышение исходной оценки риска). Первые 2 квартала — наблюдение и калибровка порогов.'} />
+
+      {error && <Alert type="error" showIcon message="Ошибка загрузки" description={error} closable />}
+
+      <Card {...premiumCard('slate')} styles={{ body: { padding: 0 } }}>
+        <Table<ManagerMetricRow>
+          columns={columns} dataSource={rows} rowKey="owner" loading={loading} size="small"
+          scroll={{ x: 1280 }} pagination={{ pageSize: 15, hideOnSinglePage: true }}
+          locale={{ emptyText: 'Нет данных: метрики появятся, когда у несоответствий и мер будут указаны владельцы.' }}
+        />
+      </Card>
     </Space>
   );
 };
