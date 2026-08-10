@@ -114,6 +114,7 @@ const RiskEconomicsPage: React.FC = () => {
             { key: 'risks', label: 'Рисковые события', children: <RiskEventsTab /> },
             { key: 'refs', label: 'Справочники', children: <ReferencesTab /> },
             { key: 'closure', label: 'Замыкание контура', children: <ClosureTab /> },
+            { key: 'managers', label: 'Эффективность руководителей', children: <ManagersTab /> },
           ]}
         />
       </Space>
