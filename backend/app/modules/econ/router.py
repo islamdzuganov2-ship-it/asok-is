@@ -18,6 +18,7 @@ from app.infrastructure.database import get_db
 from app.modules.econ import service
 from app.modules.econ.dashboard_service import cost_dashboard
 from app.modules.econ.manager_metrics_service import ManagerMetricsOut, manager_metrics
+from app.modules.econ.measure_catalog import CatalogEntry, catalog_for
 from app.modules.econ.weights_service import WeightsResult, compute_subchar_weights
 from app.modules.econ.schemas import (
     BpCostIn,
@@ -75,6 +76,18 @@ async def get_subchar_weights(
     """Гибрид-веса: α·профиль(класс ИС) + (1−α)·фактика(доля в ALE), α=max(α_min, N₀/(N₀+N)).
     Отдельный советчик — интегральный Score НЕ пересчитывается (решение заказчика)."""
     return await compute_subchar_weights(db, criticality=criticality)
+
+
+# ═══════ Каталог «риск → подхарактеристика → мера» (задача 7, RE-06, §4.2) — только чтение ═══════
+
+@router.get("/measure-catalog", response_model=list[CatalogEntry])
+async def get_measure_catalog(
+    characteristic: str | None = None,
+    subcharacteristic: str | None = None,
+    _: dict = Depends(get_current_user),
+) -> list[CatalogEntry]:
+    """Типовые связки: рисковое событие + устраняющая и компенсирующая меры по подхарактеристике."""
+    return catalog_for(characteristic, subcharacteristic)
 
 
 # ═══════════════════════ Финпараметры ═══════════════════════

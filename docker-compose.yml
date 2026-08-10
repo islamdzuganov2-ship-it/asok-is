@@ -71,6 +71,15 @@ services:
       # (seed_project_excel_files проверяет .exists()). Загрузка Excel пользователем — отдельная фича.
       - /app/__pycache__
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # RES-01: потолок ресурсов. Веса GGUF резидентны В ПРОЦЕССЕ бэкенда (~6.2 ГиБ для 12B-Q4_K_M),
+    # поэтому без лимита OOM-killer выбирает жертву на всём хосте, а не в контейнере.
+    # Лимит = веса + запас на приложение и KV-кэш. cpus согласован с LLM_N_THREADS (8),
+    # остальные ядра остаются БД, Redis и фронту — инференс не должен вытеснять весь стек.
+    deploy:
+      resources:
+        limits:
+          memory: 6800M
+          cpus: "8"
     networks:
       - asok_net
 
@@ -85,6 +94,12 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://asok_user:${POSTGRES_PASSWORD:-asok_pass123}@postgres:5432/asok_is
       - REDIS_URL=redis://redis:6379/0
+      # RES-02: воркер НЕ грузит веса модели. modules/llm/tasks.py вызывает тот же in-process
+      # llama.cpp, а prefork с --concurrency=2 дал бы ДВЕ копии весов (2 × ~6.2 ГиБ) сверх
+      # копии бэкенда — при 8.27 ГБ RAM хоста это гарантированный OOM. Тяжёлый инференс —
+      # прерогатива бэкенда; воркер при LLM_ENABLED=false отдаёт честный детерминированный
+      # fallback (см. service._load_llm → «LLM отключён»).
+      - LLM_ENABLED=false
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,6 +112,13 @@ services:
       - ./models/llm_brain:/app/models/llm_brain
       - /app/__pycache__
     command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=2
+    # RES-01: воркер без весов модели — компактный лимит. Если LLM_ENABLED вернут в true,
+    # контейнер упрётся в лимит и будет убит один, не утащив за собой хост.
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "2"
     # У воркера нет HTTP-порта, поэтому unhealthy-проверка из Dockerfile (curl :8000) всегда
     # падала. Проверяем готовность брокера/воркера через celery inspect ping.
     healthcheck:
