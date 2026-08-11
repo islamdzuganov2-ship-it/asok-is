@@ -35,6 +35,7 @@ import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE,
 import CollapsibleCard from '../../components/CollapsibleCard';
 import KpiCard from '../../components/KpiCard';
 import { BRAND, RAG, solidTagStyle, ACCENT } from '../../theme/ragPalette';
+import { useChartTokens } from '../../theme/useThemeTokens';
 import { numericColumn, numericText } from '../../theme/table';
 
 const { Title, Text, Paragraph } = Typography;
@@ -90,6 +91,9 @@ const IncidentsAnalyticsPage: React.FC = () => {
     };
     const quarterOrder = (k: string) => { const [q, y] = k.slice(1).split('-'); return Number(y) * 10 + Number(q); };
 
+    // ECharts (canvas) не понимает var() — берём конкретные цвета активной темы.
+    const chart = useChartTokens();
+
     const systemOptions = useMemo(
         () => [...new Set(allIncidents.map((r) => r.systemName))].sort().map((s) => ({ value: s, label: s })),
         [allIncidents],
@@ -116,7 +120,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
     const donutOption = useMemo(() => ({
         // confine: true — всплывашка не должна вылезать за контейнер и обрезаться (UI-15).
         tooltip: { trigger: 'item', confine: true, formatter: '{b}: {c} ({d}%)' },
-        legend: { bottom: 0, icon: 'circle', textStyle: { color: BRAND.ink } },
+        legend: { bottom: 0, icon: 'circle', textStyle: { color: chart.ink } },
         series: [{
             type: 'pie', radius: ['52%', '78%'], center: ['50%', '44%'], avoidLabelOverlap: true,
             itemStyle: { borderColor: '#fff', borderWidth: 2 },
@@ -126,7 +130,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
                 itemStyle: { color: CATEGORY_COLOR[c.category] ?? RAG.muted.color },
             })),
         }],
-    }), [analytics]);
+    }), [analytics, chart.ink]);
 
     const columns: ColumnsType<TechIncidentDto> = [
         { title: 'ИС', dataIndex: 'systemName', width: 160, fixed: 'left' as const },

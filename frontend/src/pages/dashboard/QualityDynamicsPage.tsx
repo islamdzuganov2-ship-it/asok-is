@@ -23,6 +23,7 @@ import {
 } from '../../data/mockScaleData';
 import { BRAND, RAG, ragToken, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE, SPACE } from '../../theme/premium';
+import { useChartBase } from '../../theme/useThemeTokens';
 import Sparkline from '../../components/Sparkline';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import { DynamicsModal } from '../../components/DynamicsModal';
@@ -30,7 +31,9 @@ import { reasonKey, selectReasons } from '../../store/slices/dynamicsSlice';
 
 const { Title, Text } = Typography;
 
-const LINE_COLORS = [RAG.good.color, RAG.medium.color, RAG.bad.color, ACCENT.slate.color, '#9DBE86', '#B98AAD', BRAND.inkSoft, '#D49479'];
+// Категориальные цвета линий — семантически нейтральные литералы (в ECharts var() не работает,
+// поэтому вместо BRAND.inkSoft берём его конкретное значение премиум-темы).
+const LINE_COLORS = [RAG.good.color, RAG.medium.color, RAG.bad.color, ACCENT.slate.color, '#9DBE86', '#B98AAD', '#5B6675', '#D49479'];
 const ALL_SYSTEMS = '__ALL__';
 const ANOMALY_COLOR = RAG.bad.color;
 
@@ -83,6 +86,7 @@ const QualityDynamicsPage: React.FC = () => {
     [systemId],
   );
   const dyn = DYNAMICS[system.name];
+  const cbase = useChartBase();
   const [charFilter, setCharFilter] = useState<string | undefined>();
   const [modalSeries, setModalSeries] = useState<DynSeries | null>(null);
   // Карточка подхарактеристик — сворачиваемая, изначально СВЁРНУТА; выбор фильтра её авто-раскрывает (T-22).
@@ -108,10 +112,11 @@ const QualityDynamicsPage: React.FC = () => {
             return lines.length ? `<b>${QUARTERS[qIdx]}</b><br/>${lines.join('<br/>')}` : '';
           },
         },
-        legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: TYPE.micro.fontSize } },
+        textStyle: cbase.textStyle,
+        legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: TYPE.micro.fontSize, color: cbase.axisLabel.color } },
         grid: { top: 16, left: 44, right: 16, bottom: 52 },
-        xAxis: { type: 'category', data: QUARTERS, boundaryGap: false },
-        yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
+        xAxis: { type: 'category', data: QUARTERS, boundaryGap: false, axisLabel: cbase.axisLabel, axisLine: cbase.axisLine },
+        yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%', color: cbase.axisLabel.color }, splitLine: cbase.splitLine },
         color: LINE_COLORS,
         series: MANAGER_SCALE_SYSTEMS.map((s) => ({
           name: s.name, type: 'line', smooth: true, connectNulls: false,
@@ -133,9 +138,10 @@ const QualityDynamicsPage: React.FC = () => {
           return `<b>${QUARTERS[p.dataIndex]}</b><br/>${pointTooltip(system.name, s, p.dataIndex, reasons)}`;
         },
       },
+      textStyle: cbase.textStyle,
       grid: { top: 16, left: 44, right: 16, bottom: 28 },
-      xAxis: { type: 'category', data: QUARTERS, boundaryGap: false },
-      yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
+      xAxis: { type: 'category', data: QUARTERS, boundaryGap: false, axisLabel: cbase.axisLabel, axisLine: cbase.axisLine },
+      yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%', color: cbase.axisLabel.color }, splitLine: cbase.splitLine },
       series: [{
         name: s.name, type: 'line', smooth: true, connectNulls: false,
         triggerLineEvent: true,
@@ -145,17 +151,18 @@ const QualityDynamicsPage: React.FC = () => {
         data: seriesPoints(s.series),
       }],
     };
-  }, [isAll, dyn, system.name, reasons]);
+  }, [isAll, dyn, system.name, reasons, cbase]);
 
   // 1. Динамика по характеристикам. Всплывающее окно ОТКЛЮЧЕНО намеренно: оно избыточно и
   // мешает (по требованию МК). Аномалии видны красными маркерами на линиях, а причины
   // открываются по клику (модалка) — этого достаточно.
   const charChartOption = useMemo(() => ({
     tooltip: { show: false },
-    legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: TYPE.micro.fontSize } },
+    textStyle: cbase.textStyle,
+    legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: TYPE.micro.fontSize, color: cbase.axisLabel.color } },
     grid: { top: 16, left: 44, right: 16, bottom: 52 },
-    xAxis: { type: 'category', data: QUARTERS, boundaryGap: false },
-    yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
+    xAxis: { type: 'category', data: QUARTERS, boundaryGap: false, axisLabel: cbase.axisLabel, axisLine: cbase.axisLine },
+    yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%', color: cbase.axisLabel.color }, splitLine: cbase.splitLine },
     color: LINE_COLORS,
     series: dyn.chars.map((c) => ({
       name: c.name, type: 'line', smooth: true, connectNulls: false,
@@ -165,7 +172,7 @@ const QualityDynamicsPage: React.FC = () => {
       lineStyle: { width: 2 },
       data: seriesPoints(c.series),
     })),
-  }), [dyn]);
+  }), [dyn, cbase]);
 
   const subs = charFilter ? dyn.subs.filter((s) => s.char === charFilter) : dyn.subs;
   const charName = charFilter ? dyn.chars.find((c) => c.char === charFilter)?.name : undefined;

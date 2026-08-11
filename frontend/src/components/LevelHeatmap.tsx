@@ -43,6 +43,10 @@ const scoreColor = (p: number) => LEVEL_COLORS[levelOf(p)];
 /** Тот же уровень, но как ТЕКСТ на белом: пастель давала 1.94:1, нужен глубокий тон. */
 const scoreTextColor = (p: number) => LEVEL_TAG_COLORS[levelOf(p)];
 
+// Текст ВНУТРИ цветной ячейки: пастель ячеек рассчитана под ТЁМНЫЙ текст во всех темах
+// (в т.ч. графит), поэтому здесь фиксированный тёмный тон, а не темизируемый BRAND.ink.
+const CELL_INK = '#2B3A4B';
+
 // Короткие однострочные подписи характеристик для ровной шапки (полное имя — в подсказке).
 const ABBR: Record<string, string> = {
   'Функциональная пригодность': 'Функц.',
@@ -57,16 +61,16 @@ const ABBR: Record<string, string> = {
 const short = (c: string) => ABBR[c] ?? c;
 
 const thBase: React.CSSProperties = {
-  position: 'sticky', top: 0, zIndex: 2, background: '#fff',
+  position: 'sticky', top: 0, zIndex: 2, background: BRAND.surface,
   fontWeight: 500, fontSize: TYPE.micro.fontSize, color: BRAND.inkSoft,
-  padding: '8px', borderBottom: '1px solid #E8EAED', textAlign: 'center',
+  padding: '8px', borderBottom: `1px solid ${BRAND.divider}`, textAlign: 'center',
   width: 86, minWidth: 86, whiteSpace: 'nowrap', verticalAlign: 'middle',
 };
 
 const LevelHeatmap: React.FC<Props> = ({
   xLabels, yLabels, matrix, charScores, onCharClick, cellScores, onCellClick, maxHeight = 460, cornerContent,
 }) => (
-  <div style={{ maxHeight, overflow: 'auto', border: '1px solid #E8EAED', borderRadius: 8 }}>
+  <div style={{ maxHeight, overflow: 'auto', border: `1px solid ${BRAND.divider}`, borderRadius: 8 }}>
     <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
       <thead>
         <tr>
@@ -97,9 +101,9 @@ const LevelHeatmap: React.FC<Props> = ({
         {yLabels.map((sys, y) => (
           <tr key={sys}>
             <td style={{
-              position: 'sticky', left: 0, zIndex: 1, background: '#fff',
+              position: 'sticky', left: 0, zIndex: 1, background: BRAND.surface,
               fontSize: TYPE.caption.fontSize, color: BRAND.ink, padding: '4px 12px',
-              borderBottom: '1px solid #F0F1F3', whiteSpace: 'nowrap',
+              borderBottom: `1px solid ${BRAND.dividerSoft}`, whiteSpace: 'nowrap',
             }} title={sys}>{sys}</td>
             {xLabels.map((c, x) => {
               const b = matrix[y]?.[x];
@@ -109,15 +113,15 @@ const LevelHeatmap: React.FC<Props> = ({
               return (
                 // ui-audit-ignore UI-05 — зазор мозаики теплокарты: это плотность визуализации,
                 // а не отступ макета; сетка 4px разредит карту и сломает чтение цветовых пятен.
-                <td key={x} style={{ padding: 2, borderBottom: '1px solid #F0F1F3' }}>
+                <td key={x} style={{ padding: 2, borderBottom: `1px solid ${BRAND.dividerSoft}` }}>
                   <div
                     onClick={onCellClick ? () => onCellClick(y, x) : undefined}
                     title={`${sys} · ${c}: ${level ?? 'нет данных'}${label ? ` · ${label}` : ''}`}
                     style={{
                       height: 26, borderRadius: 3,
-                      background: level ? LEVEL_COLORS[level] : '#F1F2F3',
+                      background: level ? LEVEL_COLORS[level] : BRAND.dividerSoft,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: TYPE.micro.fontSize, fontWeight: 500, color: BRAND.ink,
+                      fontSize: TYPE.micro.fontSize, fontWeight: 500, color: CELL_INK,
                       cursor: onCellClick ? 'pointer' : 'default',
                     }}
                   >

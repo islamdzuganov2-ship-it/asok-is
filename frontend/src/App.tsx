@@ -1,12 +1,13 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ConfigProvider, Spin } from 'antd';
 import ruRU from 'antd/locale/ru_RU';
 import { useSelector } from 'react-redux';
 import { RootState } from './store';
 import { AppLayout } from './components/AppLayout';
-import { BRAND, ACCENT, RAG } from './theme/ragPalette';
+import { BRAND } from './theme/ragPalette';
 import { SPACE, TYPE } from './theme/premium';
+import { THEMES, antdThemeOf, fontStackOf } from './theme/themes';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -84,34 +85,32 @@ const RequirePermission: React.FC<{ perm: string | string[]; children: React.Rea
     return need.some((p) => permissions.includes(p)) ? children : <Navigate to="/dashboard" replace />;
 };
 
+/**
+ * ThemeVarsBridge — проставляет CSS-переменные выбранной темы и шрифта на <html>.
+ * Кастомный слой (токены BRAND/PREMIUM на var()) и «сырые» элементы дашбордов перекрашиваются этим;
+ * компоненты antd — через ConfigProvider theme ниже. `data-theme` включает точечные правила
+ * (color-scheme, скроллбары) из styles/themes.css.
+ */
+const ThemeVarsBridge: React.FC = () => {
+    const themeName = useSelector((s: RootState) => s.ui.themeName);
+    const fontKey = useSelector((s: RootState) => s.ui.fontKey);
+    useEffect(() => {
+        const root = document.documentElement;
+        const preset = THEMES[themeName] ?? THEMES.premium;
+        root.dataset.theme = preset.name;
+        Object.entries(preset.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+        root.style.setProperty('--app-font', fontStackOf(fontKey));
+    }, [themeName, fontKey]);
+    return null;
+};
+
 export const App: React.FC = () => {
+    const themeName = useSelector((s: RootState) => s.ui.themeName);
+    const fontKey = useSelector((s: RootState) => s.ui.fontKey);
+    const preset = THEMES[themeName] ?? THEMES.premium;
     return (
-        <ConfigProvider
-            locale={ruRU}
-            theme={{
-                token: {
-                    // Приглушённая, пастельная палитра (менее «кричащие» тона).
-                    colorPrimary: '#3A4F6B',
-                    colorSuccess: RAG.good.color,
-                    colorWarning: RAG.medium.color,
-                    colorError: RAG.bad.color,
-                    colorInfo: ACCENT.slate.color,
-                    // T-57: дефолтный вторичный текст antd — rgba(0,0,0,.45) ≈ 3.05:1 на полотне
-                    // дашбордов, ниже WCAG AA. Подписи `type="secondary"` встречаются повсеместно
-                    // (счётчики, сноски под графиками), поэтому чиним токеном, а не по местам.
-                    colorTextSecondary: BRAND.inkSoft,
-                    colorTextDescription: BRAND.inkSoft,
-                    colorTextPlaceholder: '#6E7787',
-                    // Ссылки/кнопки-ссылки наследуют colorInfo (#6E89A6 = 3.63:1) — поднимаем.
-                    colorLink: '#50749B',
-                    colorLinkHover: '#3F5F82',
-                    colorLinkActive: '#33506F',
-                    // Заливку info-Alert antd выводит из приглушённого colorInfo, получается
-                    // необычно тёмный тон (#D8E1E6): описание на нём давало 4.40:1. Задаём явно.
-                    colorInfoBg: '#EAF0F4',
-                },
-            }}
-        >
+        <ConfigProvider locale={ruRU} theme={antdThemeOf(preset, fontKey)}>
+            <ThemeVarsBridge />
             <BrowserRouter>
                 <Suspense fallback={<PageLoader />}>
                     <Routes>

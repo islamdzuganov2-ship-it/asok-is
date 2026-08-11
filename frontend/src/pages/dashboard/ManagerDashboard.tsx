@@ -27,6 +27,7 @@ import { ManagerMetric, ManagerSystem } from '../../data/mockDashboards';
 import { MANAGER_SCALE_SYSTEMS as MANAGER_MOCK_SYSTEMS } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND, solidTagStyle } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE, SPACE, PREMIUM } from '../../theme/premium';
+import { useChartTokens } from '../../theme/useThemeTokens';
 import { numericColumn } from '../../theme/table';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
@@ -128,6 +129,8 @@ const ManagerDashboard: React.FC = () => {
   // Выбранная характеристика (undefined, пока не выбрана на пироге/в списке).
   const characteristic = charKey ? system?.characteristics.find((c) => c.key === charKey) : undefined;
   const charTok = scoreTok(characteristic?.score ?? -1);
+  // ECharts (canvas) не понимает var() — берём конкретные цвета активной темы.
+  const chart = useChartTokens();
 
   // Каскад раскрытия (T-29): меры/суждения — по характеристике или выбранной подхарактеристике.
   const charMeasures = useMemo(
@@ -162,9 +165,9 @@ const ManagerDashboard: React.FC = () => {
         startAngle: 200, endAngle: -20, min: 0, max: 100, radius: '100%', center: ['50%', '60%'],
         progress: { show: true, width: 14, itemStyle: { color: charTok.color } },
         axisLine: { lineStyle: { width: 14, color: [[0.4, RAG.bad.color], [0.8, RAG.medium.color], [1, RAG.good.color]] } },
-        pointer: { width: 4, length: '60%', itemStyle: { color: BRAND.ink } },
+        pointer: { width: 4, length: '60%', itemStyle: { color: chart.ink } },
         axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
-        anchor: { show: true, size: 8, itemStyle: { color: BRAND.ink } },
+        anchor: { show: true, size: 8, itemStyle: { color: chart.ink } },
         detail: {
           formatter: (characteristic?.score ?? -1) < 0 ? 'н/д' : '{value}%',
           fontSize: TYPE.metricMd.fontSize, fontWeight: TYPE.metricMd.fontWeight,
@@ -173,7 +176,7 @@ const ManagerDashboard: React.FC = () => {
         data: [{ value: Math.max(0, characteristic?.score ?? 0) }],
       }],
     }),
-    [characteristic?.score, charTok.color],
+    [characteristic?.score, charTok.color, chart.ink],
   );
 
   // Пирог-селектор: 8 характеристик ИС, окраска по RAG, клик по сектору → выбор характеристики.
@@ -190,8 +193,8 @@ const ManagerDashboard: React.FC = () => {
         text: integral < 0 ? 'н/д' : `${integral}%`,
         subtext: 'интегральный балл',
         left: 'center', top: '42%',
-        textStyle: { color: BRAND.ink, fontSize: TYPE.metricLg.fontSize, fontWeight: TYPE.metricLg.fontWeight },
-        subtextStyle: { color: BRAND.inkSoft, fontSize: TYPE.micro.fontSize },
+        textStyle: { color: chart.ink, fontSize: TYPE.metricLg.fontSize, fontWeight: TYPE.metricLg.fontWeight },
+        subtextStyle: { color: chart.inkSoft, fontSize: TYPE.micro.fontSize },
       },
       series: [{
         type: 'pie', radius: ['56%', '82%'], center: ['50%', '50%'], avoidLabelOverlap: true,
@@ -206,7 +209,7 @@ const ManagerDashboard: React.FC = () => {
         })),
       }],
     };
-  }, [system?.id, integral, charKey]);
+  }, [system?.id, integral, charKey, chart.ink, chart.inkSoft]);
 
   const selectChar = (key: string) => { setCharKey(key); setSubName(undefined); setShowAllMeasures(false); };
   const hideChar = () => { setCharKey(undefined); setSubName(undefined); };

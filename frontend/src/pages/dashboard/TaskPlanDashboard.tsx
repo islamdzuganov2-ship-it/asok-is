@@ -30,6 +30,7 @@ import { BRAND, RAG, ACCENT } from '../../theme/ragPalette';
 import { pageContainer, pageTitle, GOLD, accentDot, SPACE, TYPE } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import TaskBubbleTimeline from '../../components/TaskBubbleTimeline';
+import EmployeeEffectivenessCard from '../../components/EmployeeEffectivenessCard';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -248,6 +249,9 @@ const TaskPlanDashboard: React.FC = () => {
             options={filterKeys.map((k) => ({ label: `${k} (${counts[k] ?? 0})`, value: k }))} />
         </Space>
       </div>
+
+      {/* Эффективность сотрудников (ТЗ v17, req 7) — в самом верху «Плана задач» */}
+      <EmployeeEffectivenessCard proposals={proposals} style={{ marginTop: 16 }} />
 
       {/* 1. Читаемая временная диаграмма (Ганта) */}
       <CollapsibleCard
