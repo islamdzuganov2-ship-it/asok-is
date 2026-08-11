@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 from fastapi.testclient import TestClient
 
 # Добавляем корень проекта в PYTHONPATH
@@ -39,8 +40,16 @@ def test_database_url():
 @pytest.fixture(scope="function")
 async def engine(test_database_url: str):
     """Async engine для тестов (function-scope: свой event loop на каждый тест —
-    иначе session-scoped пул привязан к loop первого теста → InterfaceError)."""
-    eng = create_async_engine(test_database_url, echo=False)
+    иначе session-scoped пул привязан к loop первого теста → InterfaceError).
+
+    NullPool + statement_cache_size=0: цикл create_all/drop_all на каждый тест меняет схему;
+    с пулом/кэшем prepared-statement asyncpg держит устаревшие OID таблиц/типов (особенно
+    кастомного типа vector, T-20) → плавающие «relation does not exist» при прогоне пачкой.
+    Свежее соединение без кэша операторов снимает флаки."""
+    eng = create_async_engine(
+        test_database_url, echo=False,
+        poolclass=NullPool, connect_args={"statement_cache_size": 0},
+    )
     yield eng
     await eng.dispose()
 

@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 
 from app.infrastructure.database import get_db
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
-from app.modules.iam import require_permission
+from app.modules.iam import get_current_user, require_permission
 from app.modules.llm import brain as llm_brain
 from app.modules.quality import CHARACTERISTICS, canonical_characteristic
 from app.modules.reporting.models import DefectMatrix, QualityPlanMatrix, RiskMatrix
@@ -34,9 +34,14 @@ from app.modules.reporting.schemas import (
     RiskMatrixRow,
 )
 from app.modules.governance import list_proposals  # кросс-доменный фасад (T-15: метки мер)
+from app.modules.llm import decisions as llm_decisions
 from app.modules.llm import gate as llm_gate
+from app.modules.llm import personas as llm_personas
+from app.modules.llm import pipeline as llm_pipeline
 from app.modules.llm import reasoning as llm_reasoning
+from app.modules.llm import selfcheck as llm_selfcheck
 from app.modules.llm import service as llm_service
+from app.modules.llm.tasks import llm_selfcheck_task
 from app.modules.risk import RiskBase, risks_for_characteristics
 from app.modules.systems import System
 from app.shared.periods import period_sort_key
@@ -54,6 +59,54 @@ async def get_llm_status() -> dict:
 async def get_llm_models() -> dict:
     """Список GGUF-моделей в каталоге (для переключения/диагностики): имя, размер, выбранная."""
     return {"models": llm_service.list_models()}
+
+
+@router.get("/llm-pipeline")
+async def get_llm_pipeline() -> dict:
+    """Матрица конвейера RAG и обучения (ТЗ v18 п.1): источники контекста, механизмы, уровни.
+
+    Открыта всем аутентифицированным: это описание архитектуры, а не данные оценки. Отчёт
+    самооценки (llm-quality) — напротив, только для суперадминистратора.
+    """
+    return {
+        **llm_pipeline.summary(),
+        "personas": llm_personas.catalog(),
+        "decision_matrices": llm_decisions.matrices(),
+    }
+
+
+@router.get("/llm-quality")
+async def get_llm_quality_report(
+    _: dict = Depends(require_permission("view.admin.llm_quality")),
+) -> dict:
+    """Последний отчёт самооценки LLM по ISO/IEC 25010 (ТЗ v18 п.10). Только суперадминистратор."""
+    report = llm_selfcheck.latest()
+    return {
+        "report": report,
+        "history": llm_selfcheck.history(),
+        "schedule": llm_selfcheck.schedule_description(),
+    }
+
+
+@router.post("/llm-quality/run")
+async def run_llm_quality_check(
+    mode: str = "full",
+    _: dict = Depends(require_permission("llm.quality.run")),
+) -> dict:
+    """Ручной запуск самооценки (ТЗ v18 п.10). Только суперадминистратор.
+
+    mode="full" уходит в фоновую задачу: полный прогон с инференсом занимает минуты и
+    блокировал бы HTTP-запрос (llama.cpp сериализует инференс). mode="static" выполняется
+    сразу — интроспективные пробы занимают доли секунды.
+    """
+    if mode not in ("full", "static"):
+        raise HTTPException(status_code=400, detail="mode должен быть full или static")
+    if mode == "static":
+        return {"status": "COMPLETED", "mode": mode, "report": llm_selfcheck.run(
+            mode="static", trigger="manual")}
+    task = llm_selfcheck_task.delay(mode="full", trigger="manual")
+    return {"status": "QUEUED", "mode": mode, "task_id": task.id,
+            "hint": "полный прогон выполняется в фоне; результат появится в /reports/llm-quality"}
 
 
 @router.post("/llm-reload")
@@ -134,12 +187,15 @@ def _measures_blocks(items: list[MeasuresAnalyticsItem], cards: list[MeasureCard
 async def measures_analytics(
     payload: MeasuresReasoningIn | list[MeasuresAnalyticsItem],
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Аналитика по МЕРАМ через конвейер многоаспектного аналитического рассуждения (BL-005).
 
     Принимает новый формат {items, cards} (карточки мер — первичный источник) и легаси-массив
     агрегатов (обратная совместимость). Ответ сохраняет прежние поля (analytics/llm/mapped_risks)
     и дополняется аудируемой трассой (reasoning) и уверенностью (confidence).
+
+    ТЗ v18: вывод адресуется персоне по роли запросившего (personas.py).
     """
     items = payload if isinstance(payload, list) else payload.items
     cards = [] if isinstance(payload, list) else payload.cards
@@ -156,13 +212,21 @@ async def measures_analytics(
     # Rule Engine: самая просевшая характеристика по среднему баллу мер → триггер Severity.
     scores = [i.avg_score for i in items if i.avg_score is not None]
     q_proxy = (min(scores) / 100.0) if scores else None
-    rules_block = llm_gate.evaluate_gate(q=q_proxy).as_block()
+    gate_result = llm_gate.evaluate_gate(q=q_proxy)
+    rules_block = gate_result.as_block()
+
+    # Персона адресата — из роли запросившего (RBAC → персона, см. modules/llm/personas.py).
+    roles = current_user.get("roles") or []
+    persona = llm_personas.resolve(roles[0] if roles else "")
 
     result = await asyncio.to_thread(
         llm_reasoning.generate_reasoned_conclusion,
         "ИТ-ландшафт банка", "текущий период",
         "",             # профсуждения в этом потоке не передаются (их поток — judgment-conclusion)
         risks_block, "", measures_block, "", rules_block,
+        # Поток сводный (по всему ландшафту), поэтому класс критичности отдельной ИС здесь
+        # не применим и в матрицу триажа не передаётся — она отработает по мягкому классу.
+        gate_result.severity, "", 0, 0, persona.code,
     )
     return {
         "analytics": result["conclusion"],
@@ -172,6 +236,8 @@ async def measures_analytics(
         "confidence": result["confidence"],
         "fingerprint": result["fingerprint"],
         "fired_rules": [ln.lstrip("- ") for ln in rules_block.splitlines() if ln.strip()],
+        "persona": {"code": persona.code, "title": persona.title, "audience": persona.audience},
+        "decisions": result["decisions"],
     }
 
 

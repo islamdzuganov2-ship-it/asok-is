@@ -19,34 +19,36 @@ export const GOLD = {
   glow: 'rgba(185,154,85,0.18)',
 };
 
+// ТЗ v17 (темизация): цвета/градиенты/тени переведены на CSS-переменные (проставляет
+// ThemeVarsBridge по выбранной теме, дефолты — styles/themes.css). Радиусы/тайминги — статичны.
 export const PREMIUM = {
   radius: 16,
   radiusSm: 12,
 
   /** Многослойные мягкие тени — «дорогая» глубина без грязи. */
   shadow: {
-    card: '0 1px 2px rgba(16,24,40,0.04), 0 10px 28px -14px rgba(16,24,40,0.14)',
+    card: 'var(--shadow-card)',
     cardHover: '0 2px 6px rgba(16,24,40,0.06), 0 18px 40px -16px rgba(16,24,40,0.22)',
     raised: '0 24px 60px -28px rgba(16,24,40,0.30)',
     inset: 'inset 0 1px 0 rgba(255,255,255,0.6)',
   },
 
-  /** Фирменные градиенты (сайдбар/акценты/полотно). */
+  /** Фирменные градиенты (сайдбар/акценты/полотно) — по теме. */
   gradient: {
-    sider: 'linear-gradient(180deg, #16222F 0%, #1E2E3F 55%, #22384C 100%)',
-    canvas: 'linear-gradient(180deg, #F7F8FA 0%, #F2F4F7 100%)',
-    header: 'linear-gradient(180deg, #FFFFFF 0%, #FBFCFD 100%)',
-    ink: 'linear-gradient(135deg, #2B3A4B 0%, #3A4F6B 100%)',
-    goldLine: `linear-gradient(90deg, ${GOLD.line}, rgba(185,154,85,0) 70%)`,
+    sider: 'var(--sider-grad)',
+    canvas: 'var(--canvas-grad)',
+    header: 'var(--header-grad)',
+    ink: 'var(--ink-grad)',
+    goldLine: 'var(--gold-line)',
   },
 
   /** Хайрлайн-грань карточек (чуть теплее нейтрального дивайдера). */
-  border: '#EAEBEE',
-  borderStrong: '#DFE1E6',
+  border: 'var(--border)',
+  borderStrong: 'var(--border-strong)',
 
   /** Приглушённые «стеклянные» поверхности для вложенных блоков. */
-  surfaceSoft: '#FAFBFC',
-  surfaceTint: 'linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)',
+  surfaceSoft: 'var(--surface-soft)',
+  surfaceTint: 'var(--surface-tint)',
 } as const;
 
 /**
@@ -164,10 +166,8 @@ export function premiumCard(accent: AccentKey = 'none', extra?: CSSProperties) {
       // Ступень задаём явно, чтобы заголовок карточки не «плыл» вслед за токенами antd.
       ...TYPE.cardTitle,
       color: BRAND.ink,
-      // Тонкая тёплая подложка шапки — «дорогой» акцент.
-      background: accent === 'gold'
-        ? 'linear-gradient(180deg, #FCFBF6 0%, #FFFFFF 100%)'
-        : PREMIUM.gradient.header,
+      // Тонкая тёплая подложка шапки — «дорогой» акцент (по теме).
+      background: accent === 'gold' ? 'var(--card-header-gold)' : PREMIUM.gradient.header,
     } as CSSProperties,
     body: { padding: SPACE.airy } as CSSProperties,
   };

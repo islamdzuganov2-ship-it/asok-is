@@ -15,12 +15,14 @@ import { ExecSystemInsight, ExecutiveDashboardData } from '../../data/mockDashbo
 import { EXECUTIVE_SCALE, HEATMAP_CHARS_FULL } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND, critTagStyle, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, TYPE, SPACE } from '../../theme/premium';
+import { useChartTokens } from '../../theme/useThemeTokens';
 import { numericColumn } from '../../theme/table';
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
 import MeasuresAiAnalyticsCard from '../../components/MeasuresAiAnalyticsCard';
 import { TechDebtCard } from '../../components/TechDebtCard';
+import EmployeeEffectivenessCard from '../../components/EmployeeEffectivenessCard';
 import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 import { QUALITY_MODEL } from '../../constants/qualityModel';
 
@@ -182,6 +184,8 @@ const ExecutiveDashboard: React.FC = () => {
 
   const globalIndex = data.globalIndex;
   const idxTok = ragToken(globalIndex);
+  // ECharts рисует на canvas и не понимает var() — берём конкретные цвета активной темы.
+  const chart = useChartTokens();
 
   const gaugeOption = useMemo(
     () => ({
@@ -205,11 +209,11 @@ const ExecutiveDashboard: React.FC = () => {
               ],
             },
           },
-          pointer: { width: 4, length: '62%', itemStyle: { color: BRAND.ink } },
+          pointer: { width: 4, length: '62%', itemStyle: { color: chart.ink } },
           axisTick: { show: false },
           splitLine: { show: false },
           axisLabel: { show: false },
-          anchor: { show: true, size: 10, itemStyle: { color: BRAND.ink } },
+          anchor: { show: true, size: 10, itemStyle: { color: chart.ink } },
           detail: {
             valueAnimation: true,
             formatter: '{value}%',
@@ -222,7 +226,7 @@ const ExecutiveDashboard: React.FC = () => {
         },
       ],
     }),
-    [globalIndex, idxTok.color],
+    [globalIndex, idxTok.color, chart.ink],
   );
 
   return (
@@ -425,6 +429,9 @@ const ExecutiveDashboard: React.FC = () => {
           <TechDebtCard proposals={proposals} onOpenMeasure={setDecisionProposal} />
         </Col>
       </Row>
+
+      {/* Эффективность сотрудников (ТЗ v17, req 7) — под техдолгом и теплокартой */}
+      <EmployeeEffectivenessCard proposals={proposals} style={{ marginTop: 16 }} />
 
       {/* Реестр мер качества — по умолчанию СКРЫТ, раскрывается по кнопке */}
       <div style={{ marginTop: 16 }}>

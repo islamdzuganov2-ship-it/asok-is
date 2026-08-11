@@ -96,7 +96,13 @@ services:
       # «Резервный мозг» LLM — WRITABLE (общий с backend; воркер тоже пишет память рассуждений).
       - ./models/llm_brain:/app/models/llm_brain
       - /app/__pycache__
-    command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=2
+    # --beat: планировщик встроен в воркер (еженедельная самооценка LLM, ТЗ v18 п.10).
+    # Отдельный контейнер beat не поднимаем: воркер в стенде один. При масштабировании
+    # на несколько воркеров beat обязан стать отдельным процессом — иначе расписание
+    # сработает столько раз, сколько воркеров запущено. См. infrastructure/workers.py.
+    # Расписание beat хранится в /tmp (файл celerybeat-schedule), том не требуется:
+    # при перезапуске задача просто отработает в следующий назначенный срок.
+    command: celery -A app.workers.tasks.celery_app worker --beat --schedule=/tmp/celerybeat-schedule --loglevel=info --concurrency=2
     # У воркера нет HTTP-порта, поэтому unhealthy-проверка из Dockerfile (curl :8000) всегда
     # падала. Проверяем готовность брокера/воркера через celery inspect ping.
     healthcheck:

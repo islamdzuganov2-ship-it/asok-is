@@ -17,6 +17,7 @@ from app.modules.iam.permissions import (
     ALL_PERMISSION_KEYS,
     BUILTIN_ROLES,
     DEFAULT_ROLE_PERMISSIONS,
+    PROTECTED_SUPERADMIN_PERMISSIONS,
 )
 from app.modules.iam.security import get_password_hash
 
@@ -80,10 +81,17 @@ async def get_matrix(db: AsyncSession) -> dict[str, list[str]]:
 
 
 async def set_role_permissions(db: AsyncSession, role: str, permissions: list[str]) -> list[str]:
-    """Заменить набор прав РЕДАКТИРУЕМОЙ роли (полная замена). Встроенные роли отклоняются."""
+    """Заменить набор прав РЕДАКТИРУЕМОЙ роли (полная замена). Встроенные роли отклоняются.
+
+    Права из PROTECTED_SUPERADMIN_PERMISSIONS отфильтровываются: они принадлежат исключительно
+    суперадминистратору (управление доступом и самооценка LLM, ТЗ v18 п.10) и не должны
+    выдаваться матрицей ни одной другой роли. Функция возвращает ФАКТИЧЕСКИ сохранённый набор,
+    поэтому вызывающий UI видит результат фильтрации и может его отобразить.
+    """
     if role in BUILTIN_ROLES:
         raise BuiltinRoleError(f"Роль {role} встроенная — права фиксированы")
-    valid = {p for p in permissions if p in ALL_PERMISSION_KEYS}
+    grantable = ALL_PERMISSION_KEYS - PROTECTED_SUPERADMIN_PERMISSIONS
+    valid = {p for p in permissions if p in grantable}
     await db.execute(delete(RolePermission).where(RolePermission.role == role))
     for p in sorted(valid):
         db.add(RolePermission(role=role, permission=p))
