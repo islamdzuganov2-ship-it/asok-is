@@ -6,6 +6,7 @@ import { RootState } from '../store';
 import { setExecFeature, type ExecFeatureKey } from '../store/slices/uiSlice';
 import { accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
 import { RAG, ACCENT, BRAND } from '../theme/ragPalette';
+import ThemeSettingsCard from '../components/ThemeSettingsCard';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -99,7 +100,15 @@ const AdminFlagsPage: React.FC = () => {
   return (
     <div style={pageContainer}>
       <Title level={4} style={pageTitle}><span style={accentDot(GOLD.base)} />Настройка</Title>
-      <Text type="secondary">Опциональные дашборды для топ-менеджмента. Включите нужные — они появятся в меню.</Text>
+      <Text type="secondary">Персональные настройки интерфейса и опциональные дашборды для топ-менеджмента.</Text>
+
+      {/* Оформление: тема + шрифт (ТЗ v17, req 5) — применяется сразу, сохраняется в браузере. */}
+      <div style={{ marginTop: 16 }}>
+        <ThemeSettingsCard />
+      </div>
+
+      <Title level={5} style={{ marginTop: 24, marginBottom: 4 }}>Дополнительные дашборды</Title>
+      <Text type="secondary">Управляйте составом дашбордов в меню: включённые видны, выключенные скрываются (для топ-менеджмента).</Text>
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         {FEATURES.map((f) => {
           const on = (ui as any)[f.key] as boolean;

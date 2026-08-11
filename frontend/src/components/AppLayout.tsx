@@ -58,6 +58,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const dispatch = useAppDispatch();
     const { role, fullName, permissions, permissionsLoaded } = useSelector((state: RootState) => state.auth);
     const dataMode = useSelector((state: RootState) => state.ui.dataMode);
+    // Переключатели опциональных дашбордов из «Настройка» (ТЗ v17, req 5).
+    const { execAnalytics, execDynamics, execTaskPlan, execIncidents } = useSelector((state: RootState) => state.ui);
     const userRole = role || 'GUEST';
 
     // Права пользователя (BL-008): грузим с сервера и кладём в стор (обновляются и при возврате
@@ -116,6 +118,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     // которую супер-админ настраивает в разделе «Права». Оценка СИИ (view.ai_assessments) в меню
     // намеренно не выводится (раздел под развитие), но маршрут доступен по праву.
     const has = (perm: string) => permissions.includes(perm);
+    // Топ-менеджмент (ТЗ v17): опциональные дашборды показываются в меню ТОЛЬКО по галочке в
+    // «Настройка». Для остальных ролей (МК, аналитик, риск-менеджер) состав по-прежнему задаёт
+    // право. Это чинит «косметические» переключатели: раньше меню строилось только по правам и
+    // флаги ни на что не влияли. AND с правом сохраняет RBAC (BL-008) как верхнюю границу.
+    const EXEC_ROLES = ['ADMIN', 'CTO', 'CEO', 'CIO', 'EXECUTIVE'];
+    const isExec = EXEC_ROLES.includes(userRole);
+    // Опциональный пункт: виден, если есть право И (роль не топ-менеджер ИЛИ включён флаг).
+    const optOk = (flag: boolean) => !isExec || flag;
     const mi = (key: string, icon: React.ReactNode, label: string) => ({ key, icon, label });
     const group = (label: string, children: Array<{ key: string; icon: React.ReactNode; label: string }>) =>
         children.length ? [{ type: 'group' as const, label: collapsed ? undefined : groupLabel(label), children }] : [];
@@ -125,11 +135,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ...(has('view.dashboard.ceo') ? [mi('/dashboard/ceo', <FundOutlined />, 'Дашборд CEO')] : []),
         ...(has('view.dashboard.manager') ? [mi('/dashboard/manager', <HomeOutlined />, 'Основное')] : []),
         ...(has('view.dashboard.risk') ? [mi('/dashboard/risk', <SafetyCertificateOutlined />, 'Основное — риск')] : []),
-        ...(has('view.dashboard.analytics') ? [mi('/dashboard/analytics', <DashboardOutlined />, 'Аналитический дашборд')] : []),
-        ...(has('view.dashboard.dynamics') ? [mi('/dashboard/manager/dynamics', <LineChartOutlined />, 'Динамика качества')] : []),
-        ...(has('view.dashboard.incidents') ? [mi('/dashboard/incidents', <ThunderboltOutlined />, 'Аналитика сбоев')] : []),
-        ...(has('view.dashboard.risk_radar') ? [mi('/dashboard/risk-radar', <AlertOutlined />, 'Риск-радар')] : []),
-        ...(has('view.dashboard.taskplan') ? [mi('/dashboard/taskplan', <ScheduleOutlined />, 'План задач')] : []),
+        ...(has('view.dashboard.analytics') && optOk(execAnalytics) ? [mi('/dashboard/analytics', <DashboardOutlined />, 'Аналитический дашборд')] : []),
+        ...(has('view.dashboard.dynamics') && optOk(execDynamics) ? [mi('/dashboard/manager/dynamics', <LineChartOutlined />, 'Динамика качества')] : []),
+        ...(has('view.dashboard.incidents') && optOk(execIncidents) ? [mi('/dashboard/incidents', <ThunderboltOutlined />, 'Аналитика сбоев')] : []),
+        ...(has('view.dashboard.risk_radar') && optOk(execIncidents) ? [mi('/dashboard/risk-radar', <AlertOutlined />, 'Риск-радар')] : []),
+        ...(has('view.dashboard.taskplan') && optOk(execTaskPlan) ? [mi('/dashboard/taskplan', <ScheduleOutlined />, 'План задач')] : []),
     ];
     const sections = [
         ...(has('view.assessments') ? [mi('/assessments/new', <FormOutlined />, 'Внесение данных')] : []),

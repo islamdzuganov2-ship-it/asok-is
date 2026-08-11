@@ -11,11 +11,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  BRAND, LEVEL_COLORS, LEVEL_TAG_COLORS, RAG, ragByScore, ragToken, solidTagStyle,
+  LEVEL_COLORS, LEVEL_TAG_COLORS, RAG, ragByScore, ragToken, solidTagStyle,
 } from '../theme/ragPalette';
 import { GRID, SPACE, TYPE, space } from '../theme/premium';
+import { THEMES, THEME_ORDER } from '../theme/themes';
 import { numericColumn } from '../theme/table';
 import { BUCKET_LEVEL } from '../components/LevelHeatmap';
+
+// ТЗ v17 (темизация): BRAND.ink/inkSoft теперь CSS-переменные (var(--ink)…), конкретные значения
+// живут в реестре тем. Контраст проверяем по конкретным цветам темы; PREMIUM — тема по умолчанию
+// (её значения = прежние BRAND.ink/BRAND.inkSoft).
+const PREMIUM_INK = THEMES.premium.vars['--ink'];
 
 // --- контраст (WCAG 2.1) ---
 const hex2rgb = (h: string) => {
@@ -52,9 +58,15 @@ describe('палитра RAG: разделение «графика / текст
     }
   });
 
-  it('вторичный текст бренда проходит AA на белом и на полотне', () => {
-    expect(contrast(BRAND.inkSoft, WHITE)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(BRAND.inkSoft, '#F2F4F7')).toBeGreaterThanOrEqual(4.5);
+  it('текст бренда проходит AA во всех темах (на поверхности и на полотне)', () => {
+    // Инвариант темизации (ТЗ v17): в КАЖДОЙ теме основной и вторичный текст читаемы (AA ≥ 4.5)
+    // на своей поверхности карточек и на полотне — включая тёмную «графит».
+    for (const name of THEME_ORDER) {
+      const v = THEMES[name].vars;
+      expect(contrast(v['--ink'], v['--surface']), `${name}: ink на surface`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(v['--ink-soft'], v['--surface']), `${name}: inkSoft на surface`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(v['--ink-soft'], v['--canvas']), `${name}: inkSoft на canvas`).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
 
@@ -71,7 +83,7 @@ describe('шкала уровней качества', () => {
 
   it('фон ячейки держит тёмный текст, плашка — белый', () => {
     for (const level of Object.keys(LEVEL_COLORS)) {
-      expect(contrast(LEVEL_COLORS[level], BRAND.ink), `ячейка «${level}»`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(LEVEL_COLORS[level], PREMIUM_INK), `ячейка «${level}»`).toBeGreaterThanOrEqual(4.5);
       expect(contrast(LEVEL_TAG_COLORS[level], WHITE), `плашка «${level}»`).toBeGreaterThanOrEqual(4.5);
     }
   });

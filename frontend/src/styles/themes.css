@@ -1,0 +1,62 @@
+/*
+ * themes.css — дефолты CSS-переменных темизации (ТЗ v17).
+ *
+ * Значения ниже = премиум-тема (по умолчанию). При выборе темы ThemeVarsBridge (App.tsx)
+ * проставляет переменные инлайном на <html> — они перекрывают эти дефолты. Файл нужен, чтобы:
+ *   1) не было «мигания» до инициализации JS;
+ *   2) кастомные токены BRAND/PREMIUM (переведённые на var()) работали и без bridge.
+ * Токены-источник и три пресета — в src/theme/themes.ts (держать согласованным).
+ */
+:root {
+  --ink: #2B3A4B;
+  --ink-soft: #5B6675;
+  --surface: #FFFFFF;
+  --canvas: #F5F6F8;
+  --divider: #E8EAED;
+  --border: #EAEBEE;
+  --border-strong: #DFE1E6;
+  --surface-soft: #FAFBFC;
+  --divider-soft: #F0F1F3;
+  --divider-alt: #EEF0F2;
+  --border-soft: #D5DAE0;
+  --surface-tint: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+  --sider-grad: linear-gradient(180deg, #16222F 0%, #1E2E3F 55%, #22384C 100%);
+  --header-grad: linear-gradient(180deg, #FFFFFF 0%, #FBFCFD 100%);
+  --canvas-grad: linear-gradient(180deg, #F7F8FA 0%, #F2F4F7 100%);
+  --ink-grad: linear-gradient(135deg, #2B3A4B 0%, #3A4F6B 100%);
+  --gold-line: linear-gradient(90deg, rgba(185,154,85,0.35), rgba(185,154,85,0) 70%);
+  --card-header-grad: linear-gradient(180deg, #FFFFFF 0%, #FBFCFD 100%);
+  --card-header-gold: linear-gradient(180deg, #FCFBF6 0%, #FFFFFF 100%);
+  --shadow-card: 0 1px 2px rgba(16,24,40,0.04), 0 10px 28px -14px rgba(16,24,40,0.14);
+  --app-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Выбранный шрифт применяется ко всему приложению (в т.ч. к «сырым» <table> дашбордов,
+   которые не проходят через ConfigProvider). */
+body {
+  font-family: var(--app-font);
+}
+
+/* Тёмная тема: правильный цвет системных элементов (скроллбары, автозаполнение, каретка). */
+:root[data-theme='graphite'] {
+  color-scheme: dark;
+}
+:root[data-theme='premium'],
+:root[data-theme='classic'] {
+  color-scheme: light;
+}
+
+/* Мягкий скроллбар для тёмной темы — чтобы «графит» не резал светлой полосой. */
+:root[data-theme='graphite'] ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+:root[data-theme='graphite'] ::-webkit-scrollbar-thumb {
+  background: #3C434E;
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+:root[data-theme='graphite'] ::-webkit-scrollbar-track {
+  background: transparent;
+}
