@@ -40,6 +40,8 @@ PERMISSIONS: list[Permission] = [
     Permission("view.risks", "Разделы", "База рисков"),
     Permission("view.risk_economics", "Разделы", "Риск-экономика"),
     Permission("view.ai_assessments", "Разделы", "Оценка СИИ (ГОСТ Р 59898)"),
+    Permission("view.my_tasks", "Разделы", "Мои задачи (исполнитель)",
+               "Поручения, назначенные на пользователя: уточнения и запрос переноса срока"),
     Permission("view.settings", "Разделы", "Настройка (персональная)"),
     Permission("view.admin.users", "Администрирование", "Раздел «Пользователи»"),
     Permission("view.admin.permissions", "Администрирование", "Раздел «Права»"),
@@ -138,5 +140,13 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
     "AUDITOR": {
         "view.dashboard.risk", "view.dashboard.analytics", "view.risk_economics",
         "risk.verify",
+    } | _VIEW_COMMON,
+    # ДЕФ-10 (БТ-015): «тот же состав дашбордов, что есть у топ-менеджера» — но БЕЗ решений
+    # по мерам (governance.decide) и без правки оценок. Действия исполнителя (уточнение,
+    # запрос переноса срока) идут через его собственный раздел «Мои задачи».
+    "EXECUTOR": {
+        "view.my_tasks",
+        "view.dashboard.analytics", "view.dashboard.dynamics",
+        "view.dashboard.taskplan", "view.dashboard.incidents", "view.dashboard.risk_radar",
     } | _VIEW_COMMON,
 }

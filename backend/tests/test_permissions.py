@@ -244,3 +244,29 @@ async def test_seed_does_not_restore_permission_revoked_by_superadmin(aclient, d
     ps.reset_cache()
     perms = await ps.get_role_permissions(db_session, "TEST_ANALYST")
     assert perms == frozenset({"view.reports"}), "сид вернул снятые суперадмином права"
+
+
+async def test_new_role_gets_full_default_set_in_populated_matrix(db_session):
+    """Роль, появившаяся с релизом, получает ВЕСЬ свой дефолтный набор (ДЕФ-10).
+
+    Регресс: досев умел добавлять только права, которых не было ни у одной роли. Роль
+    EXECUTOR состоит в основном из прав, уже выданных другим ролям (дашборды), поэтому
+    на живом стенде исполнителю досталось ровно одно право — `view.my_tasks` вместо
+    полного набора, и меню у него было пустым.
+    """
+    from sqlalchemy import delete
+
+    from app.modules.iam.models import RolePermission
+
+    await ps.seed_rbac_defaults(db_session)
+    await db_session.execute(delete(RolePermission).where(RolePermission.role == "EXECUTOR"))
+    await db_session.commit()
+    ps.reset_cache()
+    assert await ps.get_role_permissions(db_session, "EXECUTOR") == frozenset()
+
+    await ps.seed_rbac_defaults(db_session)
+    ps.reset_cache()
+    granted = await ps.get_role_permissions(db_session, "EXECUTOR")
+    assert granted == frozenset(DEFAULT_ROLE_PERMISSIONS["EXECUTOR"])
+    assert "view.dashboard.taskplan" in granted
+    assert "governance.decide" not in granted, "исполнитель не принимает решений по мерам (SoD)"

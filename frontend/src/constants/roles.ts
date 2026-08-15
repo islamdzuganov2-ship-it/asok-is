@@ -14,6 +14,7 @@ export const ROLE_LABELS: Record<string, string> = {
   TEST_ANALYST: 'Аналитик',
   RISK_MANAGER: 'Владелец риска',
   AUDITOR: 'Аудитор',
+  EXECUTOR: 'Исполнитель',
   GUEST: 'Гость',
 };
 
