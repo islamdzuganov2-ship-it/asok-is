@@ -227,6 +227,19 @@ export interface IncidentSystemStat {
     count: number;
     openCount: number;
 }
+/** Фактическая результативность меры (ДЕФ-32): ΔScore характеристики «до/после». */
+export interface MeasureEffect {
+    characteristic: string;
+    title: string;
+    status: string;
+    periodBefore: string;
+    periodAfter: string;
+    scoreBefore: number;
+    scoreAfter: number;
+    delta: number;
+    verdict: 'улучшение' | 'без изменений' | 'ухудшение';
+}
+
 export interface IncidentAnalytics {
     total: number;
     openCount: number;
