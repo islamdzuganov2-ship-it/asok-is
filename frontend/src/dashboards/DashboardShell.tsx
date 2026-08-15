@@ -9,7 +9,8 @@
  * добавляются в конец с дефолтной видимостью.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Checkbox, Space, Typography, Empty, message } from 'antd';
+import { Button, Card, Checkbox, Space, Typography, Empty } from 'antd';
+import { message } from '../theme/appMessage';
 import { EditOutlined, CheckOutlined, HolderOutlined } from '@ant-design/icons';
 import { useGetMyPreferencesQuery, usePutMyPreferencesMutation, type UserPrefs, type WidgetPref } from '../store/api/apiSlice';
 import { premiumCard, pageContainer, pageTitle, PREMIUM, SPACE } from '../theme/premium';

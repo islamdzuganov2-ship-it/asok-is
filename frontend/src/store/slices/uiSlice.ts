@@ -29,6 +29,7 @@ export interface ExecFeatures {
   execDynamics: boolean;   // «Динамика качества»
   execTaskPlan: boolean;   // «План задач по повышению качества»
   execIncidents: boolean;  // «Аналитика технических сбоев» (T-21)
+  execRiskRadar: boolean;  // «Риск-радар» (ДЕФ-27: был привязан к чужому флагу execIncidents)
 }
 export type ExecFeatureKey = keyof ExecFeatures;
 
@@ -36,7 +37,10 @@ function loadFeatures(): ExecFeatures {
   // По умолчанию ВКЛЮЧЕНЫ: у топ-менеджмента доступные дашборды видны сразу, а переключатели в
   // «Настройка» позволяют СКРЫТЬ ненужные (раньше флаги ни на что не влияли — были косметическими).
   // Так фича функциональна с первого входа и без «пропавшего» стартового дашборда.
-  const def: ExecFeatures = { execAnalytics: true, execDynamics: true, execTaskPlan: true, execIncidents: true };
+  const def: ExecFeatures = {
+    execAnalytics: true, execDynamics: true, execTaskPlan: true,
+    execIncidents: true, execRiskRadar: true,
+  };
   try {
     return { ...def, ...JSON.parse(localStorage.getItem(FEATURE_KEY) || '{}') };
   } catch {
@@ -57,6 +61,7 @@ interface UiState {
   execDynamics: boolean;
   execTaskPlan: boolean;
   execIncidents: boolean;
+  execRiskRadar: boolean;
 }
 
 const uiSlice = createSlice({
@@ -92,6 +97,7 @@ const uiSlice = createSlice({
       localStorage.setItem(FEATURE_KEY, JSON.stringify({
         execAnalytics: state.execAnalytics, execDynamics: state.execDynamics,
         execTaskPlan: state.execTaskPlan, execIncidents: state.execIncidents,
+        execRiskRadar: state.execRiskRadar,
       }));
     },
   },

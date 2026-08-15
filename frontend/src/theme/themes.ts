@@ -113,6 +113,11 @@ const GRAPHITE_PRESET: ThemePreset = {
   dark: true,
   antd: {
     colorPrimary: '#8EA6C4', colorInfo: '#8EA6C4', colorLink: '#9DB4D2',
+    // ДЕФ-08. На тёмном полотне светло-синий акцент читается как графика (6.00:1 на карточке),
+    // но текст ПОВЕРХ него antd по умолчанию рисует белым — это давало 2.50:1 на первичной
+    // кнопке и выбранном пункте меню при норме 4.5:1. В тёмной теме текст на светлой заливке
+    // должен быть ТЁМНЫМ: #16202C на #8EA6C4 = 6.58:1. Так сохраняется и акцент, и контраст.
+    colorTextLightSolid: '#16202C',
     // Мягкий светлый текст — читаемый, не «резкий» (не чистый белый).
     colorText: '#C9CFD8', colorTextSecondary: '#98A2AE',
     colorBgContainer: '#23272E', colorBgLayout: '#191C21', colorBgElevated: '#262B33',
@@ -181,6 +186,18 @@ export function antdThemeOf(preset: ThemePreset, fontKey: string): ThemeConfig {
       fontFamily: fontStackOf(fontKey),
       // T-57: описание/вторичный текст держим на читаемом тоне темы.
       colorTextDescription: preset.antd.colorTextSecondary,
+    },
+    components: {
+      // ДЕФ-08. Сайдбар — всегда тёмная менюшка (theme="dark") на градиенте --sider-grad,
+      // независимо от темы приложения, а заливки у выбранного пункта нет: текст лежит прямо
+      // на градиенте. Цвет текста задаём ЯВНО, иначе antd берёт его из colorTextLightSolid —
+      // и после правки graphite (тёмный текст на светлой заливке) выбранный пункт стал бы
+      // тёмным на тёмном фоне. Пара «белый на самом светлом стопе градиента» = 12.08:1
+      // проверяется в check-contrast.mjs («Сайдбар: пункт меню antd dark»).
+      Menu: {
+        darkItemSelectedColor: '#FFFFFF',
+        darkItemHoverColor: '#FFFFFF',
+      },
     },
   };
 }

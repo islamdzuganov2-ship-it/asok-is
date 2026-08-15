@@ -14,10 +14,8 @@
  * исключительных прав суперадминистратора и не выдаётся матрицей другим ролям.
  */
 import React, { useState } from 'react';
-import {
-  Alert, Button, Card, Col, Empty, Row, Space, Spin, Statistic, Table, Tag, Tooltip,
-  Typography, message,
-} from 'antd';
+import { Alert, Button, Card, Col, Empty, Row, Space, Spin, Statistic, Table, Tag, Tooltip, Typography } from 'antd';
+import { message } from '../../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import {
   ExperimentOutlined, PlayCircleOutlined, ReloadOutlined, ThunderboltOutlined,

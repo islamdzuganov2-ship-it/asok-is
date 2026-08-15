@@ -11,7 +11,8 @@
  * которая открывается кнопкой-иконкой (только иконка истории, без текста).
  */
 import React, { useEffect, useState } from 'react';
-import { Modal, Typography, Tag, Input, Button, Space, Divider, List, Tooltip, Empty, message } from 'antd';
+import { Modal, Typography, Tag, Input, Button, Space, Divider, List, Tooltip, Empty } from 'antd';
+import { message } from '../theme/appMessage';
 import { CheckOutlined, CloseOutlined, EditOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
 import { useAppDispatch } from '../store/hooks';

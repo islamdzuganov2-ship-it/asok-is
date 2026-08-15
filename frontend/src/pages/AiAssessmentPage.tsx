@@ -13,10 +13,8 @@
  * меню «Оценка СИИ» в AppLayout.tsx.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Alert, Button, Card, Checkbox, Form, Input, InputNumber, Modal, Progress, Select, Space,
-  Table, Tag, Tooltip, Typography, message,
-} from 'antd';
+import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Modal, Progress, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import {
   CheckCircleOutlined, ExperimentOutlined, FileDoneOutlined, PlusOutlined, RobotOutlined,

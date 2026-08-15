@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Button, Card, Form, Input, Layout, Typography, message } from 'antd';
+import { Button, Card, Form, Input, Layout, Typography } from 'antd';
+import { message } from '../theme/appMessage';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';

@@ -4,9 +4,8 @@
  * Доступ гейтится правом view.admin.users (маршрут в App.tsx).
  */
 import React, { useState } from 'react';
-import {
-  Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, Popconfirm, message, Typography, Alert,
-} from 'antd';
+import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, Popconfirm, Typography, Alert } from 'antd';
+import { message } from '../../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import { UserAddOutlined, EditOutlined, KeyOutlined, DeleteOutlined, TeamOutlined } from '@ant-design/icons';
 import {

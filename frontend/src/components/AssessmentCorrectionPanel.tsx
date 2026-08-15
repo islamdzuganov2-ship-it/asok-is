@@ -15,10 +15,8 @@
  * говорит подпись и сообщение при сохранении.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Alert, Button, Checkbox, Input, InputNumber, Progress, Select, Space, Table, Tag, Tooltip,
-  Typography, message,
-} from 'antd';
+import { Alert, Button, Checkbox, Input, InputNumber, Progress, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import {
   CheckCircleOutlined, EditOutlined, ReloadOutlined, SaveOutlined, UnlockOutlined,

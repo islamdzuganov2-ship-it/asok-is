@@ -6,7 +6,8 @@
  * отклонённые заключения не подмешиваются в контекст следующих прогонов.
  */
 import React, { useState } from 'react';
-import { Button, Space, Modal, Input, message, Tag } from 'antd';
+import { Button, Space, Modal, Input, Tag } from 'antd';
+import { message } from '../theme/appMessage';
 import { LikeOutlined, DislikeOutlined, EditOutlined } from '@ant-design/icons';
 import { TYPE } from '../theme/premium';
 

@@ -7,7 +7,8 @@
  * (просевшие подхарактеристики + баллы) и рекомендация ИИ. Мера уходит топ-менеджменту на решение.
  */
 import React, { useMemo, useState } from 'react';
-import { Alert, Button, Card, Input, List, Modal, Space, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Input, List, Modal, Space, Tag, Typography } from 'antd';
+import { message } from '../theme/appMessage';
 import { BulbOutlined, RiseOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
 import { useAppDispatch } from '../store/hooks';

@@ -13,7 +13,8 @@
  * до записи в хранилище.
  */
 import React, { useState } from 'react';
-import { Alert, Button, Card, Space, Table, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, Card, Space, Table, Tag, Typography, Upload } from 'antd';
+import { message } from '../theme/appMessage';
 import { DownloadOutlined, InboxOutlined, FileTextOutlined, CloudUploadOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';

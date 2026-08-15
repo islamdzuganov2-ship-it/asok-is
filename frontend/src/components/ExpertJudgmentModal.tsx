@@ -1,5 +1,6 @@
 import React from 'react';
-import { Form, Input, Modal, Select, message } from 'antd';
+import { Form, Input, Modal, Select } from 'antd';
+import { message } from '../theme/appMessage';
 import { ExpertJudgmentDto, useSubmitExpertJudgmentMutation } from '../store/api/apiSlice';
 
 interface ExpertJudgmentModalProps {
