@@ -106,7 +106,12 @@ def group_order() -> list[str]:
 # ── Дефолтная матрица РЕДАКТИРУЕМЫХ ролей (сохраняет прежнее поведение) ─────────
 # ADMIN и SUPER_ADMIN — встроенные (BUILTIN_ROLES), их права вычисляются в коде и здесь
 # не задаются. Ключи ниже — коды остальных ролей из User.ALL_ROLES.
-_VIEW_COMMON = {"view.reports", "view.risks", "view.settings"}
+# ДЕФ-17 (T-06, БТ-036). «База рисков» ушла из общего набора: заказчик прямо отменил её
+# для топ-менеджмента — «не требуется для роли топ менеджер, не его уровень» (2026-07-06).
+# Через _VIEW_COMMON она продолжала доставаться CTO и CEO.
+_VIEW_COMMON = {"view.reports", "view.settings"}
+# Роли, которые ведут или разбирают риски предметно, получают доступ явно.
+_WITH_RISK_BASE = _VIEW_COMMON | {"view.risks"}
 
 DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
     "CTO": {
@@ -126,21 +131,21 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "systems.edit",
         "assessment.edit", "assessment.review", "dataio.import", "incidents.edit",
         "governance.propose", "econ.ref.edit", "risk.base.edit", "nonconformity.edit",
-    } | _VIEW_COMMON,
+    } | _WITH_RISK_BASE,
     "TEST_ANALYST": {
         "view.dashboard.analytics", "view.assessments", "view.risk_economics",
         "systems.edit", "assessment.edit", "dataio.import",
-    } | _VIEW_COMMON,
+    } | _WITH_RISK_BASE,
     "RISK_MANAGER": {
         "view.dashboard.risk", "view.dashboard.analytics", "view.dashboard.incidents",
         "view.dashboard.risk_radar", "view.risk_economics",
         "risk.register.edit", "econ.ref.edit", "econ.config.edit",
         "nonconformity.edit", "nonconformity.decide",
-    } | _VIEW_COMMON,
+    } | _WITH_RISK_BASE,
     "AUDITOR": {
         "view.dashboard.risk", "view.dashboard.analytics", "view.risk_economics",
         "risk.verify",
-    } | _VIEW_COMMON,
+    } | _WITH_RISK_BASE,
     # ДЕФ-10 (БТ-015): «тот же состав дашбордов, что есть у топ-менеджера» — но БЕЗ решений
     # по мерам (governance.decide) и без правки оценок. Действия исполнителя (уточнение,
     # запрос переноса срока) идут через его собственный раздел «Мои задачи».

@@ -125,11 +125,29 @@ class SystemStat(_CamelModel):
     open_count: int
 
 
+class TtrStats(_CamelModel):
+    """Тайминги устранения (ДЕФ-31, БТ-272). Все значения — средние по выборке, в минутах.
+
+    Поля в модели сбоя были заведены ещё при RE-05, но наружу не отдавались — на дашборде
+    аналитики сбоев виджета TTR не было вовсе, хотя заказчик просил «прикрутить к аналитике
+    ТС время, затрачиваемое на исправление и устранение».
+    """
+    avg_reaction_min: float | None = None       # T реакции: от регистрации до начала работ
+    avg_resolution_min: float | None = None     # T устранения: до восстановления сервиса
+    avg_target_min: float | None = None         # T целевого решения
+    # Разрыв «сервис поднят ↔ первопричина устранена» — метрика зрелости процесса:
+    # большой разрыв означает, что чинят симптом, а не причину.
+    avg_root_cause_lag_hours: float | None = None
+    root_cause_fixed_count: int = 0
+    measured_count: int = 0                     # по скольким сбоям есть тайминги
+
+
 class IncidentAnalyticsOut(_CamelModel):
     total: int
     open_count: int
     resolved_count: int
     avg_mttr_hours: float | None = None
+    ttr: TtrStats = TtrStats()
     release_induced_share: float           # доля сбоев категории RELEASE, %
     by_category: list[CategoryStat]
     top_systems: list[SystemStat]

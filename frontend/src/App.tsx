@@ -167,6 +167,9 @@ export const App: React.FC = () => {
                             <Route path="admin/permissions" element={<RequirePermission perm="view.admin.permissions"><PermissionsMatrixPage /></RequirePermission>} />
                             <Route path="admin/llm-quality" element={<RequirePermission perm="view.admin.llm_quality"><LlmQualityPage /></RequirePermission>} />
                             <Route index element={<Navigate to="/dashboard" replace />} />
+                            {/* ДЕФ-36: неизвестный URL внутри лэйаута рендерил пустую область
+                                без единого сообщения. Уводим на посадочную страницу роли. */}
+                            <Route path="*" element={<Navigate to="/dashboard" replace />} />
                         </Routes></Suspense></AppLayout></RequireAuth>} />
                     </Routes>
                 </Suspense>

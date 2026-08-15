@@ -63,6 +63,9 @@ const fmtDate = (s?: string | null) => (s ? dayjs(s).format('DD.MM.YYYY HH:mm') 
 const mttrHours = (r: TechIncidentDto): number | null =>
     r.resolvedAt ? Math.round(((new Date(r.resolvedAt).getTime() - new Date(r.occurredAt).getTime()) / 3600000) * 10) / 10 : null;
 
+/** Пустое значение показываем прочерком: «не измеряли» — не то же самое, что «ноль». */
+const fmtMin = (v?: number | null): string => (v === null || v === undefined ? '—' : v.toFixed(1));
+
 const IncidentsAnalyticsPage: React.FC = () => {
     const dataMode = useSelector((s: RootState) => s.ui.dataMode);
     const role = useSelector((s: RootState) => s.auth.role) || '';
@@ -243,6 +246,28 @@ const IncidentsAnalyticsPage: React.FC = () => {
                         </Col>
                         <Col xs={12} md={6}><KpiCard title="Средний MTTR, ч" value={(analytics?.avgMttrHours ?? 0).toFixed(1)} /></Col>
                         <Col xs={12} md={6}><KpiCard title="Из-за релизов, %" value={`${(analytics?.releaseInducedShare ?? 0).toFixed(1)} %`} /></Col>
+                    </Row>
+
+                    {/* ДЕФ-31 (БТ-272): тайминги устранения. Поля заводились ещё при RE-05, но
+                        наружу не отдавались — виджета TTR на дашборде не было вовсе.
+                        «—» вместо нуля: пустое значение это «не измеряли», а не «мгновенно». */}
+                    <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+                        <Col xs={12} md={6}>
+                            <KpiCard title="Реакция, мин" value={fmtMin(analytics?.ttr?.avgReactionMin)} />
+                        </Col>
+                        <Col xs={12} md={6}>
+                            <KpiCard title="Устранение, мин" value={fmtMin(analytics?.ttr?.avgResolutionMin)} />
+                        </Col>
+                        <Col xs={12} md={6}>
+                            <KpiCard title="Целевое решение, мин" value={fmtMin(analytics?.ttr?.avgTargetMin)} />
+                        </Col>
+                        <Col xs={12} md={6}>
+                            <KpiCard
+                                title="Первопричина позже сервиса, ч"
+                                value={fmtMin(analytics?.ttr?.avgRootCauseLagHours)}
+                                color={(analytics?.ttr?.avgRootCauseLagHours ?? 0) > 24 ? RAG.medium.strong : undefined}
+                            />
+                        </Col>
                     </Row>
 
                     <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
