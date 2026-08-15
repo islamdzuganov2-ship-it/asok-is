@@ -57,6 +57,82 @@ _lock = threading.Lock()
 _infer_lock = threading.Lock()
 _cache: dict[int, str] = {}
 
+# ДЕФ-04. Очередь к модели ограничена: раньше `with _infer_lock` ждал освобождения
+# неограниченно долго, каждый ожидающий держал поток из пула asyncio.to_thread, и при
+# нескольких параллельных запросах вставали ВСЕ эндпоинты, включая не-LLM.
+_waiting = 0
+_waiting_lock = threading.Lock()
+# Прогрев: фоновая загрузка весов при старте, чтобы первый пользовательский запрос не
+# платил за холодный старт (замер: ~10 минут на 6962 МБ).
+_warmup_thread: "threading.Thread | None" = None
+
+
+class LlmBusyError(RuntimeError):
+    """Модель занята: очередь заполнена или ожидание превысило бюджет времени.
+
+    Вызывающий обязан отдать честный детерминированный результат, а не висеть.
+    """
+
+
+class _InferSlot:
+    """Контекст-менеджер доступа к модели с потолком очереди и бюджетом ожидания."""
+
+    def __enter__(self) -> "_InferSlot":
+        global _waiting
+        with _waiting_lock:
+            if _waiting >= settings.LLM_MAX_WAITING:
+                raise LlmBusyError(
+                    f"очередь к модели заполнена ({_waiting}/{settings.LLM_MAX_WAITING})"
+                )
+            _waiting += 1
+        try:
+            acquired = _infer_lock.acquire(timeout=settings.LLM_QUEUE_TIMEOUT_S)
+        finally:
+            with _waiting_lock:
+                _waiting -= 1
+        if not acquired:
+            raise LlmBusyError(
+                f"модель занята дольше {settings.LLM_QUEUE_TIMEOUT_S:g} с"
+            )
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        _infer_lock.release()
+
+
+def queue_depth() -> int:
+    """Сколько запросов сейчас ждёт освобождения модели (для диагностики и метрик)."""
+    with _waiting_lock:
+        return _waiting
+
+
+def is_loading() -> bool:
+    """Идёт ли фоновая загрузка весов прямо сейчас."""
+    return _warmup_thread is not None and _warmup_thread.is_alive()
+
+
+def warmup() -> None:
+    """Запустить фоновую загрузку модели (идемпотентно).
+
+    Вызывается на старте приложения. Пока загрузка идёт, `is_available()` честно отвечает
+    False, эндпоинты отдают детерминированный fallback, а не блокируются на весах.
+    """
+    global _warmup_thread
+    if not settings.LLM_ENABLED or not settings.LLM_WARMUP:
+        return
+    if _load_attempted or is_loading():
+        return
+
+    def _run() -> None:
+        try:
+            _load_llm()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Прогрев LLM не удался: %s", exc)
+
+    _warmup_thread = threading.Thread(target=_run, name="llm-warmup", daemon=True)
+    _warmup_thread.start()
+    logger.info("Прогрев LLM запущен в фоне")
+
 
 @dataclass
 class ModelProfile:
@@ -214,8 +290,15 @@ def _load_llm():
 
 
 def is_available() -> bool:
-    """True, если модель реально загружена и готова к инференсу."""
-    return _load_llm() is not None
+    """True, если модель УЖЕ загружена и готова к инференсу.
+
+    ДЕФ-04: раньше здесь вызывался `_load_llm()`, поэтому опрос `/reports/llm-status`
+    (его дёргает переключатель «Моки ↔ LLM» на каждой загрузке страницы) запускал холодную
+    загрузку 6962 МБ под глобальной блокировкой и подвешивал весь бэкенд. Теперь статус
+    только ЧИТАЕТ состояние: загрузку выполняет фоновый прогрев (`warmup`), а инференс —
+    по факту обращения.
+    """
+    return _llm is not None
 
 
 def list_models() -> list[dict]:
@@ -256,6 +339,9 @@ def model_info() -> dict:
     info: dict = {
         "enabled": settings.LLM_ENABLED,
         "available": available,
+        # ДЕФ-04: фронт отличает «модель грузится» от «модели нет» и не считает стенд сломанным.
+        "loading": is_loading(),
+        "queue_depth": queue_depth(),
         "model_file": settings.LOCAL_LLM_MODEL_FILE,
         "model_dir": settings.LOCAL_LLM_MODEL_DIR,
         "temperature": settings.LLM_TEMPERATURE,
@@ -314,6 +400,11 @@ def complete(prompt: str, system: str = SYSTEM_PROMPT,
     падает, откатываемся к обычному завершению текста (create_completion) — так осмысленный вывод
     получается на ЛЮБОЙ GGUF, а не только на instruct-моделях с чат-разметкой.
     """
+    if is_loading():
+        # ДЕФ-04: пока веса грузятся в фоне, не встаём в очередь на минуты —
+        # отдаём None, вызывающий формирует детерминированный результат.
+        logger.info("LLM ещё грузится — отдаю детерминированный fallback")
+        return None
     llm = _load_llm()
     if llm is None:
         return None
@@ -322,7 +413,7 @@ def complete(prompt: str, system: str = SYSTEM_PROMPT,
     temp = settings.LLM_TEMPERATURE if temperature is None else temperature
     # 1) Чат-формат (предпочтительно — уважает роль system и разметку модели).
     try:
-        with _infer_lock:
+        with _InferSlot():
             resp = llm.create_chat_completion(
                 messages=[
                     {"role": "system", "content": system},
@@ -336,11 +427,14 @@ def complete(prompt: str, system: str = SYSTEM_PROMPT,
         if text:
             return text
         logger.warning("Чат-вызов дал пустой ответ — пробую обычное завершение (модель без шаблона?)")
+    except LlmBusyError as exc:
+        logger.warning("LLM занята (%s) — детерминированный fallback без ожидания", exc)
+        return None
     except Exception as exc:  # noqa: BLE001
         logger.warning("Чат-формат недоступен (%s) — откат к обычному завершению текста", exc)
     # 2) Фолбэк: обычное завершение текста (для моделей без чат-шаблона).
     try:
-        with _infer_lock:
+        with _InferSlot():
             resp = llm.create_completion(
                 prompt=_render_generic(system, prompt),
                 max_tokens=reserve_out,
@@ -348,6 +442,9 @@ def complete(prompt: str, system: str = SYSTEM_PROMPT,
                 top_p=settings.LLM_TOP_P,
             )
         return (resp["choices"][0]["text"] or "").strip() or None
+    except LlmBusyError as exc:
+        logger.warning("LLM занята (%s) — детерминированный fallback без ожидания", exc)
+        return None
     except Exception as exc:  # noqa: BLE001
         logger.exception("Ошибка инференса LLM (обычное завершение): %s", exc)
         return None

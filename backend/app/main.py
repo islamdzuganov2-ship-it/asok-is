@@ -12,6 +12,7 @@ from app.infrastructure.config import settings
 from app.infrastructure.database import AsyncSessionLocal, import_models
 from app.modules.econ import seed_econ_defaults
 from app.modules.iam import seed_rbac_defaults
+from app.modules.llm import service as llm_service
 from app.scripts.seed_iso25010 import seed_iso25010_async
 from app.shared.exceptions import (
     ConflictError,
@@ -96,6 +97,12 @@ async def startup_init() -> None:
 
     Сид остаётся под DEMO_MODE: это демо-ДАННЫЕ, а не схема.
     """
+    # ДЕФ-04: прогрев модели в фоне. Первый пользовательский запрос иначе платит за холодную
+    # загрузку весов (замер: ~10 минут на 6962 МБ), причём под глобальной блокировкой — вставал
+    # весь бэкенд. Прогрев не блокирует старт: пока идёт загрузка, LLM-эндпоинты отдают
+    # детерминированный результат.
+    llm_service.warmup()
+
     if not settings.DEMO_MODE:
         return
     # Сеем каталог метрик ИЗ КОДА (modules/quality/quality_model.py), без зависимости
