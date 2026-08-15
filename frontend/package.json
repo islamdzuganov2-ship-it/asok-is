@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:ui": "node scripts/check-ui.mjs",
-    "check": "npm run typecheck && npm run check:contrast && npm run check:ui && npm run test"
+    "check": "npm run typecheck && npm run check:contrast && npm run check:ui && npm run check:size && npm run test",
+    "check:size": "node scripts/check-size.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.3.7",
