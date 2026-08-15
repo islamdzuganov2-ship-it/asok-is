@@ -7,8 +7,10 @@ FROM python:3.11-slim
 # ГОТОВОЕ CPU-колесо llama-cpp-python с индекса abetlen слинковано с musl-libc (Alpine). Чтобы
 # оно грузилось на Debian/glibc БЕЗ компиляции (сборка llama.cpp из исходников не помещается в
 # память — OOM), ставим пакет musl и даём его libc под ожидаемым колесом именем.
+# fonts-dejavu-core — шрифт с кириллицей для сводного PDF (ДЕФ-18). Встроенные шрифты
+# reportlab (Helvetica, Vera) кириллицу не содержат: русский текст вышел бы «квадратами».
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev curl musl libgomp1 \
+    libpq-dev curl musl libgomp1 fonts-dejavu-core \
     && ln -sf /lib/ld-musl-x86_64.so.1 /lib/libc.musl-x86_64.so.1 \
     && rm -rf /var/lib/apt/lists/*
 

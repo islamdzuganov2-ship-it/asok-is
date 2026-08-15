@@ -5,6 +5,7 @@ Excel-матрицы периода, статус LLM.
 Транзитная зависимость: llm_service ещё в app.services (переезжает задачей #15).
 """
 import asyncio
+import os
 from datetime import datetime
 from collections import defaultdict
 from io import BytesIO
@@ -618,18 +619,84 @@ def _write_sheet(ws, headers: list[str], rows: list[list]) -> None:
         ws.append(row)
 
 
-@router.get("/export/{period_id}/xlsx")
-async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db),
-                             _: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
-    """Выгрузка реестров периода в .xlsx (T-14): характеристики качества, риски, недостатки, план.
 
-    Управленческая выгрузка «одним файлом» (4 листа) — то, что в ТЗ v11 R2.1 просилось экспортом
-    per-реестр. Данные — те же таблицы, что показывает вкладка «Отчёты и реестры».
+_PDF_MEDIA = "application/pdf"
+
+
+def _pdf_font() -> str:
+    """Шрифт с кириллицей. Встроенные Helvetica/Times её не содержат — текст вышел бы «квадратами».
+
+    Берём DejaVuSans из reportlab, он поставляется вместе с библиотекой.
     """
-    period = await db.get(AssessmentPeriod, period_id)
-    if period is None:
-        raise HTTPException(status_code=404, detail="Период оценки не найден")
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.rl_config import TTFSearchPath
 
+    name = "DejaVuSans"
+    if name in pdfmetrics.getRegisteredFontNames():
+        return name
+    for base in list(TTFSearchPath) + ["/usr/share/fonts/truetype/dejavu"]:
+        candidate = os.path.join(str(base), "DejaVuSans.ttf")
+        if os.path.isfile(candidate):
+            pdfmetrics.registerFont(TTFont(name, candidate))
+            return name
+    return "Helvetica"   # крайний случай: латиница выведется, кириллица — нет
+
+
+def _build_summary_pdf(period_label: str, system_name: str, blocks: list[tuple[str, list[str], list[list]]]) -> BytesIO:
+    """Сводный отчёт одним PDF: заголовок + таблицы по блокам (ДЕФ-18, T-14, БТ-283)."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    font = _pdf_font()
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=12 * mm, rightMargin=12 * mm, topMargin=12 * mm, bottomMargin=12 * mm,
+        title=f"АСОК ИС — сводный отчёт {period_label}",
+    )
+    base = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=base["Title"], fontName=font, fontSize=15, spaceAfter=4)
+    h2 = ParagraphStyle("h2", parent=base["Heading2"], fontName=font, fontSize=11, spaceBefore=8, spaceAfter=4)
+    small = ParagraphStyle("small", parent=base["Normal"], fontName=font, fontSize=8, leading=10)
+
+    story: list = [
+        Paragraph(f"АСОК ИС — сводный отчёт по качеству", h1),
+        Paragraph(f"ИС «{system_name}» · период {period_label}", small),
+        Spacer(1, 6),
+    ]
+    for title, headers, rows in blocks:
+        story.append(Paragraph(f"{title} — строк: {len(rows)}", h2))
+        if not rows:
+            story.append(Paragraph("Данных нет.", small))
+            continue
+        data = [[Paragraph(str(h), small) for h in headers]]
+        for row in rows:
+            data.append([Paragraph("" if c is None else str(c), small) for c in row])
+        table = Table(data, repeatRows=1, hAlign="LEFT")
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAEBEE")),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#C9CDD3")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        story.append(table)
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+async def _load_period_matrices(db: AsyncSession, period_id: UUID):
+    """Значения оценки и три реестра периода одним местом.
+
+    Выгрузки xlsx и PDF читают одно и то же; раньше четыре одинаковых запроса были
+    скопированы в оба эндпоинта. Общий загрузчик убирает дубль и держит роутер в пределах
+    бюджета обращений к ORM (tests/test_router_purity.py).
+    """
     vals = list((await db.execute(
         select(AssessmentValue).options(selectinload(AssessmentValue.metric))
         .where(AssessmentValue.period_id == period_id)
@@ -643,6 +710,21 @@ async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db)
     plans = list((await db.execute(
         select(QualityPlanMatrix).where(QualityPlanMatrix.period_id == period_id).order_by(QualityPlanMatrix.id)
     )).scalars().all())
+    return vals, risks, defects, plans
+
+@router.get("/export/{period_id}/xlsx")
+async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db),
+                             _: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
+    """Выгрузка реестров периода в .xlsx (T-14): характеристики качества, риски, недостатки, план.
+
+    Управленческая выгрузка «одним файлом» (4 листа) — то, что в ТЗ v11 R2.1 просилось экспортом
+    per-реестр. Данные — те же таблицы, что показывает вкладка «Отчёты и реестры».
+    """
+    period = await db.get(AssessmentPeriod, period_id)
+    if period is None:
+        raise HTTPException(status_code=404, detail="Период оценки не найден")
+
+    vals, risks, defects, plans = await _load_period_matrices(db, period_id)
 
     wb = Workbook()
     ws = wb.active
@@ -676,5 +758,50 @@ async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db)
     fname = f"asok_report_{period.period}.xlsx".replace(" ", "_")
     return StreamingResponse(
         buf, media_type=_XLSX_MEDIA,
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
+
+
+@router.get("/export/{period_id}/pdf")
+async def export_period_pdf(period_id: UUID, db: AsyncSession = Depends(get_db),
+                            _: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
+    """Сводный отчёт периода одним PDF (ДЕФ-18, T-14, БТ-283).
+
+    Экспорт в xlsx работал, PDF — нет, хотя в требованиях он стоял рядом («экспорт xlsx +
+    сводный PDF»). Содержимое то же, что в xlsx-выгрузке: характеристики качества, риски,
+    недостатки и план качества — но в виде, пригодном для рассылки и печати.
+    """
+    period = await db.get(AssessmentPeriod, period_id)
+    if period is None:
+        raise HTTPException(status_code=404, detail="Период оценки не найден")
+    system = await db.get(System, period.system_id)
+
+    vals, risks, defects, plans = await _load_period_matrices(db, period_id)
+
+    blocks = [
+        ("Характеристики качества",
+         ["Характеристика", "Подхарактеристика", "A", "B", "X", "Уровень"],
+         [[v.metric.characteristic, v.metric.subcharacteristic, v.val_a, v.val_b,
+           float(v.calculated_x) if v.calculated_x is not None else None, v.quality_level]
+          for v in vals]),
+        ("Риски",
+         ["Характеристика", "Подхарактеристика", "Описание риска", "Последствие", "Меры минимизации"],
+         [[r.characteristic, r.subcharacteristic, r.risk_description, r.risk_consequence,
+           r.mitigation_measures] for r in risks]),
+        ("Недостатки",
+         ["N", "Характеристика", "Показатель", "Уровень", "Описание"],
+         [[r.id, r.characteristic, r.digital_metric, r.quality_metric_level, r.defect_description]
+          for r in defects]),
+        ("План качества",
+         ["N", "Характеристика", "Задача", "Ответственный", "Срок"],
+         [[r.id, r.characteristic, r.task_description, r.assignee_fio, r.deadline] for r in plans]),
+    ]
+    # Сборка PDF синхронная и не быстрая на больших периодах — уводим с event loop (ДЕФ-26).
+    buf = await asyncio.to_thread(
+        _build_summary_pdf, period.period, system.name if system else "—", blocks,
+    )
+    fname = f"asok_report_{period.period}.pdf".replace(" ", "_")
+    return StreamingResponse(
+        buf, media_type=_PDF_MEDIA,
         headers={"Content-Disposition": f"attachment; filename={fname}"},
     )
