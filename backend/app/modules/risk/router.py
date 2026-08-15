@@ -61,6 +61,7 @@ async def search_risks(
     q: str = Query(..., min_length=2),
     limit: int = 5,
     db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
 ) -> list[RiskBase]:
     """Лексический поиск для LLM-grounding (по тексту/ключевым словам). Оставлен неизменным."""
     return await service.search_risks(db, q, limit)

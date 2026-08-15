@@ -101,18 +101,36 @@ async def set_role_permissions(db: AsyncSession, role: str, permissions: list[st
 
 
 async def seed_rbac_defaults(db: AsyncSession) -> int:
-    """Идемпотентно: если матрица пуста — пишет дефолты; всегда гарантирует пользователя superadmin.
+    """Идемпотентно: наполняет матрицу дефолтами и гарантирует пользователя superadmin.
 
-    Возвращает число добавленных строк матрицы (0, если уже была наполнена).
+    Два случая:
+      · матрица пуста — первый запуск, пишутся все дефолты редактируемых ролей;
+      · матрица наполнена — доводятся ТОЛЬКО права, которых нет ни у одной роли, то есть
+        появившиеся в каталоге с новым релизом. Иначе новое право (например `systems.edit`,
+        добавленное при закрытии ДЕФ-01) молча запрещало бы действие всем ролям, пока
+        суперадмин не проставит галочку вручную. Уже встречавшиеся права не трогаются —
+        там осознанное решение суперадмина.
+
+    Возвращает число добавленных строк матрицы.
     """
-    already = (await db.execute(select(RolePermission.id).limit(1))).first()
+    known = set((await db.execute(select(RolePermission.permission))).scalars().all())
     added = 0
-    if already is None:
-        # Сеются только РЕДАКТИРУЕМЫЕ роли; ADMIN/SUPER_ADMIN вычисляются в коде.
+    if not known:
+        # Первый запуск: сеются только РЕДАКТИРУЕМЫЕ роли; ADMIN/SUPER_ADMIN — в коде.
         for role, perms in DEFAULT_ROLE_PERMISSIONS.items():
             for p in sorted(perms):
                 db.add(RolePermission(role=role, permission=p))
                 added += 1
+    else:
+        # Матрица уже наполнена. Права, которых в ней НЕТ НИ У ОДНОЙ роли, — новые в каталоге
+        # (добавлены релизом). Раскатываем по ним дефолты, иначе каждое новое право молча
+        # запрещало бы действие всем редактируемым ролям до ручной правки матрицы.
+        # Права, которые в матрице уже встречались, не трогаем: там решение суперадмина.
+        for role, perms in DEFAULT_ROLE_PERMISSIONS.items():
+            for p in sorted(perms - known):
+                db.add(RolePermission(role=role, permission=p))
+                added += 1
+    if added:
         await db.commit()
         _invalidate()
 

@@ -46,6 +46,11 @@ PERMISSIONS: list[Permission] = [
     Permission("view.admin.llm_quality", "Администрирование", "Раздел «Качество LLM»",
                "Дашборд самооценки LLM-подсистемы по ISO/IEC 25010 (только суперадминистратор)"),
     # Действия (запись/операции)
+    Permission("systems.edit", "Оценка", "Заводить и править реестр ИС",
+               "Создание системы в реестре — точка входа сценария «Новая оценка»"),
+    Permission("quality.catalog.edit", "Оценка", "Править каталог метрик ISO 25010",
+               "Справочные данные модели качества: на них опираются ВСЕ оценки, "
+               "включая закрытые периоды. По умолчанию — только встроенные роли"),
     Permission("assessment.edit", "Оценка", "Вносить и править оценки"),
     Permission("assessment.review", "Оценка", "Экспертное ревью оценок"),
     Permission("dataio.import", "Оценка", "Импорт данных (Excel)"),
@@ -116,12 +121,13 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "view.dashboard.manager", "view.dashboard.analytics", "view.dashboard.dynamics",
         "view.dashboard.taskplan", "view.dashboard.incidents", "view.dashboard.risk_radar",
         "view.assessments", "view.risk_economics",
+        "systems.edit",
         "assessment.edit", "assessment.review", "dataio.import", "incidents.edit",
         "governance.propose", "econ.ref.edit", "risk.base.edit", "nonconformity.edit",
     } | _VIEW_COMMON,
     "TEST_ANALYST": {
         "view.dashboard.analytics", "view.assessments", "view.risk_economics",
-        "assessment.edit", "dataio.import",
+        "systems.edit", "assessment.edit", "dataio.import",
     } | _VIEW_COMMON,
     "RISK_MANAGER": {
         "view.dashboard.risk", "view.dashboard.analytics", "view.dashboard.incidents",

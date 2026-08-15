@@ -50,19 +50,19 @@ router = APIRouter()
 
 
 @router.get("/llm-status")
-async def get_llm_status() -> dict:
+async def get_llm_status(_: dict = Depends(get_current_user)) -> dict:
     """Статус встроенной LLM: паспорт загруженной модели (архитектура/контекст) + мозг."""
     return llm_service.model_info()
 
 
 @router.get("/llm-models")
-async def get_llm_models() -> dict:
+async def get_llm_models(_: dict = Depends(get_current_user)) -> dict:
     """Список GGUF-моделей в каталоге (для переключения/диагностики): имя, размер, выбранная."""
     return {"models": llm_service.list_models()}
 
 
 @router.get("/llm-pipeline")
-async def get_llm_pipeline() -> dict:
+async def get_llm_pipeline(_: dict = Depends(get_current_user)) -> dict:
     """Матрица конвейера RAG и обучения (ТЗ v18 п.1): источники контекста, механизмы, уровни.
 
     Открыта всем аутентифицированным: это описание архитектуры, а не данные оценки. Отчёт
@@ -124,7 +124,8 @@ class ConclusionFeedbackIn(BaseModel):
 
 
 @router.post("/conclusion-feedback")
-async def conclusion_feedback(payload: ConclusionFeedbackIn) -> dict:
+async def conclusion_feedback(payload: ConclusionFeedbackIn,
+                              _: dict = Depends(require_permission("assessment.review"))) -> dict:
     """Принимает оценку/правку заключения → пишет в «резервный мозг» (влияет на будущий recall)."""
     try:
         entry = llm_brain.record_feedback(
@@ -187,7 +188,7 @@ def _measures_blocks(items: list[MeasuresAnalyticsItem], cards: list[MeasureCard
 async def measures_analytics(
     payload: MeasuresReasoningIn | list[MeasuresAnalyticsItem],
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("view.reports")),
 ) -> dict:
     """Аналитика по МЕРАМ через конвейер многоаспектного аналитического рассуждения (BL-005).
 
@@ -245,6 +246,7 @@ async def measures_analytics(
 async def get_period_excel_matrices(
     period_id: UUID,
     db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
 ) -> FullExcelMatricesOut:
     period = await db.get(AssessmentPeriod, period_id)
     if period is None:
@@ -336,7 +338,8 @@ def _score_to_bucket(value: float | None) -> int:
 
 
 @router.get("/executive-dashboard", response_model=DashboardDataOut)
-async def get_executive_dashboard(db: AsyncSession = Depends(get_db)) -> DashboardDataOut:
+async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
+                                  _: dict = Depends(get_current_user)) -> DashboardDataOut:
     result = await db.execute(
         select(AssessmentValue)
         .options(
@@ -477,7 +480,8 @@ class SystemDynamicsOut(_CamelOut):
 
 
 @router.get("/system-dynamics", response_model=SystemDynamicsOut)
-async def system_dynamics(system_id: UUID, db: AsyncSession = Depends(get_db)) -> SystemDynamicsOut:
+async def system_dynamics(system_id: UUID, db: AsyncSession = Depends(get_db),
+                          _: dict = Depends(get_current_user)) -> SystemDynamicsOut:
     """Динамика качества ИС по периодам (T-15 — эффективность мер + live-режим «Динамики качества»).
 
     Интегральный показатель и средние по 8 характеристикам (ISO 25010) за каждый квартал в
@@ -534,7 +538,8 @@ def _write_sheet(ws, headers: list[str], rows: list[list]) -> None:
 
 
 @router.get("/export/{period_id}/xlsx")
-async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db)) -> StreamingResponse:
+async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db),
+                             _: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
     """Выгрузка реестров периода в .xlsx (T-14): характеристики качества, риски, недостатки, план.
 
     Управленческая выгрузка «одним файлом» (4 листа) — то, что в ТЗ v11 R2.1 просилось экспортом

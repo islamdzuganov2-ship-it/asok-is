@@ -206,3 +206,41 @@ async def test_catalog_lists_all_permissions(aclient, db_session):
     cat = (await aclient.get(f"{API}/iam/permissions/catalog", headers=su)).json()
     assert {p["key"] for p in cat["permissions"]} == set(ALL_PERMISSION_KEYS)
     assert set(cat["roles"]) == set(User.ALL_ROLES)
+
+
+async def test_new_catalog_permission_reaches_populated_matrix(db_session):
+    """Право, добавленное в каталог новым релизом, доезжает до уже наполненной матрицы.
+
+    Регресс к ДЕФ-01: `systems.edit` добавили в каталог и в дефолты QUALITY_MANAGER, но
+    `seed_rbac_defaults` сеял дефолты ТОЛЬКО в пустую матрицу — на живом стенде менеджер
+    получил 403 на создание системы. Теперь досеиваются права, которых нет ни у одной роли.
+    """
+    from sqlalchemy import delete, select
+
+    from app.modules.iam.models import RolePermission
+
+    await ps.seed_rbac_defaults(db_session)          # первичное наполнение
+    # Имитируем «старую» инсталляцию: права ещё не существовало в каталоге.
+    await db_session.execute(delete(RolePermission).where(RolePermission.permission == "systems.edit"))
+    await db_session.commit()
+    ps.reset_cache()
+    assert "systems.edit" not in await ps.get_role_permissions(db_session, "QUALITY_MANAGER")
+
+    added = await ps.seed_rbac_defaults(db_session)  # запуск после релиза
+    assert added > 0
+    ps.reset_cache()
+    assert "systems.edit" in await ps.get_role_permissions(db_session, "QUALITY_MANAGER")
+
+
+async def test_seed_does_not_restore_permission_revoked_by_superadmin(aclient, db_session):
+    """Осознанное решение суперадмина не перезатирается повторным сидом."""
+    await ps.seed_rbac_defaults(db_session)
+    su = _auth(await _login(aclient, "superadmin", "Super123!"))
+    await aclient.put(f"{API}/iam/permissions/matrix/TEST_ANALYST", headers=su,
+                      json={"permissions": ["view.reports"]})
+    ps.reset_cache()
+
+    await ps.seed_rbac_defaults(db_session)
+    ps.reset_cache()
+    perms = await ps.get_role_permissions(db_session, "TEST_ANALYST")
+    assert perms == frozenset({"view.reports"}), "сид вернул снятые суперадмином права"
