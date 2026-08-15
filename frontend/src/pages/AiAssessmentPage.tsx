@@ -148,7 +148,7 @@ const AiAssessmentPage: React.FC = () => {
 
   // Модель 59898 + системы ИИ.
   useEffect(() => {
-    fetch(`${VITE_API}/ai-assessments/ai-model`).then((r) => r.json())
+    fetch(`${VITE_API}/ai-assessments/ai-model`, { headers }).then((r) => r.json())
       .then((d) => setModel(d.groups || [])).catch(() => setModel([]));
     fetch(`${VITE_API}/systems?limit=100`, { headers }).then((r) => r.json())
       .then((d) => setSystems((d.items || []).filter((s: SystemLite) => s.system_kind === 'AI')))

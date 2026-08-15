@@ -5,7 +5,9 @@
  */
 
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { RootState } from '../index';
+import { logout } from '../slices/authSlice';
 
 export interface ProblematicSystem {
     id: string;
@@ -377,18 +379,43 @@ export interface LlmPipelineResponse {
     personas: { code: string; title: string; audience: string; roles: string[]; why_depth: number }[];
 }
 
+const rawBaseQuery = fetchBaseQuery({
+    baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
+    prepareHeaders: (headers, { getState }) => {
+        const token = (getState() as RootState).auth.token || localStorage.getItem('token');
+        if (token) {
+            headers.set('authorization', `Bearer ${token}`);
+        }
+        return headers;
+    },
+});
+
+/**
+ * 401 → выход и возврат на страницу входа.
+ *
+ * Пока обход аутентификации был зашит в DEMO_MODE (ДЕФ-02), бэкенд НИКОГДА не отвечал 401:
+ * просроченный токен молча повышался до ADMIN, и отсутствие обработки на фронте не было
+ * заметно. После разделения флагов истёкший токен даёт честный 401 — без этой обработки
+ * дашборд «замирал» бы и продолжал опрашивать API по кругу вместо релогина.
+ *
+ * Refresh-токен на клиенте не хранится (в localStorage кладётся только access), поэтому
+ * молчаливое продление невозможно — корректный сценарий именно выход.
+ */
+const baseQueryWithAuthGuard: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
+    async (args, api, extraOptions) => {
+        const result = await rawBaseQuery(args, api, extraOptions);
+        if (result.error && result.error.status === 401) {
+            const state = api.getState() as RootState;
+            if (state.auth.isAuthenticated) {
+                api.dispatch(logout());
+            }
+        }
+        return result;
+    };
+
 export const apiSlice = createApi({
     reducerPath: 'api',
-    baseQuery: fetchBaseQuery({
-        baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
-        prepareHeaders: (headers, { getState }) => {
-            const token = (getState() as RootState).auth.token || localStorage.getItem('token');
-            if (token) {
-                headers.set('authorization', `Bearer ${token}`);
-            }
-            return headers;
-        },
-    }),
+    baseQuery: baseQueryWithAuthGuard,
     // Авто-освежение кэша без ручного F5 (жалоба «нет автоматического сброса кэша»):
     //  · refetchOnFocus — вернулись во вкладку → данные перезапрашиваются;
     //  · refetchOnReconnect — восстановилась сеть → перезапрос;
