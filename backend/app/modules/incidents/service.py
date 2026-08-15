@@ -28,6 +28,7 @@ from app.modules.incidents.models import (
     TechIncident,
 )
 from app.modules.incidents.schemas import (
+    TtrStats,
     CategoryStat,
     IncidentAnalyticsOut,
     IncidentCategoriesOut,
@@ -243,6 +244,44 @@ async def triggering_characteristics(
     return dict(char_triggers)
 
 
+
+def _avg(values: list[float]) -> float | None:
+    """Среднее по непустой выборке, иначе None (в UI это «нет данных», а не ноль)."""
+    return round(sum(values) / len(values), 1) if values else None
+
+
+def _ttr_stats(rows: list[TechIncident]) -> TtrStats:
+    """Тайминги устранения (ДЕФ-31, БТ-272).
+
+    Поля t_reaction_min / t_resolution_min / t_target_min и root_cause_fixed_at заводились
+    при RE-05, но наружу не отдавались — виджета TTR на дашборде не было.
+    Считаем только по заполненным значениям: пустые не приравниваем к нулю, иначе среднее
+    занижалось бы тем сильнее, чем хуже заполнены данные.
+    """
+    reaction = [float(r.t_reaction_min) for r in rows if r.t_reaction_min is not None]
+    resolution = [float(r.t_resolution_min) for r in rows if r.t_resolution_min is not None]
+    target = [float(r.t_target_min) for r in rows if r.t_target_min is not None]
+
+    lags: list[float] = []
+    for r in rows:
+        if r.root_cause_fixed_at is not None and r.resolved_at is not None:
+            delta = (r.root_cause_fixed_at - r.resolved_at).total_seconds() / 3600
+            if delta >= 0:
+                lags.append(delta)
+
+    measured = sum(
+        1 for r in rows
+        if r.t_reaction_min is not None or r.t_resolution_min is not None or r.t_target_min is not None
+    )
+    return TtrStats(
+        avg_reaction_min=_avg(reaction),
+        avg_resolution_min=_avg(resolution),
+        avg_target_min=_avg(target),
+        avg_root_cause_lag_hours=_avg(lags),
+        root_cause_fixed_count=sum(1 for r in rows if r.root_cause_fixed_at is not None),
+        measured_count=measured,
+    )
+
 async def analytics(db: AsyncSession, *, system: str | None = None) -> IncidentAnalyticsOut:
     rows = await list_incidents(db, system=system)
     total = len(rows)
@@ -251,6 +290,8 @@ async def analytics(db: AsyncSession, *, system: str | None = None) -> IncidentA
 
     all_mttr = [m for m in (_mttr_hours(r) for r in resolved_rows) if m is not None]
     avg_mttr = round(sum(all_mttr) / len(all_mttr), 1) if all_mttr else None
+
+    ttr = _ttr_stats(rows)
 
     # Разбивка по категориям (все известные категории — стабильный порядок, включая нулевые).
     cat_rows: dict[str, list[TechIncident]] = defaultdict(list)
@@ -290,6 +331,7 @@ async def analytics(db: AsyncSession, *, system: str | None = None) -> IncidentA
         open_count=len(open_rows),
         resolved_count=len(resolved_rows),
         avg_mttr_hours=avg_mttr,
+        ttr=ttr,
         release_induced_share=round(release_count / total * 100, 1) if total else 0.0,
         by_category=by_category,
         top_systems=top_systems,

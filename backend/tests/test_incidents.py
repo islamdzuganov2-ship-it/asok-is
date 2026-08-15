@@ -145,3 +145,42 @@ async def test_import_incidents_normalizes_and_dedups(db_session):
     # Повторный импорт того же — всё уходит в дубли (0 создано).
     res2 = await service.import_incidents(db_session, rows[:1], "importer")
     assert res2.created == 0 and res2.skipped == 1
+
+
+def test_ttr_stats_average_only_over_filled_values():
+    """Тайминги TTR усредняются по заполненным значениям (ДЕФ-31, БТ-272).
+
+    Пустые поля НЕ приравниваются к нулю: иначе среднее занижалось бы тем сильнее, чем
+    хуже заполнены данные, и виджет показывал бы неоправданно хорошую картину.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.modules.incidents.models import TechIncident
+    from app.modules.incidents.service import _ttr_stats
+
+    base = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    rows = [
+        TechIncident(system_name="А", category="RELEASE", occurred_at=base,
+                     resolved_at=base + timedelta(hours=2),
+                     t_reaction_min=10, t_resolution_min=120, t_target_min=600,
+                     root_cause_fixed_at=base + timedelta(hours=26)),
+        TechIncident(system_name="Б", category="NETWORK", occurred_at=base,
+                     resolved_at=base + timedelta(hours=1),
+                     t_reaction_min=30, t_resolution_min=60),
+        TechIncident(system_name="В", category="POWER", occurred_at=base),  # без таймингов
+    ]
+    stats = _ttr_stats(rows)
+    assert stats.avg_reaction_min == 20.0          # (10+30)/2, третий не считается
+    assert stats.avg_resolution_min == 90.0        # (120+60)/2
+    assert stats.avg_target_min == 600.0           # единственное заполненное
+    assert stats.measured_count == 2
+    assert stats.root_cause_fixed_count == 1
+    assert stats.avg_root_cause_lag_hours == 24.0  # первопричину чинили ещё сутки после подъёма
+
+
+def test_ttr_stats_empty_returns_none_not_zero():
+    from app.modules.incidents.service import _ttr_stats
+
+    stats = _ttr_stats([])
+    assert stats.avg_reaction_min is None and stats.avg_resolution_min is None
+    assert stats.measured_count == 0

@@ -232,6 +232,15 @@ export interface IncidentAnalytics {
     openCount: number;
     resolvedCount: number;
     avgMttrHours: number | null;
+    /** Тайминги устранения (ДЕФ-31, БТ-272); поля могут быть null — «не измеряли». */
+    ttr?: {
+        avgReactionMin: number | null;
+        avgResolutionMin: number | null;
+        avgTargetMin: number | null;
+        avgRootCauseLagHours: number | null;
+        rootCauseFixedCount: number;
+        measuredCount: number;
+    };
     releaseInducedShare: number;
     byCategory: IncidentCategoryStat[];
     topSystems: IncidentSystemStat[];

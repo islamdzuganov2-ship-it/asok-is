@@ -270,3 +270,17 @@ async def test_new_role_gets_full_default_set_in_populated_matrix(db_session):
     assert granted == frozenset(DEFAULT_ROLE_PERMISSIONS["EXECUTOR"])
     assert "view.dashboard.taskplan" in granted
     assert "governance.decide" not in granted, "исполнитель не принимает решений по мерам (SoD)"
+
+
+def test_risk_base_not_default_for_top_management():
+    """«База рисков» не выдаётся CTO/CEO по умолчанию (ДЕФ-17, T-06, БТ-036).
+
+    Заказчик отменил этот пункт для топ-менеджмента: «не требуется для роли топ менеджер,
+    не его уровень» (2026-07-06). Право продолжало доставаться им через общий набор
+    _VIEW_COMMON, поэтому пункт меню оставался виден.
+    """
+    for role in ("CTO", "CEO"):
+        assert "view.risks" not in DEFAULT_ROLE_PERMISSIONS[role], role
+    # Тем, кто ведёт риски предметно, доступ остаётся.
+    for role in ("QUALITY_MANAGER", "RISK_MANAGER", "AUDITOR", "TEST_ANALYST"):
+        assert "view.risks" in DEFAULT_ROLE_PERMISSIONS[role], role
