@@ -1,6 +1,6 @@
 import React from 'react';
 import { Typography, Card, Switch, Tag, Row, Col, Space } from 'antd';
-import { LineChartOutlined, ScheduleOutlined, DashboardOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { LineChartOutlined, ScheduleOutlined, DashboardOutlined, ThunderboltOutlined, AlertOutlined } from '@ant-design/icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { setExecFeature, type ExecFeatureKey } from '../store/slices/uiSlice';
@@ -54,6 +54,21 @@ const IncidentsPreview: React.FC<{ on: boolean }> = ({ on }) => (
   </svg>
 );
 
+// ДЕФ-27: у риск-радара появился свой переключатель — раньше он гейтился флагом
+// «Аналитика сбоев», и, выключив её, топ-менеджер неожиданно терял и радар.
+const RiskRadarPreview: React.FC<{ on: boolean }> = ({ on }) => (
+  <svg width="100%" height="60" viewBox="0 0 160 60" preserveAspectRatio="none">
+    {[22, 15, 8].map((r, i) => (
+      <circle key={i} cx="80" cy="32" r={r} fill="none"
+        stroke={on ? BRAND.borderSoft : '#EDEFF2'} strokeWidth="1.5" />
+    ))}
+    <line x1="80" y1="32" x2="80" y2="10" stroke={on ? ACCENT.slate.color : BRAND.borderSoft} strokeWidth="2" />
+    {[[96, 22, RAG.bad.color], [66, 40, RAG.medium.color], [88, 44, RAG.good.color]].map(([x, y, c], i) => (
+      <circle key={`p${i}`} cx={x as number} cy={y as number} r="4" fill={on ? (c as string) : BRAND.borderSoft} />
+    ))}
+  </svg>
+);
+
 interface FeatureDef {
   key: ExecFeatureKey;
   title: string;
@@ -80,7 +95,8 @@ const FEATURES: FeatureDef[] = [
   {
     key: 'execTaskPlan',
     title: 'Дашборд «План задач по повышению качества»',
-    desc: 'Диаграмма Ганта: сроки, ответственные, задачи в СУЗ, комментарии и эскалация.',
+    desc: 'Пузырьковая шкала по ответственным: сроки, задачи в СУЗ, комментарии и эскалация. '
+      + 'Цвет пузырька — просрочено / в зоне риска / в плане.',
     icon: <ScheduleOutlined />,
     Preview: TaskPlanPreview,
   },
@@ -90,6 +106,13 @@ const FEATURES: FeatureDef[] = [
     desc: 'Сбои по первопричинам (релиз/инфраструктура/производительность/сеть/электроснабжение), MTTR и топ нестабильных ИС.',
     icon: <ThunderboltOutlined />,
     Preview: IncidentsPreview,
+  },
+  {
+    key: 'execRiskRadar',
+    title: 'Риск-радар',
+    desc: 'Риски, сработавшие по метрикам качества: что уже требует внимания, чтобы не допустить технического сбоя.',
+    icon: <AlertOutlined />,
+    Preview: RiskRadarPreview,
   },
 ];
 

@@ -6,9 +6,8 @@
  * рекомендаций (grounding). Подключено к /api/v1/risks (CRUD + поиск).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Alert, Button, Form, Input, Modal, Select, Space, Table, Tag, Typography, message,
-} from 'antd';
+import { Alert, Button, Form, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd';
+import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined, InboxOutlined } from '@ant-design/icons';
 import { Card } from 'antd';

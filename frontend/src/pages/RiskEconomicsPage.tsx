@@ -7,10 +7,8 @@
  * ввода, не от автовыгрузки ITSM). Расчёты (C_ТС, ALE, ROSI) считает бэкенд; здесь — ввод и подача.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Statistic,
-  Switch, Table, Tabs, Tag, Typography, message,
-} from 'antd';
+import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography } from 'antd';
+import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined, ReloadOutlined, InboxOutlined } from '@ant-design/icons';
 import KpiCard from '../components/KpiCard';

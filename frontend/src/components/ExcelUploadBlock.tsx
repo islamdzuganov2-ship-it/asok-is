@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Alert, Button, Card, Space, Typography, Upload, message } from 'antd';
+import { Alert, Button, Card, Space, Typography, Upload } from 'antd';
+import { message } from '../theme/appMessage';
 import { FileExcelOutlined, UploadOutlined } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import { useImportAssessmentExcelMutation, useImportWorkbookMutation } from '../store/api/apiSlice';

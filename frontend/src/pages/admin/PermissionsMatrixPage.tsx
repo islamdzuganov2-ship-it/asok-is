@@ -5,7 +5,8 @@
  * Доступ гейтится правом view.admin.permissions (маршрут в App.tsx).
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Checkbox, Select, Button, Space, Typography, Alert, Row, Col, Tag, Spin, message } from 'antd';
+import { Card, Checkbox, Select, Button, Space, Typography, Alert, Row, Col, Tag, Spin } from 'antd';
+import { message } from '../../theme/appMessage';
 import { SafetyOutlined, SaveOutlined } from '@ant-design/icons';
 import {
   useGetPermissionCatalogQuery, useGetPermissionMatrixQuery, useSetRolePermissionsMutation,

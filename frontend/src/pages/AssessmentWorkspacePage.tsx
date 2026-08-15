@@ -12,7 +12,8 @@
  *   7. Реестры мер               — полный реестр мер за весь период со статусами (T-52, MeasuresRegistryCard).
  */
 import React, { useState } from 'react';
-import { Button, Space, Tabs, Typography, message } from 'antd';
+import { Button, Space, Tabs, Typography } from 'antd';
+import { message } from '../theme/appMessage';
 import {
   FormOutlined, EditOutlined, CommentOutlined, FileExcelOutlined,
   UploadOutlined, ThunderboltOutlined, UnorderedListOutlined, DownloadOutlined,

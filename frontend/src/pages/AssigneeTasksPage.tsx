@@ -11,9 +11,8 @@
  * топ-менеджмента (маршруты в App.tsx), но действия по мерам — только просмотр.
  */
 import React, { useMemo, useState } from 'react';
-import {
-  Alert, Button, Col, DatePicker, Empty, Input, Modal, Row, Space, Statistic, Table, Tag, Timeline, Typography, message,
-} from 'antd';
+import { Alert, Button, Col, DatePicker, Empty, Input, Modal, Row, Space, Statistic, Table, Tag, Timeline, Typography } from 'antd';
+import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import { CommentOutlined, FieldTimeOutlined, ScheduleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';

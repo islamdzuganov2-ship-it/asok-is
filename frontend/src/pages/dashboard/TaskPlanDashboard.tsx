@@ -15,7 +15,8 @@
  *   • после решения задачу отрабатывает менеджер по качеству.
  */
 import React, { useMemo, useState } from 'react';
-import { Typography, Tag, Space, Input, Button, Modal, message, Alert, Tooltip, Empty, Segmented, Select, Table } from 'antd';
+import { Typography, Tag, Space, Input, Button, Modal, Alert, Tooltip, Empty, Segmented, Select, Table } from 'antd';
+import { message } from '../../theme/appMessage';
 import {
   LinkOutlined, WarningOutlined, CheckOutlined, CloseOutlined, RiseOutlined, StopOutlined,
   ScheduleOutlined, DatabaseOutlined, DownOutlined, UnorderedListOutlined,

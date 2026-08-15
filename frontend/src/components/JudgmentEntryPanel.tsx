@@ -11,9 +11,8 @@
  * начинает с проблемных зон. Источник данных по режиму: 'live' — API, 'mock' — демо-набор.
  */
 import React, { useMemo, useState } from 'react';
-import {
-  Alert, Button, Checkbox, Empty, Input, Select, Space, Table, Tag, Tooltip, Typography, message,
-} from 'antd';
+import { Alert, Button, Checkbox, Empty, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import { CommentOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';

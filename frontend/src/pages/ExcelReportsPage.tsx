@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, Empty, Input, Row, Segmented, Select, Space, Spin, Table, Tabs, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, Card, Col, Empty, Input, Row, Segmented, Select, Space, Spin, Table, Tabs, Tag, Typography, Upload } from 'antd';
+import { message } from '../theme/appMessage';
 import { FileExcelOutlined, UploadOutlined, DownloadOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';

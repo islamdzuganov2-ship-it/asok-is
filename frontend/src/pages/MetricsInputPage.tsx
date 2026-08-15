@@ -5,10 +5,8 @@
  * Excel upload через ExcelUploadBlock.
  */
 import React, { useState, useCallback, useEffect } from 'react';
-import {
-  Alert, Button, Checkbox, Input, InputNumber, Space, Spin, Table,
-  Tag, Tooltip, Typography, message,
-} from 'antd';
+import { Alert, Button, Checkbox, Input, InputNumber, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd';
+import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import { SaveOutlined, ArrowLeftOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';

@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ConfigProvider, Spin } from 'antd';
+import { App as AntdApp, ConfigProvider, Spin } from 'antd';
 import ruRU from 'antd/locale/ru_RU';
 import { useSelector } from 'react-redux';
 import { RootState } from './store';
@@ -8,6 +8,7 @@ import { AppLayout } from './components/AppLayout';
 import { BRAND } from './theme/ragPalette';
 import { SPACE, TYPE } from './theme/premium';
 import { THEMES, antdThemeOf, fontStackOf } from './theme/themes';
+import { registerAppApi } from './theme/appMessage';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -95,6 +96,21 @@ const RequirePermission: React.FC<{ perm: string | string[]; children: React.Rea
  * компоненты antd — через ConfigProvider theme ниже. `data-theme` включает точечные правила
  * (color-scheme, скроллбары) из styles/themes.css.
  */
+/**
+ * AppApiBridge — отдаёт тос­ты/модалки, знающие про тему (ДЕФ-09).
+ *
+ * Статические `message.*` не видят ConfigProvider и в тёмной теме рисовались светлыми.
+ * Компонент живёт ВНУТРИ <App> antd и передаёт его экземпляры в theme/appMessage.ts,
+ * откуда их берут все точки вызова.
+ */
+const AppApiBridge: React.FC = () => {
+    const api = AntdApp.useApp();
+    useEffect(() => {
+        registerAppApi({ message: api.message, notification: api.notification, modal: api.modal });
+    }, [api]);
+    return null;
+};
+
 const ThemeVarsBridge: React.FC = () => {
     const themeName = useSelector((s: RootState) => s.ui.themeName);
     const fontKey = useSelector((s: RootState) => s.ui.fontKey);
@@ -115,6 +131,11 @@ export const App: React.FC = () => {
     return (
         <ConfigProvider locale={ruRU} theme={antdThemeOf(preset, fontKey)}>
             <ThemeVarsBridge />
+            {/* <App> antd даёт тостам и модалкам доступ к теме (ДЕФ-09).
+                component по умолчанию ('div') обязателен при cssVar: с component={false}
+                antd предупреждает «ensure component is assigned a valid React component». */}
+            <AntdApp>
+            <AppApiBridge />
             <BrowserRouter>
                 <Suspense fallback={<PageLoader />}>
                     <Routes>
@@ -150,6 +171,7 @@ export const App: React.FC = () => {
                     </Routes>
                 </Suspense>
             </BrowserRouter>
+            </AntdApp>
         </ConfigProvider>
     );
 };

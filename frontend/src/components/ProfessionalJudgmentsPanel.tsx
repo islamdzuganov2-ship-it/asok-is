@@ -6,9 +6,8 @@
  * их на базу рисков (самообучение: суждения накапливаются и передаются модели как контекст).
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Alert, Button, Card, Collapse, Input, Modal, Progress, Space, Tag, Typography, message, List, Spin,
-} from 'antd';
+import { Alert, Button, Card, Collapse, Input, Modal, Progress, Space, Tag, Typography, List, Spin } from 'antd';
+import { message } from '../theme/appMessage';
 import { RobotOutlined, SaveOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';

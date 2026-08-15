@@ -59,7 +59,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const { role, fullName, permissions, permissionsLoaded } = useSelector((state: RootState) => state.auth);
     const dataMode = useSelector((state: RootState) => state.ui.dataMode);
     // Переключатели опциональных дашбордов из «Настройка» (ТЗ v17, req 5).
-    const { execAnalytics, execDynamics, execTaskPlan, execIncidents } = useSelector((state: RootState) => state.ui);
+    const { execAnalytics, execDynamics, execTaskPlan, execIncidents, execRiskRadar } = useSelector((state: RootState) => state.ui);
     const userRole = role || 'GUEST';
 
     // Права пользователя (BL-008): грузим с сервера и кладём в стор (обновляются и при возврате
@@ -134,24 +134,33 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const group = (label: string, children: Array<{ key: string; icon: React.ReactNode; label: string }>) =>
         children.length ? [{ type: 'group' as const, label: collapsed ? undefined : groupLabel(label), children }] : [];
 
-    const dashboards = [
+    // ДЕФ-11 (БТ-038, T-25): группы меню названы как в ТЗ — «Основное», «Сбор и анализ данных»,
+    // «Формирование техдолга». Раньше было «Дашборды» + «Сбор и анализ данных», а «План задач»
+    // лежал среди дашбордов; группы «Формирование техдолга» не существовало вовсе.
+    const mainItems = [
         ...(has('view.dashboard.cto') ? [mi('/dashboard/cto', <FundOutlined />, 'Дашборд CTO')] : []),
         ...(has('view.dashboard.ceo') ? [mi('/dashboard/ceo', <FundOutlined />, 'Дашборд CEO')] : []),
         ...(has('view.dashboard.manager') ? [mi('/dashboard/manager', <HomeOutlined />, 'Основное')] : []),
         ...(has('view.dashboard.risk') ? [mi('/dashboard/risk', <SafetyCertificateOutlined />, 'Основное — риск')] : []),
         ...(has('view.dashboard.analytics') && optOk(execAnalytics) ? [mi('/dashboard/analytics', <DashboardOutlined />, 'Аналитический дашборд')] : []),
         ...(has('view.dashboard.dynamics') && optOk(execDynamics) ? [mi('/dashboard/manager/dynamics', <LineChartOutlined />, 'Динамика качества')] : []),
-        ...(has('view.dashboard.incidents') && optOk(execIncidents) ? [mi('/dashboard/incidents', <ThunderboltOutlined />, 'Аналитика сбоев')] : []),
-        ...(has('view.dashboard.risk_radar') && optOk(execIncidents) ? [mi('/dashboard/risk-radar', <AlertOutlined />, 'Риск-радар')] : []),
-        ...(has('view.dashboard.taskplan') && optOk(execTaskPlan) ? [mi('/dashboard/taskplan', <ScheduleOutlined />, 'План задач')] : []),
     ];
-    const sections = [
-        // ДЕФ-10 (БТ-015): исполнитель видит назначенные на него поручения.
-        ...(has('view.my_tasks') ? [mi('/my-tasks', <ScheduleOutlined />, 'Мои задачи')] : []),
+    // «Сбор и анализ данных» — откуда берутся и как разбираются данные.
+    const dataItems = [
         ...(has('view.assessments') ? [mi('/assessments/new', <FormOutlined />, 'Внесение данных')] : []),
+        ...(has('view.dashboard.incidents') && optOk(execIncidents) ? [mi('/dashboard/incidents', <ThunderboltOutlined />, 'Аналитика сбоев')] : []),
         ...(has('view.risks') ? [mi('/risks', <WarningOutlined />, 'База рисков')] : []),
         ...(has('view.risk_economics') ? [mi('/risk-economics', <AuditOutlined />, 'Риск-экономика')] : []),
         ...(has('view.reports') ? [mi('/reports', <FileExcelOutlined />, 'Отчёты')] : []),
+    ];
+    // «Формирование техдолга» — что делаем с найденными проблемами: задачи, поручения, триггеры.
+    const techDebtItems = [
+        ...(has('view.dashboard.taskplan') && optOk(execTaskPlan) ? [mi('/dashboard/taskplan', <ScheduleOutlined />, 'План задач')] : []),
+        // ДЕФ-10 (БТ-015): исполнитель видит назначенные на него поручения.
+        ...(has('view.my_tasks') ? [mi('/my-tasks', <ScheduleOutlined />, 'Мои задачи')] : []),
+        // ДЕФ-27: у риск-радара свой переключатель. Раньше он гейтился флагом execIncidents,
+        // и, выключив «Аналитику сбоев», топ-менеджер неожиданно терял и риск-радар.
+        ...(has('view.dashboard.risk_radar') && optOk(execRiskRadar) ? [mi('/dashboard/risk-radar', <AlertOutlined />, 'Риск-радар')] : []),
     ];
     const adminItems = [
         ...(has('view.admin.users') ? [mi('/admin/users', <TeamOutlined />, 'Пользователи')] : []),
@@ -163,8 +172,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const settingsItems = has('view.settings') ? [mi('/admin/flags', <SettingOutlined />, 'Настройка')] : [];
 
     const menuItems = [
-        ...group('Дашборды', dashboards),
-        ...group('Сбор и анализ данных', sections),
+        ...group('Основное', mainItems),
+        ...group('Сбор и анализ данных', dataItems),
+        ...group('Формирование техдолга', techDebtItems),
         ...group('Администрирование', adminItems),
         ...settingsItems,
     ];
