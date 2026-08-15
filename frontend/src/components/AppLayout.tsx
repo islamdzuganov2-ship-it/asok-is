@@ -27,7 +27,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { RootState } from '../store';
 import { useAppDispatch } from '../store/hooks';
 import { logout, setPermissions } from '../store/slices/authSlice';
-import { setDataMode } from '../store/slices/uiSlice';
+import { setDataMode, NAV_SECTIONS } from '../store/slices/uiSlice';
 import { syncProposals } from '../store/slices/governanceSlice';
 import { useGetMyPermissionsQuery } from '../store/api/apiSlice';
 import { roleLabel } from '../constants/roles';
@@ -59,7 +59,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const { role, fullName, permissions, permissionsLoaded } = useSelector((state: RootState) => state.auth);
     const dataMode = useSelector((state: RootState) => state.ui.dataMode);
     // Переключатели опциональных дашбордов из «Настройка» (ТЗ v17, req 5).
-    const { execAnalytics, execDynamics, execTaskPlan, execIncidents, execRiskRadar } = useSelector((state: RootState) => state.ui);
+    const hiddenSections = useSelector((state: RootState) => state.ui.hiddenSections);
+    const navOrder = useSelector((state: RootState) => state.ui.navOrder);
     const userRole = role || 'GUEST';
 
     // Права пользователя (BL-008): грузим с сервера и кладём в стор (обновляются и при возврате
@@ -121,47 +122,68 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     // Раньше меню ветвилось по роли (isExec/isManager) — теперь состав задаёт матрица прав,
     // которую супер-админ настраивает в разделе «Права». Оценка СИИ (view.ai_assessments) в меню
     // намеренно не выводится (раздел под развитие), но маршрут доступен по праву.
-    const has = (perm: string) => permissions.includes(perm);
-    // Топ-менеджмент (ТЗ v17): опциональные дашборды показываются в меню ТОЛЬКО по галочке в
-    // «Настройка». Для остальных ролей (МК, аналитик, риск-менеджер) состав по-прежнему задаёт
-    // право. Это чинит «косметические» переключатели: раньше меню строилось только по правам и
-    // флаги ни на что не влияли. AND с правом сохраняет RBAC (BL-008) как верхнюю границу.
-    const EXEC_ROLES = ['ADMIN', 'CTO', 'CEO', 'CIO', 'EXECUTIVE'];
-    const isExec = EXEC_ROLES.includes(userRole);
-    // Опциональный пункт: виден, если есть право И (роль не топ-менеджер ИЛИ включён флаг).
-    const optOk = (flag: boolean) => !isExec || flag;
+    const has = (perm: string) => permissions.includes(perm) && !hiddenSections[perm];
+    // ДЕФ-12 (БТ-444): пункт виден, если есть ПРАВО и пользователь не скрыл раздел в
+    // «Настройка». Раньше флаги действовали только для ADMIN/CTO/CEO — менеджер по качеству
+    // щёлкал тумблер, и ничего не происходило. Персонализация — поверх RBAC, а не вместо:
+    // право остаётся верхней границей.
+    //
+    // ДЕФ-11 (БТ-038, T-25): группы названы как в ТЗ — «Основное», «Сбор и анализ данных»,
+    // «Формирование техдолга».
+    // ДЕФ-14 (БТ-445): порядок внутри группы задаёт пользователь перетаскиванием; ключи, для
+    // которых порядок не задан, идут следом в исходном порядке NAV_SECTIONS.
+    //
+    // Единый источник состава — NAV_SECTIONS (uiSlice): и меню, и экран настроек читают
+    // ОДИН список, поэтому «есть тумблер, но нет пункта» стало невозможным по построению.
+    const ROUTE_BY_PERM: Record<string, string> = {
+        'view.dashboard.cto': '/dashboard/cto',
+        'view.dashboard.ceo': '/dashboard/ceo',
+        'view.dashboard.manager': '/dashboard/manager',
+        'view.dashboard.risk': '/dashboard/risk',
+        'view.dashboard.analytics': '/dashboard/analytics',
+        'view.dashboard.dynamics': '/dashboard/manager/dynamics',
+        'view.assessments': '/assessments/new',
+        'view.dashboard.incidents': '/dashboard/incidents',
+        'view.risks': '/risks',
+        'view.risk_economics': '/risk-economics',
+        'view.reports': '/reports',
+        'view.dashboard.taskplan': '/dashboard/taskplan',
+        'view.my_tasks': '/my-tasks',
+        'view.dashboard.risk_radar': '/dashboard/risk-radar',
+    };
+    const ICON_BY_PERM: Record<string, React.ReactNode> = {
+        'view.dashboard.cto': <FundOutlined />,
+        'view.dashboard.ceo': <FundOutlined />,
+        'view.dashboard.manager': <HomeOutlined />,
+        'view.dashboard.risk': <SafetyCertificateOutlined />,
+        'view.dashboard.analytics': <DashboardOutlined />,
+        'view.dashboard.dynamics': <LineChartOutlined />,
+        'view.assessments': <FormOutlined />,
+        'view.dashboard.incidents': <ThunderboltOutlined />,
+        'view.risks': <WarningOutlined />,
+        'view.risk_economics': <AuditOutlined />,
+        'view.reports': <FileExcelOutlined />,
+        'view.dashboard.taskplan': <ScheduleOutlined />,
+        'view.my_tasks': <ScheduleOutlined />,
+        'view.dashboard.risk_radar': <AlertOutlined />,
+    };
     const mi = (key: string, icon: React.ReactNode, label: string) => ({ key, icon, label });
     const group = (label: string, children: Array<{ key: string; icon: React.ReactNode; label: string }>) =>
         children.length ? [{ type: 'group' as const, label: collapsed ? undefined : groupLabel(label), children }] : [];
 
-    // ДЕФ-11 (БТ-038, T-25): группы меню названы как в ТЗ — «Основное», «Сбор и анализ данных»,
-    // «Формирование техдолга». Раньше было «Дашборды» + «Сбор и анализ данных», а «План задач»
-    // лежал среди дашбордов; группы «Формирование техдолга» не существовало вовсе.
-    const mainItems = [
-        ...(has('view.dashboard.cto') ? [mi('/dashboard/cto', <FundOutlined />, 'Дашборд CTO')] : []),
-        ...(has('view.dashboard.ceo') ? [mi('/dashboard/ceo', <FundOutlined />, 'Дашборд CEO')] : []),
-        ...(has('view.dashboard.manager') ? [mi('/dashboard/manager', <HomeOutlined />, 'Основное')] : []),
-        ...(has('view.dashboard.risk') ? [mi('/dashboard/risk', <SafetyCertificateOutlined />, 'Основное — риск')] : []),
-        ...(has('view.dashboard.analytics') && optOk(execAnalytics) ? [mi('/dashboard/analytics', <DashboardOutlined />, 'Аналитический дашборд')] : []),
-        ...(has('view.dashboard.dynamics') && optOk(execDynamics) ? [mi('/dashboard/manager/dynamics', <LineChartOutlined />, 'Динамика качества')] : []),
-    ];
-    // «Сбор и анализ данных» — откуда берутся и как разбираются данные.
-    const dataItems = [
-        ...(has('view.assessments') ? [mi('/assessments/new', <FormOutlined />, 'Внесение данных')] : []),
-        ...(has('view.dashboard.incidents') && optOk(execIncidents) ? [mi('/dashboard/incidents', <ThunderboltOutlined />, 'Аналитика сбоев')] : []),
-        ...(has('view.risks') ? [mi('/risks', <WarningOutlined />, 'База рисков')] : []),
-        ...(has('view.risk_economics') ? [mi('/risk-economics', <AuditOutlined />, 'Риск-экономика')] : []),
-        ...(has('view.reports') ? [mi('/reports', <FileExcelOutlined />, 'Отчёты')] : []),
-    ];
-    // «Формирование техдолга» — что делаем с найденными проблемами: задачи, поручения, триггеры.
-    const techDebtItems = [
-        ...(has('view.dashboard.taskplan') && optOk(execTaskPlan) ? [mi('/dashboard/taskplan', <ScheduleOutlined />, 'План задач')] : []),
-        // ДЕФ-10 (БТ-015): исполнитель видит назначенные на него поручения.
-        ...(has('view.my_tasks') ? [mi('/my-tasks', <ScheduleOutlined />, 'Мои задачи')] : []),
-        // ДЕФ-27: у риск-радара свой переключатель. Раньше он гейтился флагом execIncidents,
-        // и, выключив «Аналитику сбоев», топ-менеджер неожиданно терял и риск-радар.
-        ...(has('view.dashboard.risk_radar') && optOk(execRiskRadar) ? [mi('/dashboard/risk-radar', <AlertOutlined />, 'Риск-радар')] : []),
-    ];
+    const orderIndex = (perm: string) => {
+        const i = navOrder.indexOf(perm);
+        return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    const itemsOfGroup = (groupName: string) => NAV_SECTIONS
+        .filter((sec) => sec.group === groupName && has(sec.perm))
+        .slice()
+        .sort((a, b) => orderIndex(a.perm) - orderIndex(b.perm))
+        .map((sec) => mi(ROUTE_BY_PERM[sec.perm], ICON_BY_PERM[sec.perm], sec.label));
+
+    const mainItems = itemsOfGroup('Основное');
+    const dataItems = itemsOfGroup('Сбор и анализ данных');
+    const techDebtItems = itemsOfGroup('Формирование техдолга');
     const adminItems = [
         ...(has('view.admin.users') ? [mi('/admin/users', <TeamOutlined />, 'Пользователи')] : []),
         ...(has('view.admin.permissions') ? [mi('/admin/permissions', <SafetyOutlined />, 'Права')] : []),
