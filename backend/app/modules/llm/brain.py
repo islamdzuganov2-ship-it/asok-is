@@ -269,8 +269,29 @@ def human_edits() -> list[dict]:
 
 # ─── Сводка (для model_info / UI) ─────────────────────────────────────────────────────
 
-def stats() -> dict:
-    """Краткая статистика мозга для панели статуса LLM."""
+# ДЕФ-23 (RES-07): stats() читал ЧЕТЫРЕ файла с диска на каждый вызов, а вызывается он из
+# GET /reports/llm-status — его дёргает переключатель «Моки ↔ LLM» на каждой загрузке
+# страницы. По мере роста «резервного мозга» каждый опрос статуса перечитывал память,
+# корпус и обратную связь целиком, синхронно, в event loop. Кэшируем по «отпечатку»
+# каталога: набор (размер, mtime) отслеживаемых файлов. Изменился хоть один — пересчёт.
+_stats_cache: tuple[tuple, dict] | None = None
+_stats_lock = threading.Lock()
+
+
+def _files_fingerprint() -> tuple:
+    """Отпечаток файлов мозга: (имя, размер, mtime) по каждому. Дёшево — только stat()."""
+    marks = []
+    for name in (_MEMORY, _CORPUS, _FEEDBACK, _META):
+        path = _path(name)
+        try:
+            st = os.stat(path)
+            marks.append((name, st.st_size, st.st_mtime_ns))
+        except OSError:
+            marks.append((name, -1, -1))
+    return tuple(marks)
+
+
+def _compute_stats() -> dict:
     memories = _read_jsonl(_MEMORY)
     meta = _read_json(_META, {"models": []})
     return {
@@ -281,6 +302,19 @@ def stats() -> dict:
         "systems": len({m.get("system") for m in memories if m.get("system")}),
         "models_seen": len(meta.get("models", [])),
     }
+
+
+def stats() -> dict:
+    """Краткая статистика мозга для панели статуса LLM (кэшируется по отпечатку файлов)."""
+    global _stats_cache
+    fingerprint = _files_fingerprint()
+    with _stats_lock:
+        if _stats_cache is not None and _stats_cache[0] == fingerprint:
+            return dict(_stats_cache[1])
+    computed = _compute_stats()
+    with _stats_lock:
+        _stats_cache = (fingerprint, computed)
+    return dict(computed)
 
 
 def _now_iso() -> str:
