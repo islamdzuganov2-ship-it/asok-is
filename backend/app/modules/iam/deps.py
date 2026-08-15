@@ -3,6 +3,8 @@ FastAPI-зависимости домена iam (ТЗ v13): текущий по�
 Используются роутерами всех доменов через фасад app.modules.iam.
 Сессия БД (get_db) — инфраструктура: app.infrastructure.database.
 """
+import logging
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
@@ -13,19 +15,34 @@ from app.infrastructure.database import get_db
 from app.modules.iam.permissions_service import get_role_permissions
 from app.modules.iam.security import decode_token
 
+logger = logging.getLogger(__name__)
+
 security = HTTPBearer(auto_error=False)
+
+DEMO_USER = {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "username": "demo",
+    "roles": ["ADMIN"],
+}
 
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
+    """Текущий пользователь из bearer-токена.
+
+    Обход аутентификации (ДЕФ-02) допускается ТОЛЬКО при `DEMO_AUTH_BYPASS=true` и ТОЛЬКО
+    для запроса без заголовка Authorization. Невалидный или просроченный токен — всегда 401,
+    в любом режиме: иначе подделанная подпись молча повышалась бы до ADMIN, а фронт не видел
+    бы 401 и не отправлял пользователя на релогин.
+    """
     if not credentials or not credentials.credentials:
-        if settings.DEMO_MODE:
-            return {
-                "id": "00000000-0000-0000-0000-000000000001",
-                "username": "demo",
-                "roles": ["ADMIN"],
-            }
+        if settings.DEMO_AUTH_BYPASS:
+            logger.warning(
+                "DEMO_AUTH_BYPASS: запрос без токена обслужен как %s (роль %s)",
+                DEMO_USER["username"], DEMO_USER["roles"][0],
+            )
+            return dict(DEMO_USER)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing bearer token",
@@ -35,12 +52,6 @@ async def get_current_user(
     try:
         payload = decode_token(credentials.credentials)
     except (JWTError, KeyError, ValueError) as exc:
-        if settings.DEMO_MODE:
-            return {
-                "id": "00000000-0000-0000-0000-000000000001",
-                "username": "demo",
-                "roles": ["ADMIN"],
-            }
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

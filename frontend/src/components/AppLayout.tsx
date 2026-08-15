@@ -83,7 +83,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const [llmStatus, setLlmStatus] = useState<any>(null);
     useEffect(() => {
         let alive = true;
-        fetch(`${VITE_API}/reports/llm-status`)
+        // Токен обязателен: обход аутентификации выключен по умолчанию (ДЕФ-02).
+        const token = localStorage.getItem('token');
+        fetch(`${VITE_API}/reports/llm-status`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
             .then((r) => (r.ok ? r.json() : null))
             .then((d) => { if (alive) { setLlmStatus(d); setLlmReady(d ? !!d.available : false); } })
             .catch(() => { if (alive) { setLlmStatus(null); setLlmReady(false); } });

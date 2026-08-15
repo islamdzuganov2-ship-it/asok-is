@@ -83,7 +83,17 @@ class Settings(BaseSettings):
     ]
 
     # Режимы
+    # DEMO_MODE — только про ДАННЫЕ: стартовый сид демо-набора, сценарные системы, моки.
     DEMO_MODE: bool = True
+    # DEMO_AUTH_BYPASS — отдельный, НАМЕРЕННО опасный флаг: запрос БЕЗ заголовка Authorization
+    # обслуживается как встроенный пользователь `demo` с ролью ADMIN. Нужен для показа стенда
+    # без логина. По умолчанию ВЫКЛЮЧЕН.
+    #
+    # Раньше обход был зашит в DEMO_MODE (по умолчанию true), и под него попадал не только
+    # отсутствующий, но и НЕВАЛИДНЫЙ токен: подделанная подпись молча повышалась до ADMIN.
+    # Стенд публикуется наружу туннелем, поэтому любой, кто знал адрес, получал администратора.
+    # Теперь просроченный/подделанный токен — всегда 401, независимо от режима.
+    DEMO_AUTH_BYPASS: bool = False
 
     # Загрузки
     UPLOAD_DIR: str = "uploads"
@@ -103,6 +113,10 @@ class Settings(BaseSettings):
             issues.append("JWT_SECRET_KEY короче 32 символов")
         if any(d in self.DATABASE_URL for d in self._INSECURE_DB_DEFAULTS):
             issues.append("DATABASE_URL содержит пароль по умолчанию")
+        if self.DEMO_AUTH_BYPASS:
+            issues.append(
+                "DEMO_AUTH_BYPASS включён: запросы без токена обслуживаются как ADMIN"
+            )
         return issues
 
 
