@@ -6,6 +6,7 @@ export type DataMode = 'mock' | 'live';
 
 const DATA_MODE_KEY = 'asok_data_mode';
 const FEATURE_KEY = 'asok_exec_features';
+const ORDER_KEY = 'asok_nav_order';
 const THEME_KEY = 'asok_theme';
 const FONT_KEY = 'asok_font';
 
@@ -23,45 +24,87 @@ function loadFontKey(): string {
   return FONT_OPTIONS.some((f) => f.key === v) ? (v as string) : DEFAULT_FONT_KEY;
 }
 
-/** Опциональные для топ-менеджера дашборды (включаются в «Настройка»). */
-export interface ExecFeatures {
-  execAnalytics: boolean;  // «Аналитический дашборд»
-  execDynamics: boolean;   // «Динамика качества»
-  execTaskPlan: boolean;   // «План задач по повышению качества»
-  execIncidents: boolean;  // «Аналитика технических сбоев» (T-21)
-  execRiskRadar: boolean;  // «Риск-радар» (ДЕФ-27: был привязан к чужому флагу execIncidents)
-}
-export type ExecFeatureKey = keyof ExecFeatures;
+/**
+ * Разделы меню, доступные для персонализации (ДЕФ-12/ДЕФ-14, БТ-444/БТ-445).
+ *
+ * Раньше флагов было четыре на девять дашбордов, и действовали они ТОЛЬКО для ADMIN/CTO/CEO:
+ * менеджер по качеству видел тумблеры в «Настройка», щёлкал — и ничего не происходило.
+ * Требование заказчика (2026-08-08) — «настроить дашборды под себя, перетаскивать по
+ * странице»: флаг и позиция у КАЖДОГО раздела и для КАЖДОЙ роли.
+ *
+ * Персонализация — предпочтение ПОВЕРХ RBAC, а не право: скрыть можно только то, что и так
+ * доступно по матрице. Ключ раздела совпадает с ключом права — связь «право → тумблер»
+ * видна без отдельной таблицы соответствий.
+ */
+export const NAV_SECTIONS: ReadonlyArray<{ perm: string; label: string; group: string }> = [
+  { perm: 'view.dashboard.cto', label: 'Дашборд CTO', group: 'Основное' },
+  { perm: 'view.dashboard.ceo', label: 'Дашборд CEO', group: 'Основное' },
+  { perm: 'view.dashboard.manager', label: 'Основное', group: 'Основное' },
+  { perm: 'view.dashboard.risk', label: 'Основное — риск', group: 'Основное' },
+  { perm: 'view.dashboard.analytics', label: 'Аналитический дашборд', group: 'Основное' },
+  { perm: 'view.dashboard.dynamics', label: 'Динамика качества', group: 'Основное' },
+  { perm: 'view.assessments', label: 'Внесение данных', group: 'Сбор и анализ данных' },
+  { perm: 'view.dashboard.incidents', label: 'Аналитика сбоев', group: 'Сбор и анализ данных' },
+  { perm: 'view.risks', label: 'База рисков', group: 'Сбор и анализ данных' },
+  { perm: 'view.risk_economics', label: 'Риск-экономика', group: 'Сбор и анализ данных' },
+  { perm: 'view.reports', label: 'Отчёты', group: 'Сбор и анализ данных' },
+  { perm: 'view.dashboard.taskplan', label: 'План задач', group: 'Формирование техдолга' },
+  { perm: 'view.my_tasks', label: 'Мои задачи', group: 'Формирование техдолга' },
+  { perm: 'view.dashboard.risk_radar', label: 'Риск-радар', group: 'Формирование техдолга' },
+];
 
-function loadFeatures(): ExecFeatures {
-  // По умолчанию ВКЛЮЧЕНЫ: у топ-менеджмента доступные дашборды видны сразу, а переключатели в
-  // «Настройка» позволяют СКРЫТЬ ненужные (раньше флаги ни на что не влияли — были косметическими).
-  // Так фича функциональна с первого входа и без «пропавшего» стартового дашборда.
-  const def: ExecFeatures = {
-    execAnalytics: true, execDynamics: true, execTaskPlan: true,
-    execIncidents: true, execRiskRadar: true,
-  };
+/** Скрытые пользователем разделы. Храним именно СКРЫТЫЕ, чтобы новый раздел из релиза
+ *  появлялся сам, а не оставался невидимым до ручного включения. */
+type HiddenMap = Record<string, true>;
+
+/** Экспортируется для тестов: initialState вычисляется один раз при загрузке модуля,
+ *  поэтому контракт «что попадёт в стор из localStorage» проверяется на самих загрузчиках. */
+export function loadHidden(): HiddenMap {
   try {
-    return { ...def, ...JSON.parse(localStorage.getItem(FEATURE_KEY) || '{}') };
+    const raw = JSON.parse(localStorage.getItem(FEATURE_KEY) || '{}');
+    // Обратная совместимость с прежним форматом {execAnalytics: false} (ТЗ v17).
+    const LEGACY: Record<string, string> = {
+      execAnalytics: 'view.dashboard.analytics',
+      execDynamics: 'view.dashboard.dynamics',
+      execTaskPlan: 'view.dashboard.taskplan',
+      execIncidents: 'view.dashboard.incidents',
+      execRiskRadar: 'view.dashboard.risk_radar',
+    };
+    const hidden: HiddenMap = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (key in LEGACY) {
+        if (value === false) hidden[LEGACY[key]] = true;
+      } else if (value === true) {
+        hidden[key] = true;
+      }
+    }
+    return hidden;
   } catch {
-    return def;
+    return {};
+  }
+}
+
+export function loadOrder(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]');
+    return Array.isArray(raw) ? raw.filter((k) => typeof k === 'string') : [];
+  } catch {
+    return [];
   }
 }
 
 interface UiState {
   activeModal: string | null;
   globalLoading: boolean;
-  theme: 'light' | 'dark';
   /** Активная тема оформления (ТЗ v17): premium · classic (Windows) · graphite (тёмная). */
   themeName: ThemeName;
   /** Ключ выбранного шрифта (theme/themes.ts FONT_OPTIONS). */
   fontKey: string;
   dataMode: DataMode;
-  execAnalytics: boolean;
-  execDynamics: boolean;
-  execTaskPlan: boolean;
-  execIncidents: boolean;
-  execRiskRadar: boolean;
+  /** Разделы, скрытые пользователем (ДЕФ-12). */
+  hiddenSections: HiddenMap;
+  /** Порядок разделов (ДЕФ-14). Ключи вне списка идут следом в исходном порядке. */
+  navOrder: string[];
 }
 
 const uiSlice = createSlice({
@@ -69,17 +112,16 @@ const uiSlice = createSlice({
   initialState: {
     activeModal: null,
     globalLoading: false,
-    theme: 'light',
     themeName: loadThemeName(),
     fontKey: loadFontKey(),
     dataMode: loadDataMode(),
-    ...loadFeatures(),
+    hiddenSections: loadHidden(),
+    navOrder: loadOrder(),
   } as UiState,
   reducers: {
     openModal(state, action: PayloadAction<string>) { state.activeModal = action.payload; },
     closeModal(state) { state.activeModal = null; },
     setGlobalLoading(state, action: PayloadAction<boolean>) { state.globalLoading = action.payload; },
-    toggleTheme(state) { state.theme = state.theme === 'light' ? 'dark' : 'light'; },
     setThemeName(state, action: PayloadAction<ThemeName>) {
       state.themeName = action.payload;
       localStorage.setItem(THEME_KEY, action.payload);
@@ -92,18 +134,30 @@ const uiSlice = createSlice({
       state.dataMode = action.payload;
       localStorage.setItem(DATA_MODE_KEY, action.payload);
     },
-    setExecFeature(state, action: PayloadAction<{ key: ExecFeatureKey; value: boolean }>) {
-      state[action.payload.key] = action.payload.value;
-      localStorage.setItem(FEATURE_KEY, JSON.stringify({
-        execAnalytics: state.execAnalytics, execDynamics: state.execDynamics,
-        execTaskPlan: state.execTaskPlan, execIncidents: state.execIncidents,
-        execRiskRadar: state.execRiskRadar,
-      }));
+    /** Показать/скрыть раздел меню (ДЕФ-12). */
+    setSectionVisible(state, action: PayloadAction<{ perm: string; visible: boolean }>) {
+      const { perm, visible } = action.payload;
+      if (visible) delete state.hiddenSections[perm];
+      else state.hiddenSections[perm] = true;
+      localStorage.setItem(FEATURE_KEY, JSON.stringify(state.hiddenSections));
+    },
+    /** Задать порядок разделов (ДЕФ-14 — перетаскивание в «Настройка»). */
+    setNavOrder(state, action: PayloadAction<string[]>) {
+      state.navOrder = action.payload;
+      localStorage.setItem(ORDER_KEY, JSON.stringify(action.payload));
+    },
+    /** Сбросить персонализацию к виду по умолчанию. */
+    resetPersonalization(state) {
+      state.hiddenSections = {};
+      state.navOrder = [];
+      localStorage.removeItem(FEATURE_KEY);
+      localStorage.removeItem(ORDER_KEY);
     },
   },
 });
 
 export const {
-  openModal, closeModal, setGlobalLoading, toggleTheme, setThemeName, setFontKey, setDataMode, setExecFeature,
+  openModal, closeModal, setGlobalLoading, setThemeName, setFontKey, setDataMode,
+  setSectionVisible, setNavOrder, resetPersonalization,
 } = uiSlice.actions;
 export const uiReducer = uiSlice.reducer;
