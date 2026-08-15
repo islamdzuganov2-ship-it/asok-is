@@ -5,6 +5,7 @@ Excel-матрицы периода, статус LLM.
 Транзитная зависимость: llm_service ещё в app.services (переезжает задачей #15).
 """
 import asyncio
+from datetime import datetime
 from collections import defaultdict
 from io import BytesIO
 from uuid import UUID
@@ -472,12 +473,90 @@ class MeasureMarker(_CamelOut):
     status: str
 
 
+class MeasureEffect(_CamelOut):
+    """Фактическая результативность меры: ΔScore «до/после» (ДЕФ-32, БТ-134, T-15).
+
+    До сих пор в системе жил только ПЛАНОВЫЙ `expected_delta_score`, который вводит человек,
+    а фактического сравнения не было — на графике рисовались лишь метки мер, и ответить
+    «привела ли мера к улучшению» приходилось глазами.
+    """
+    characteristic: str
+    title: str
+    status: str
+    period_before: str
+    period_after: str
+    score_before: float
+    score_after: float
+    delta: float                 # процентные пункты: положительный — улучшение
+    verdict: str                 # «улучшение» | «без изменений» | «ухудшение»
+
+
 class SystemDynamicsOut(_CamelOut):
     system_id: UUID
     system_name: str
     points: list[DynamicsPoint]
     measures: list[MeasureMarker]  # метки мер по характеристикам (T-15: наложить на ряд)
+    effects: list[MeasureEffect] = []  # ДЕФ-32: посчитанный ΔScore по каждой мере
 
+
+
+# Порог, ниже которого изменение считаем шумом округления, а не результатом меры.
+EFFECT_NOISE_PP = 1.0
+
+
+def _measure_effects(points: list[DynamicsPoint], measures: list[MeasureMarker]) -> list[MeasureEffect]:
+    """ΔScore по каждой мере: балл характеристики ДО принятия меры и в следующем периоде.
+
+    «До» — последний период, начавшийся не позже даты меры; «после» — первый период строго
+    следом. Если одной из точек нет (мера свежая или период ещё не закрыт), меру пропускаем:
+    честнее не показать результат, чем показать ноль и выдать его за «без изменений».
+    """
+    if len(points) < 2:
+        return []
+    order = {p.period: i for i, p in enumerate(points)}
+    effects: list[MeasureEffect] = []
+    for m in measures:
+        if not m.created_at:
+            continue
+        # Период, в котором мера была принята: ищем по хронологии периодов оценки.
+        idx_before = None
+        for i, p in enumerate(points):
+            if p.period in order and p.characteristics.get(m.characteristic) is not None:
+                # Берём последнюю точку, которая по хронологии НЕ позже даты меры.
+                if _period_starts_before(p.period, m.created_at):
+                    idx_before = i
+        if idx_before is None or idx_before + 1 >= len(points):
+            continue
+        before, after = points[idx_before], points[idx_before + 1]
+        score_before = before.characteristics.get(m.characteristic)
+        score_after = after.characteristics.get(m.characteristic)
+        if score_before is None or score_after is None:
+            continue
+        delta = round(score_after - score_before, 1)
+        verdict = ("улучшение" if delta > EFFECT_NOISE_PP
+                   else "ухудшение" if delta < -EFFECT_NOISE_PP
+                   else "без изменений")
+        effects.append(MeasureEffect(
+            characteristic=m.characteristic, title=m.title, status=m.status,
+            period_before=before.period, period_after=after.period,
+            score_before=score_before, score_after=score_after,
+            delta=delta, verdict=verdict,
+        ))
+    return effects
+
+
+def _period_starts_before(period: str, iso_datetime: str) -> bool:
+    """Начался ли квартал `period` (вида «Q3-2026») не позже даты в ISO-формате."""
+    try:
+        year, quarter = period_sort_key(period)
+    except Exception:  # noqa: BLE001 — период произвольного вида: сравнить не можем
+        return False
+    try:
+        stamp = datetime.fromisoformat(iso_datetime.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    measure_quarter = (stamp.year, (stamp.month - 1) // 3 + 1)
+    return (year, quarter) <= measure_quarter
 
 @router.get("/system-dynamics", response_model=SystemDynamicsOut)
 async def system_dynamics(system_id: UUID, db: AsyncSession = Depends(get_db),
@@ -523,7 +602,9 @@ async def system_dynamics(system_id: UUID, db: AsyncSession = Depends(get_db),
         )
         for p in proposals if p.characteristic
     ]
-    return SystemDynamicsOut(system_id=system_id, system_name=system.name, points=points, measures=measures)
+    effects = _measure_effects(points, measures)
+    return SystemDynamicsOut(system_id=system_id, system_name=system.name, points=points,
+                             measures=measures, effects=effects)
 
 
 _XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
