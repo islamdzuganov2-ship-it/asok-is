@@ -36,6 +36,7 @@ import logging
 import os
 import re
 import threading
+from collections import OrderedDict
 from dataclasses import asdict, dataclass
 
 from app.infrastructure.config import settings
@@ -55,7 +56,36 @@ _lock = threading.Lock()
 # llama.cpp НЕ потокобезопасен для параллельного инференса: сериализуем вызовы,
 # иначе одновременные запросы (дашборд + заключение) виснут/повреждают состояние.
 _infer_lock = threading.Lock()
-_cache: dict[int, str] = {}
+# ДЕФ-21 (RES-04): кэш ответов ограничен по числу записей. Раньше это был обычный dict,
+# который очищался только при reload() — он рос неограниченно, а каждое значение содержит
+# до LLM_MAX_TOKENS текста. Вытеснение — LRU: реже всего используемая запись уходит первой.
+_CACHE_MAX_ENTRIES = 256
+_cache: "OrderedDict[int, str]" = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _cache_get(key: int) -> str | None:
+    """Прочитать из кэша, обновив позицию записи (LRU)."""
+    with _cache_lock:
+        if key not in _cache:
+            return None
+        _cache.move_to_end(key)
+        return _cache[key]
+
+
+def _cache_put(key: int, text: str) -> None:
+    """Положить в кэш, вытеснив самую давнюю запись при переполнении."""
+    with _cache_lock:
+        _cache[key] = text
+        _cache.move_to_end(key)
+        while len(_cache) > _CACHE_MAX_ENTRIES:
+            _cache.popitem(last=False)
+
+
+def cache_size() -> int:
+    """Текущее число записей в кэше (для диагностики и метрик, RES-12)."""
+    with _cache_lock:
+        return len(_cache)
 
 # ДЕФ-04. Очередь к модели ограничена: раньше `with _infer_lock` ждал освобождения
 # неограниченно долго, каждый ожидающий держал поток из пула asyncio.to_thread, и при
@@ -342,6 +372,7 @@ def model_info() -> dict:
         # ДЕФ-04: фронт отличает «модель грузится» от «модели нет» и не считает стенд сломанным.
         "loading": is_loading(),
         "queue_depth": queue_depth(),
+        "cache_size": cache_size(),
         "model_file": settings.LOCAL_LLM_MODEL_FILE,
         "model_dir": settings.LOCAL_LLM_MODEL_DIR,
         "temperature": settings.LLM_TEMPERATURE,
@@ -533,8 +564,9 @@ def generate_judgment_conclusion(system_name: str, period_label: str, judgments_
     преемственность и с каждым новым вводом даёт более полное заключение (RAG-контекст).
     """
     key = hash((system_name, period_label, judgments_block, risks_block, history_block))
-    if key in _cache:
-        return _cache[key]
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
     prompt = (
         f"ИС: {system_name}. Период: {period_label}.\n"
         f"Профессиональные суждения по подхарактеристикам:\n{judgments_block}\n"
@@ -550,15 +582,16 @@ def generate_judgment_conclusion(system_name: str, period_label: str, judgments_
             text = None
     if not text:
         text = _judgment_fallback(system_name, period_label, judgments_block, risks_block)
-    _cache[key] = text
+    _cache_put(key, text)
     return text
 
 
 def generate_measures_analytics(measures_block: str, risks_block: str = "") -> str:
     """Аналитика LLM по данным о МЕРАХ (не карточки, а сводный вывод по характеристикам)."""
     key = hash(("measures", measures_block, risks_block))
-    if key in _cache:
-        return _cache[key]
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
     if not measures_block.strip():
         return "Активных мер нет — аналитика по мерам не сформирована."
     prompt = (
@@ -578,7 +611,7 @@ def generate_measures_analytics(measures_block: str, risks_block: str = "") -> s
             "Меры сосредоточены по перечисленным характеристикам; приоритет — характеристики с "
             "наибольшим числом мер и охватом ИС. (Сформировано строго по сводке мер.)"
         )
-    _cache[key] = text
+    _cache_put(key, text)
     return text
 
 
@@ -591,8 +624,9 @@ def generate_summary(system_name: str, period_label: str,
     known_risks   — релевантные записи из базы рисков (обоснование для LLM), опционально.
     """
     key = hash((system_name, period_label, metrics_block, known_risks))
-    if key in _cache:
-        return _cache[key]
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
 
     risks_part = (
         f"\nИзвестные риски по просевшим характеристикам (из базы рисков банка):\n{known_risks}\n"
@@ -625,5 +659,5 @@ def generate_summary(system_name: str, period_label: str,
     else:
         text = _grounded_fallback(system_name, period_label, metrics_block)
 
-    _cache[key] = text
+    _cache_put(key, text)
     return text
