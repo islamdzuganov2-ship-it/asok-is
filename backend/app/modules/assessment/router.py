@@ -10,7 +10,7 @@ from collections import defaultdict
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -287,6 +287,7 @@ async def create_assessment_period(
 @router.get("/periods", response_model=list[PeriodOut])
 async def list_assessment_periods(
     system_id: UUID | None = None,
+    limit: int = Query(500, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> list[AssessmentPeriod]:
@@ -295,13 +296,16 @@ async def list_assessment_periods(
     )
     if system_id is not None:
         stmt = stmt.where(AssessmentPeriod.system_id == system_id)
-    result = await db.execute(stmt)
+    # ДЕФ-24: потолок выборки. На демо-объёме (4 ИС) не заметен, но заказчик ориентируется
+    # на 100+ систем (БТ-264) — без LIMIT ответ и память росли бы линейно.
+    result = await db.execute(stmt.limit(limit))
     return list(result.scalars().all())
 
 
 @router.get("/periods/summary", response_model=list[PeriodSummaryOut])
 async def list_period_summaries(
     system_id: UUID | None = None,
+    limit: int = Query(500, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> list[PeriodSummaryOut]:
@@ -318,7 +322,7 @@ async def list_period_summaries(
     )
     if system_id is not None:
         stmt = stmt.where(AssessmentPeriod.system_id == system_id)
-    rows = (await db.execute(stmt)).all()
+    rows = (await db.execute(stmt.limit(limit))).all()  # ДЕФ-24: потолок выборки
     if not rows:
         return []
 
@@ -1010,6 +1014,7 @@ async def judgments_pending(
 @router.get("/judgments-filled")
 async def judgments_filled(
     system_name: str | None = None,
+    limit: int = Query(1000, ge=1, le=10000),
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> list[dict]:
@@ -1026,7 +1031,7 @@ async def judgments_filled(
     )
     if system_name:
         stmt = stmt.where(System.name == system_name)
-    rows = (await db.execute(stmt)).all()
+    rows = (await db.execute(stmt.limit(limit))).all()  # ДЕФ-24: потолок выборки
     return [
         {
             "system_name": s.name, "period": p.period,

@@ -1,8 +1,11 @@
 """
 REST API домена dataio (ТЗ v13): загрузка Excel (синхронно и через Celery).
 """
+import asyncio
+import io
 import os
 import uuid
+import zipfile
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -31,6 +34,33 @@ MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 XLSX_MAGIC = b"PK\x03\x04"
 
 
+# Потолок суммарного РАСПАКОВАННОГО объёма (.xlsx — zip-контейнер): защита от zip-бомбы,
+# когда 10 МБ архива разворачиваются в гигабайты и кладут процесс на парсинге.
+MAX_UNCOMPRESSED_SIZE = 200 * 1024 * 1024
+# Размер чанка при потоковом чтении тела запроса.
+UPLOAD_CHUNK = 1024 * 1024
+
+
+async def _read_upload_limited(file: UploadFile) -> bytes:
+    """Прочитать файл чанками, оборвав чтение при превышении лимита (ДЕФ-25).
+
+    Раньше здесь стояло `await file.read()` — тело буферизовалось в память ПОЛНОСТЬЮ,
+    и только потом проверялся размер. Загрузка на гигабайт гарантированно выедала память
+    контейнера (лимит 7000 МиБ) до того, как срабатывала проверка.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(UPLOAD_CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=413, detail="File is larger than 10 MB")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _validate_xlsx(filename: str | None, content: bytes) -> None:
     if not filename or not filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only .xlsx files are supported")
@@ -38,6 +68,39 @@ def _validate_xlsx(filename: str | None, content: bytes) -> None:
         raise HTTPException(status_code=413, detail="File is larger than 10 MB")
     if not content.startswith(XLSX_MAGIC):
         raise HTTPException(status_code=400, detail="Файл не является корректным .xlsx (неверная сигнатура)")
+    _validate_not_zip_bomb(content)
+
+
+def _validate_not_zip_bomb(content: bytes) -> None:
+    """Отклонить архив, распакованный объём которого превышает потолок."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            uncompressed = sum(entry.file_size for entry in archive.infolist())
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=400, detail="Файл не является корректным .xlsx") from exc
+    if uncompressed > MAX_UNCOMPRESSED_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Распакованный объём {uncompressed // (1024 * 1024)} МБ превышает допустимые "
+                   f"{MAX_UNCOMPRESSED_SIZE // (1024 * 1024)} МБ",
+        )
+
+
+async def _save_upload(content: bytes, filename: str | None) -> str:
+    """Сохранить файл на диск, не блокируя event loop (ДЕФ-26).
+
+    Запись и последующий парсинг Excel — синхронные операции; выполненные прямо в
+    обработчике, они останавливали обслуживание ВСЕХ запросов на время работы.
+    """
+    def _write() -> str:
+        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+        safe_name = f"{uuid.uuid4()}_{os.path.basename(filename or 'upload.xlsx')}"
+        path = os.path.join(settings.UPLOAD_DIR, safe_name)
+        with open(path, "wb") as target:
+            target.write(content)
+        return path
+
+    return await asyncio.to_thread(_write)
 
 HEADER_ALIASES = {
     "metric_id": {"metric_id", "id", "код", "код метрики", "ид метрики"},
@@ -109,14 +172,9 @@ async def upload_excel(
     file: UploadFile = File(...),
     _: dict = Depends(require_permission("dataio.import")),
 ) -> dict[str, str]:
-    content = await file.read()
+    content = await _read_upload_limited(file)
     _validate_xlsx(file.filename, content)
-
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    safe_name = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
-    file_path = os.path.join(settings.UPLOAD_DIR, safe_name)
-    with open(file_path, "wb") as target:
-        target.write(content)
+    file_path = await _save_upload(content, file.filename)
 
     task = parse_excel_task.delay(file_path, period_id)
     return {"task_id": task.id}
@@ -142,7 +200,7 @@ async def import_assessment_excel(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("dataio.import")),
 ) -> dict[str, Any]:
-    content = await file.read()
+    content = await _read_upload_limited(file)
     _validate_xlsx(file.filename, content)
 
     try:
@@ -158,13 +216,9 @@ async def import_assessment_excel(
     if is_period_locked(period.status):
         raise HTTPException(status_code=409, detail=PERIOD_LOCKED_MESSAGE)
 
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    safe_name = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
-    file_path = os.path.join(settings.UPLOAD_DIR, safe_name)
-    with open(file_path, "wb") as target:
-        target.write(content)
-
-    workbook = load_workbook(file_path, read_only=True, data_only=True)
+    file_path = await _save_upload(content, file.filename)
+    # ДЕФ-26: разбор книги — синхронный и тяжёлый; в обработчике он останавливал event loop.
+    workbook = await asyncio.to_thread(load_workbook, file_path, read_only=True, data_only=True)
     imported = 0
     skipped = 0
     errors: list[str] = []
@@ -260,7 +314,7 @@ async def import_workbook(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("dataio.import")),
 ) -> dict[str, Any]:
-    content = await file.read()
+    content = await _read_upload_limited(file)
     _validate_xlsx(file.filename, content)
 
     try:
@@ -275,11 +329,7 @@ async def import_workbook(
     if is_period_locked(period.status):
         raise HTTPException(status_code=409, detail=PERIOD_LOCKED_MESSAGE)
 
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    safe_name = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
-    file_path = os.path.join(settings.UPLOAD_DIR, safe_name)
-    with open(file_path, "wb") as target:
-        target.write(content)
+    file_path = await _save_upload(content, file.filename)
 
     metrics_summary = await import_metric_catalog_from_workbook(db, Path(file_path))
     matrices_summary = await import_matrices_from_workbook(db, Path(file_path), period_uuid)
