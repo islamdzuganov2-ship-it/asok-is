@@ -16,11 +16,14 @@ import {
 import { useSelector, shallowEqual } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { RootState } from '../store';
-import { selectVisibleProposals } from '../store/slices/governanceSlice';
+import { selectVisibleProposals, type Proposal } from '../store/slices/governanceSlice';
 import { reasonKey, selectReasons } from '../store/slices/dynamicsSlice';
 import { DYNAMICS, QUARTERS, detectAnomalies } from '../data/mockScaleData';
 import { TYPE } from '../theme/premium';
 import { ACCENT, RAG } from '../theme/ragPalette';
+import {
+  execPendingProposals, execPendingEscalations, managerTaskNotes,
+} from './notificationRules';
 
 const { Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -70,14 +73,14 @@ const NotificationBell: React.FC = () => {
 
     // Топ-менеджер: необработанные заявки (меры на согласовании) + эскалации на решение.
     if (isExec) {
-      proposals.filter((p) => p.status === 'PENDING_APPROVAL').forEach((p) => {
+      execPendingProposals<Proposal>(proposals).forEach((p) => {
         out.push({
           key: `pend-${p.id}`, icon: <AuditOutlined />, color: RAG.medium.color,
           text: `Необработанная заявка: «${p.riskTitle || p.metricName}» (${p.systemName})`,
           to: '/dashboard/executive',
         });
       });
-      proposals.filter((p) => p.escalated && !p.escalationDecision).forEach((p) => {
+      execPendingEscalations<Proposal>(proposals).forEach((p) => {
         out.push({
           key: `escpend-${p.id}`, icon: <RiseOutlined />, color: ACCENT.violet.color,
           text: `Эскалация ожидает решения: «${p.riskTitle || p.metricName}» (${p.systemName})`,
@@ -131,15 +134,14 @@ const NotificationBell: React.FC = () => {
         });
       });
       // Задачи на контроле / назначенные из плана обеспечения качества.
-      proposals.filter((p) => p.status === 'APPROVED' && p.execution !== 'DONE').forEach((p) => {
-        const due = parseRu(p.dueDate);
-        const overdue = due ? due.getTime() < now : false;
-        const soon = due ? due.getTime() - now < 7 * DAY && due.getTime() >= now : false;
-        if (p.escalated && p.escalationDecision) {
+      // Правила «просрочено / скоро / назначено» и разбор эскалаций вынесены в
+      // notificationRules.ts (ДЕФ-30) — чистые функции, покрытые тестами.
+      managerTaskNotes<Proposal>(proposals, now).forEach(({ proposal: p, kind }) => {
+        const overdue = kind === 'overdue';
+        const soon = kind === 'soon';
+        if (kind === 'escalation-decided') {
           out.push({ key: `escd-${p.id}`, icon: <RiseOutlined />, color: ACCENT.violet.color,
             text: `Решение по эскалации получено — отработать: «${p.riskTitle || p.metricName}» (${p.systemName})`, to: '/dashboard/taskplan' });
-        } else if (p.escalated) {
-          // ожидает решения топ-менеджмента — уведомление показывается топ-менеджеру
         } else if (overdue || soon) {
           out.push({ key: `due-${p.id}`, icon: <ClockCircleOutlined />, color: overdue ? RAG.bad.color : RAG.medium.color,
             text: `Срок задачи «${p.riskTitle || p.metricName}» (${p.systemName}): ${p.dueDate}${overdue ? ' — просрочено' : ' — скоро'}`,
