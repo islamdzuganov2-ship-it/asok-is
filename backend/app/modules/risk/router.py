@@ -32,6 +32,7 @@ async def list_risks(
     severity: str | None = None,
     status: str = "active",
     q: str | None = None,
+    limit: int = Query(1000, ge=1, le=10000),  # ДЕФ-24: потолок выборки
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> list[RiskBase]:
@@ -52,7 +53,7 @@ async def list_risks(
             RiskBase.keywords.ilike(like),
             RiskBase.code.ilike(like),
         ))
-    stmt = stmt.order_by(RiskBase.created_at.desc())
+    stmt = stmt.order_by(RiskBase.created_at.desc()).limit(limit)
     return list((await db.execute(stmt)).scalars().all())
 
 

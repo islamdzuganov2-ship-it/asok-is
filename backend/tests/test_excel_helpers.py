@@ -1,4 +1,7 @@
-"""Юнит-тесты разбора Excel и валидации загрузки (анти-спуфинг по сигнатуре)."""
+"""Юнит-тесты разбора Excel и валидации загрузки (анти-спуфинг, лимиты, zip-бомба)."""
+import io
+import zipfile
+
 import pytest
 from fastapi import HTTPException
 
@@ -44,5 +47,34 @@ def test_validate_xlsx_rejects_oversized():
     assert e.value.status_code == 413
 
 
+def _minimal_xlsx(payload_size: int = 64) -> bytes:
+    """Настоящий zip-контейнер: валидатор теперь разбирает архив, а не только сигнатуру."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/worksheets/sheet1.xml", "0" * payload_size)
+    return buf.getvalue()
+
+
 def test_validate_xlsx_accepts_valid():
-    ex._validate_xlsx("data.xlsx", b"PK\x03\x04valid-zip-bytes")  # не должно бросать
+    ex._validate_xlsx("data.xlsx", _minimal_xlsx())  # не должно бросать
+
+
+def test_validate_xlsx_rejects_corrupt_archive():
+    """Сигнатура верна, но контейнер битый — ловим на валидации, а не в парсере (ДЕФ-25)."""
+    with pytest.raises(HTTPException) as e:
+        ex._validate_xlsx("data.xlsx", b"PK\x03\x04corrupted-not-a-zip")
+    assert e.value.status_code == 400
+
+
+def test_validate_xlsx_rejects_zip_bomb(monkeypatch):
+    """Архив в пределах 10 МБ, но распаковывается в объём сверх потолка (ДЕФ-25).
+
+    Лист из нулей сжимается в тысячи раз: 10 МБ архива легко разворачиваются в гигабайты
+    и кладут процесс уже на разборе книги.
+    """
+    monkeypatch.setattr(ex, "MAX_UNCOMPRESSED_SIZE", 1024)
+    with pytest.raises(HTTPException) as e:
+        ex._validate_xlsx("data.xlsx", _minimal_xlsx(payload_size=10_000))
+    assert e.value.status_code == 413
+    assert "аспакованный" in e.value.detail
