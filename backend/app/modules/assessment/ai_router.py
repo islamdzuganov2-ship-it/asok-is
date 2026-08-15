@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.iam import require_permission
+from app.modules.iam import get_current_user, require_permission
 from app.modules.quality import (
     AI_SUB_INDEX,
     AI_TOTAL_SUBS,
@@ -43,13 +43,14 @@ _EDIT_ROLES = ("TEST_ANALYST", "QUALITY_MANAGER", "ADMIN")
 
 
 @router.get("/ai-model")
-async def get_ai_model() -> dict:
+async def get_ai_model(_: dict = Depends(get_current_user)) -> dict:
     """Дерево модели 59898: 4 группы → 8 характеристик → 37 субхарактеристик (7 ИИ-специфичных)."""
     return {"model_kind": "GOST59898", "total_subs": AI_TOTAL_SUBS, "groups": ai_model_tree()}
 
 
 @router.post("/periods", status_code=status.HTTP_201_CREATED)
-async def create_ai_period(payload: AiPeriodCreate, db: AsyncSession = Depends(get_db)) -> dict:
+async def create_ai_period(payload: AiPeriodCreate, db: AsyncSession = Depends(get_db),
+                           _: dict = Depends(require_permission("assessment.edit"))) -> dict:
     system = await db.get(System, payload.system_id)
     if system is None or system.is_deleted:
         raise HTTPException(status_code=404, detail="System not found")
@@ -79,6 +80,7 @@ async def create_ai_period(payload: AiPeriodCreate, db: AsyncSession = Depends(g
 async def list_ai_periods(
     system_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
 ) -> list[dict]:
     """Периоды оценки СИИ (только системы с system_kind=AI)."""
     stmt = (
@@ -119,7 +121,8 @@ def _value_out(v: AiAssessmentValue) -> AiValueOut:
 
 
 @router.get("/{period_id}/values", response_model=List[AiValueOut])
-async def get_ai_values(period_id: UUID, db: AsyncSession = Depends(get_db)) -> list[AiValueOut]:
+async def get_ai_values(period_id: UUID, db: AsyncSession = Depends(get_db),
+                        _: dict = Depends(get_current_user)) -> list[AiValueOut]:
     await _require_ai_period(db, period_id)
     rows = (await db.execute(
         select(AiAssessmentValue).where(AiAssessmentValue.period_id == period_id)
@@ -228,7 +231,8 @@ async def _load_weights(db: AsyncSession, period_id: UUID) -> tuple[dict, dict]:
 
 
 @router.get("/{period_id}/weights")
-async def get_ai_weights(period_id: UUID, db: AsyncSession = Depends(get_db)) -> dict:
+async def get_ai_weights(period_id: UUID, db: AsyncSession = Depends(get_db),
+                         _: dict = Depends(get_current_user)) -> dict:
     await _require_ai_period(db, period_id)
     char_weights, sub_weights = await _load_weights(db, period_id)
     return {"period_id": str(period_id), "characteristics": char_weights, "subs": sub_weights}
@@ -280,7 +284,8 @@ async def save_ai_weights(
 
 
 @router.post("/{period_id}/calculate", response_model=AiCalculationOut)
-async def calculate_ai_period(period_id: UUID, db: AsyncSession = Depends(get_db)) -> AiCalculationOut:
+async def calculate_ai_period(period_id: UUID, db: AsyncSession = Depends(get_db),
+                              _: dict = Depends(require_permission("assessment.edit"))) -> AiCalculationOut:
     """Свёртка снизу вверх → интегральный Q ∈ [0,1] + K по характеристикам.
 
     E2: если на период заданы веса (Σ=1) — взвешенная свёртка по формулам 3–8, иначе равные веса.
@@ -341,7 +346,8 @@ async def finalize_ai_period(
 
 
 @router.get("/{period_id}/conformance-report", response_model=AiConformanceReport)
-async def ai_conformance_report(period_id: UUID, db: AsyncSession = Depends(get_db)) -> AiConformanceReport:
+async def ai_conformance_report(period_id: UUID, db: AsyncSession = Depends(get_db),
+                                _: dict = Depends(get_current_user)) -> AiConformanceReport:
     """Отчёт соответствия (критерий приёмки 7): значение, базовое, допуски, вердикт по каждой строке."""
     period = await _require_ai_period(db, period_id)
     system = await db.get(System, period.system_id)

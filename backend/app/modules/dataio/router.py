@@ -20,7 +20,7 @@ from app.infrastructure.workers import celery_app
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
 from app.modules.dataio.importer import import_matrices_from_workbook, import_metric_catalog_from_workbook
 from app.modules.dataio.tasks import parse_excel_task
-from app.modules.iam import require_permission
+from app.modules.iam import get_current_user, require_permission
 from app.modules.quality import MetricCatalog, calculate_metric, map_to_level
 from app.shared.periods import PERIOD_LOCKED_MESSAGE, STATUS_CALCULATED, is_period_locked
 
@@ -123,7 +123,8 @@ async def upload_excel(
 
 
 @router.get("/tasks/{task_id}")
-async def get_task_status(task_id: str) -> dict[str, object]:
+async def get_task_status(task_id: str,
+                          _: dict = Depends(get_current_user)) -> dict[str, object]:
     result = AsyncResult(task_id, app=celery_app)
     payload: dict[str, object] = {"task_id": task_id, "status": result.status}
     if result.ready():

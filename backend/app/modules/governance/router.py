@@ -111,7 +111,8 @@ async def report_execution(
 @router.patch("/proposals/{pid}/task", response_model=ProposalOut)
 async def update_task(
     pid: uuid.UUID, payload: TaskUpdateIn,
-    db: AsyncSession = Depends(get_db), _: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("governance.propose")),
 ):
     p = await service.get_or_404(db, pid)
     return await service.update_task(db, p, payload)
