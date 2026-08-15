@@ -67,10 +67,24 @@ services:
       # «Резервный мозг» LLM — WRITABLE (память/корпус/фидбэк вне файла модели, переносимо
       # между моделями). Отдельный том от read-only каталога моделей. См. modules/llm/brain.py.
       - ./models/llm_brain:/app/models/llm_brain
+      # Манифест развёртывания — read-only: tests/test_resource_limits.py читает его как
+      # данные и стережёт RES-01/02/08 там же, где гоняется остальной регресс.
+      - ./docker-compose.yml:/deploy/docker-compose.yml:ro
       # Excel-файлы отвязаны от сборки: автосид опционален и пропускается, если файлов нет
       # (seed_project_excel_files проверяет .exists()). Загрузка Excel пользователем — отдельная фича.
       - /app/__pycache__
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # RES-08: БЕЗ --reload. Reloader держит второй процесс и перезапускает воркер на любое
+    # изменение файла — вместе с ним заново грузятся ~7 ГБ весов модели (замер: первый запрос
+    # после старта ждал ~10 минут). Именно это выглядело как «утечка памяти». Для разработки
+    # --reload включается в docker-compose.override.yml.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # RES-01: потолок ресурсов. Резидентные веса — 6.2 ГиБ при 7.7 ГиБ RAM хоста; без лимита
+    # OOM-killer выбирает жертву на всём хосте, включая PostgreSQL.
+    deploy:
+      resources:
+        limits:
+          memory: 7000M
+          cpus: "6"
     networks:
       - asok_net
 
@@ -85,6 +99,9 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://asok_user:${POSTGRES_PASSWORD:-asok_pass123}@postgres:5432/asok_is
       - REDIS_URL=redis://redis:6379/0
+      # RES-02: воркер НЕ грузит веса. modules/llm/tasks.py использует тот же in-process
+      # llama.cpp; при --concurrency=2 это две копии весов сверх копии бэкенда.
+      - LLM_ENABLED=false
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,6 +112,7 @@ services:
       - ./models/llm:/app/models/llm:ro
       # «Резервный мозг» LLM — WRITABLE (общий с backend; воркер тоже пишет память рассуждений).
       - ./models/llm_brain:/app/models/llm_brain
+      - ./docker-compose.yml:/deploy/docker-compose.yml:ro
       - /app/__pycache__
     # --beat: планировщик встроен в воркер (еженедельная самооценка LLM, ТЗ v18 п.10).
     # Отдельный контейнер beat не поднимаем: воркер в стенде один. При масштабировании
@@ -103,6 +121,13 @@ services:
     # Расписание beat хранится в /tmp (файл celerybeat-schedule), том не требуется:
     # при перезапуске задача просто отработает в следующий назначенный срок.
     command: celery -A app.workers.tasks.celery_app worker --beat --schedule=/tmp/celerybeat-schedule --loglevel=info --concurrency=2
+    # RES-01: потолок ресурсов воркера. Модель он не грузит (LLM_ENABLED=false выше),
+    # поэтому лимит скромный; cpus согласован с --concurrency=2.
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: "2"
     # У воркера нет HTTP-порта, поэтому unhealthy-проверка из Dockerfile (curl :8000) всегда
     # падала. Проверяем готовность брокера/воркера через celery inspect ping.
     healthcheck:

@@ -13,6 +13,11 @@
 # Пересборка нужна ОДИН раз — под обновлённый рантайм 0.3.x: `docker compose build backend celery_worker`.
 services:
   backend:
+    # Автоперезагрузка кода (RES-08) ВЫКЛЮЧЕНА намеренно: при резидентной модели каждый
+    # рестарт воркера заново грузит ~7 ГБ весов — замер показал ~10 минут ожидания на
+    # первом же запросе. Именно это выглядело как «утечка памяти».
+    # Включать ТОЛЬКО когда LLM_ENABLED=false (правка кода без модели):
+    # command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       - LOCAL_LLM_MODEL_FILE=gemma-3-12b-it-Q4_K_M.gguf
   celery_worker:
