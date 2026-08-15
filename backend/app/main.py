@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.api import api_router
 from app.infrastructure.config import settings
-from app.infrastructure.database import AsyncSessionLocal, Base, engine, import_models
+from app.infrastructure.database import AsyncSessionLocal, import_models
 from app.modules.econ import seed_econ_defaults
 from app.modules.iam import seed_rbac_defaults
 from app.scripts.seed_iso25010 import seed_iso25010_async
@@ -21,7 +21,9 @@ from app.shared.exceptions import (
     ValidationError,
 )
 
-import_models()  # реестр моделей: полная Base.metadata для стартового create_all (ТЗ v13)
+# Реестр моделей: полная Base.metadata нужна alembic/env.py для autogenerate и
+# тестовому conftest для create_all тестовой БД (ТЗ v13).
+import_models()
 
 logger = logging.getLogger(__name__)
 
@@ -84,13 +86,21 @@ async def health_check():
 
 @app.on_event("startup")
 async def startup_init() -> None:
+    """Первичный сид справочников и матрицы прав.
+
+    Схему БД здесь БОЛЬШЕ НЕ СОЗДАЁМ: за неё отвечает `alembic upgrade head`, который
+    выполняется до запуска uvicorn (см. команду backend в docker-compose.yml и
+    app/scripts/migrate.py). Прежний `Base.metadata.create_all()` работал только под
+    DEMO_MODE, из-за чего в продуктиве схема не создавалась вообще, а на демо-стенде
+    не применялись ALTER из миграций — БТ-507, ДЕФ-03.
+
+    Сид остаётся под DEMO_MODE: это демо-ДАННЫЕ, а не схема.
+    """
     if not settings.DEMO_MODE:
         return
-    # Создаём таблицы и сеем каталог метрик ИЗ КОДА (constants/quality_model.py),
-    # без зависимости от Excel-файлов проекта.
+    # Сеем каталог метрик ИЗ КОДА (modules/quality/quality_model.py), без зависимости
+    # от Excel-файлов проекта.
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
         await seed_iso25010_async()
         # BL-007: первичный сид финпараметров контура (идемпотентно — не затирает правки).
         async with AsyncSessionLocal() as econ_session:
