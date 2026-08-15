@@ -25,6 +25,7 @@ const AiAssessmentPage = lazy(() => import('./pages/AiAssessmentPage'));
 const MetricsInputPage = lazy(() => import('./pages/MetricsInputPage'));
 const ExpertReviewPage = lazy(() => import('./pages/ExpertReviewPage'));
 const AdminFlagsPage = lazy(() => import('./pages/AdminFlagsPage'));
+const AssigneeTasksPage = lazy(() => import('./pages/AssigneeTasksPage'));
 const ExcelReportsPage = lazy(() => import('./pages/ExcelReportsPage'));
 const RiskBasePage = lazy(() => import('./pages/RiskBasePage'));
 const RiskEconomicsPage = lazy(() => import('./pages/RiskEconomicsPage'));
@@ -60,6 +61,8 @@ const HOME_BY_ROLE: Record<string, { path: string; perm?: string }> = {
     RISK_MANAGER: { path: '/dashboard/risk', perm: 'view.dashboard.risk' },
     TEST_ANALYST: { path: '/dashboard/analytics', perm: 'view.dashboard.analytics' },
     AUDITOR: { path: '/dashboard/risk', perm: 'view.dashboard.risk' },
+    // ДЕФ-10: исполнитель заходит сразу в свои поручения.
+    EXECUTOR: { path: '/my-tasks', perm: 'view.my_tasks' },
 };
 // Порядок «первого доступного» дашборда, если у роли нет своего.
 const DASHBOARD_FALLBACKS: Array<{ path: string; perm: string }> = [
@@ -68,6 +71,7 @@ const DASHBOARD_FALLBACKS: Array<{ path: string; perm: string }> = [
     { path: '/dashboard/manager', perm: 'view.dashboard.manager' },
     { path: '/dashboard/risk', perm: 'view.dashboard.risk' },
     { path: '/dashboard/analytics', perm: 'view.dashboard.analytics' },
+    { path: '/my-tasks', perm: 'view.my_tasks' },
     { path: '/admin/users', perm: 'view.admin.users' },
 ];
 const DashboardRouter: React.FC = () => {
@@ -133,6 +137,7 @@ export const App: React.FC = () => {
                             <Route path="ai-assessments" element={<RequirePermission perm="view.ai_assessments"><AiAssessmentPage /></RequirePermission>} />
                             <Route path="assessments/:id/input" element={<RequirePermission perm="view.assessments"><MetricsInputPage /></RequirePermission>} />
                             <Route path="assessments/:id/review" element={<RequirePermission perm="assessment.review"><ExpertReviewPage /></RequirePermission>} />
+                            <Route path="my-tasks" element={<RequirePermission perm="view.my_tasks"><AssigneeTasksPage /></RequirePermission>} />
                             <Route path="reports" element={<RequirePermission perm="view.reports"><ExcelReportsPage /></RequirePermission>} />
                             <Route path="risks" element={<RequirePermission perm="view.risks"><RiskBasePage /></RequirePermission>} />
                             <Route path="risk-economics" element={<RequirePermission perm="view.risk_economics"><RiskEconomicsPage /></RequirePermission>} />

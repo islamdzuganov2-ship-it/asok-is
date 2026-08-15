@@ -53,6 +53,28 @@ export interface Proposal {
   escalationDecision?: 'IGNORE' | 'REQUEST_MEASURES';
   escalationDecisionComment?: string;
   escalationDecidedBy?: string;
+  // ДЕФ-10 (БТ-015, роль «Исполнитель»): уточнения исполнителя по метрике/поручению и запрос
+  // на перенос срока с обоснованием. Всё это «падает» менеджеру по качеству — он решает.
+  clarifications?: Clarification[];
+  dueChangeRequest?: DueChangeRequest;
+}
+
+/** Уточнение исполнителя по метрике/поручению (видит менеджер по качеству). */
+export interface Clarification {
+  at: string;
+  by: string;
+  text: string;
+}
+
+/** Запрос исполнителя на перенос срока поручения с обоснованием (решает менеджер по качеству). */
+export interface DueChangeRequest {
+  proposedDate: string;   // предложенный новый срок (ДД.ММ.ГГГГ)
+  justification: string;  // обоснование
+  by: string;             // исполнитель
+  at: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+  decidedBy?: string;
+  decisionComment?: string;
 }
 
 export type ExecutionStatus = 'DONE' | 'NOT_DONE';
@@ -278,6 +300,49 @@ export const resolveEscalation = createAsyncThunk<Proposal | null, { id: string 
   },
 );
 
+// ────────── Роль «Исполнитель» (ДЕФ-10 / БТ-015): уточнения + перенос срока ──────────
+
+/** Исполнитель добавляет уточнение по метрике/поручению — попадает менеджеру по качеству. */
+export const addClarification = createAsyncThunk<Proposal | null, { id: string; text: string; by: string }, { state: RootState }>(
+  'governance/clarification',
+  async ({ id, text, by }, { getState }) => {
+    if (isLive(getState())) return await govApi(`/proposals/${id}/clarification`, 'POST', { text });
+    const p = getState().governance.proposals.find((x) => x.id === id);
+    if (!p) return null;
+    const note: Clarification = { at: new Date().toISOString(), by, text };
+    return { ...p, clarifications: [...(p.clarifications ?? []), note] };
+  },
+);
+
+/** Исполнитель предлагает новый срок по своему поручению с обоснованием (решает МК). */
+export const requestDueChange = createAsyncThunk<Proposal | null, { id: string; proposedDate: string; justification: string; by: string }, { state: RootState }>(
+  'governance/due-change',
+  async ({ id, proposedDate, justification, by }, { getState }) => {
+    if (isLive(getState())) return await govApi(`/proposals/${id}/due-change`, 'POST', { proposedDate, justification });
+    const p = getState().governance.proposals.find((x) => x.id === id);
+    if (!p) return null;
+    const req: DueChangeRequest = { proposedDate, justification, by, at: new Date().toISOString(), status: 'PENDING' };
+    return { ...p, dueChangeRequest: req };
+  },
+);
+
+/** Менеджер по качеству решает по запросу переноса срока: принять (обновит dueDate) или отклонить. */
+export const decideDueChange = createAsyncThunk<Proposal | null, { id: string; accept: boolean; by: string; comment?: string }, { state: RootState }>(
+  'governance/due-change-decision',
+  async ({ id, accept, by, comment }, { getState }) => {
+    if (isLive(getState())) return await govApi(`/proposals/${id}/due-change-decision`, 'POST', { accept, comment });
+    const p = getState().governance.proposals.find((x) => x.id === id);
+    if (!p || !p.dueChangeRequest) return null;
+    const req: DueChangeRequest = {
+      ...p.dueChangeRequest,
+      status: accept ? 'ACCEPTED' : 'DECLINED',
+      decidedBy: by,
+      decisionComment: comment,
+    };
+    return { ...p, dueChangeRequest: req, ...(accept ? { dueDate: req.proposedDate } : {}) };
+  },
+);
+
 // ─────────────────────────────────── Slice ───────────────────────────────────
 interface GovernanceState {
   proposals: Proposal[];
@@ -313,7 +378,8 @@ const governanceSlice = createSlice({
       });
     // Мутации возвращают обновлённую меру (или null, если действие не применилось в mock).
     for (const thunk of [approveProposal, rejectProposal, updateProposalMeta, editProposal,
-      setExecution, updateTask, escalateTask, decideEscalation, resolveEscalation]) {
+      setExecution, updateTask, escalateTask, decideEscalation, resolveEscalation,
+      addClarification, requestDueChange, decideDueChange]) {
       builder.addCase(thunk.fulfilled, (state, action: PayloadAction<Proposal | null>) => {
         if (action.payload) {
           upsert(state, action.payload);
@@ -344,3 +410,21 @@ export const selectPendingProposals = (s: RootState) =>
   s.governance.proposals.filter((p) => p.status === 'PENDING_APPROVAL');
 export const selectProposalsBySystem = (system: string) => (s: RootState) =>
   s.governance.proposals.filter((p) => p.systemName === system);
+
+/** Нормализация ФИО для сопоставления исполнителя с ответственным меры (owner). */
+const normName = (s?: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+
+/**
+ * Поручения, назначенные на исполнителя (ДЕФ-10): меры видимого набора, где owner совпадает с ФИО.
+ * Сопоставление нестрогое (регистр/пробелы/ё) — демо-ФИО коротки («Петрова А.С.»).
+ */
+export const selectProposalsForAssignee = (fullName?: string | null) => (s: RootState): Proposal[] => {
+  const target = normName(fullName);
+  if (!target) return [];
+  const visible = s.ui.dataMode === 'mock' ? s.governance.proposals : s.governance.proposals.filter((p) => !p.isDemo);
+  return visible.filter((p) => p.status !== 'REJECTED' && normName(p.owner) === target);
+};
+
+/** Для менеджера по качеству: меры с ожидающим запросом переноса срока или новыми уточнениями. */
+export const selectAssigneeInbox = (s: RootState): Proposal[] =>
+  s.governance.proposals.filter((p) => p.dueChangeRequest?.status === 'PENDING' || (p.clarifications?.length ?? 0) > 0);

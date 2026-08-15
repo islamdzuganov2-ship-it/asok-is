@@ -27,8 +27,12 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     # BL-008: супер-администратор — единственный, кто заводит пользователей и раздаёт права
     # (матрица role_permissions). Стоит НАД ADMIN; в резолвере прав всегда получает весь каталог.
     ROLE_SUPER_ADMIN = "SUPER_ADMIN"
+    # ДЕФ-10 (БТ-015, 2026-08-04): исполнитель — тот, НА КОГО назначается мера. Видит свои
+    # поручения и тот же состав дашбордов, что топ-менеджмент, но решений по мерам не принимает:
+    # он задаёт уточнения и предлагает перенос срока с обоснованием — решает менеджер по качеству.
+    ROLE_EXECUTOR = "EXECUTOR"
     ALL_ROLES = ("TEST_ANALYST", "QUALITY_MANAGER", "CTO", "CEO", "ADMIN",
-                 "RISK_MANAGER", "AUDITOR", "SUPER_ADMIN")
+                 "RISK_MANAGER", "AUDITOR", "EXECUTOR", "SUPER_ADMIN")
     READONLY_ROLES = ("CTO", "CEO")
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

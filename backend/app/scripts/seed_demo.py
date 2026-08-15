@@ -200,6 +200,10 @@ async def seed_data() -> None:
             {"username": "ceo", "email": "ceo@example.com", "password": "Ceo12345!", "role": "CEO"},
             {"username": "risk", "email": "risk@example.com", "password": "Risk123!", "role": "RISK_MANAGER"},
             {"username": "auditor", "email": "auditor@example.com", "password": "Auditor123!", "role": "AUDITOR"},
+            # ДЕФ-10: ФИО совпадает с ответственным в демо-наборе мер (mockScaleData: OWNER_BY_CHAR),
+            # иначе «Мои задачи» у исполнителя пусты и сценарий нечем показать.
+            {"username": "executor", "email": "executor@example.com", "password": "Executor123!",
+             "role": "EXECUTOR", "full_name": "Петрова А.С."},
         ]
         assert {u["role"] for u in users_data} == set(User.ALL_ROLES), "seed users must cover all roles"
         for item in users_data:
@@ -210,7 +214,7 @@ async def seed_data() -> None:
                         username=item["username"],
                         email=item["email"],
                         password_hash=get_password_hash(item["password"]),
-                        full_name=item["username"].title(),
+                        full_name=item.get("full_name") or item["username"].title(),
                         role=item["role"],
                     )
                 )

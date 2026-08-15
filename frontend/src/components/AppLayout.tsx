@@ -146,6 +146,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ...(has('view.dashboard.taskplan') && optOk(execTaskPlan) ? [mi('/dashboard/taskplan', <ScheduleOutlined />, 'План задач')] : []),
     ];
     const sections = [
+        // ДЕФ-10 (БТ-015): исполнитель видит назначенные на него поручения.
+        ...(has('view.my_tasks') ? [mi('/my-tasks', <ScheduleOutlined />, 'Мои задачи')] : []),
         ...(has('view.assessments') ? [mi('/assessments/new', <FormOutlined />, 'Внесение данных')] : []),
         ...(has('view.risks') ? [mi('/risks', <WarningOutlined />, 'База рисков')] : []),
         ...(has('view.risk_economics') ? [mi('/risk-economics', <AuditOutlined />, 'Риск-экономика')] : []),
