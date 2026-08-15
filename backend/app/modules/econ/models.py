@@ -11,7 +11,7 @@ ORM-модели домена econ (BL-007, RE-01…RE-04): экономичес
 """
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -132,3 +132,39 @@ class EconConfig(Base, TimestampMixin):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# --- Классы размера предприятия (209-ФЗ, В-28) ---
+SIZE_MICRO = "MICRO"
+SIZE_SMALL = "SMALL"
+SIZE_MEDIUM = "MEDIUM"
+SIZE_LARGE = "LARGE"  # вне 209-ФЗ (закон определяет только МСП), но нужен как верхняя граница шкалы
+SIZE_CLASSES = (SIZE_MICRO, SIZE_SMALL, SIZE_MEDIUM, SIZE_LARGE)
+
+# Единственный допустимый id профиля — искусственный синглтон, а не мультиарендность (Р-4, В-4):
+# «кого классифицируем по размеру» — саму установку, одна запись, без справочника организаций.
+ENTERPRISE_PROFILE_ID = uuid.UUID("00000000-0000-0000-0000-00000000e9f1")
+
+
+class EnterpriseProfile(Base, TimestampMixin):
+    """Профиль предприятия (ТЗ v19 п.8, УК-21) — РОВНО одна запись на установку (id зафиксирован
+    как `ENTERPRISE_PROFILE_ID`, сервис всегда работает с этой единственной строкой).
+
+    Это НЕ справочник организаций и не мультиарендность: размер/отрасль/регион нужны как параметр
+    подстановки для рыночных бенчмарков (п.9-10), а не как измерение для сегментации данных.
+    Решение зафиксировано с заказчиком 15.08.2026, см. docs/ТЗ_19_Управленческий_Контур_и_Веса.md §0 Р-4.
+    """
+    __tablename__ = "enterprise_profile"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Критерий — 209-ФЗ (В-28, предложено заказчику, ждёт подтверждения): микро/малое/среднее/крупное.
+    size_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    revenue_annual: Mapped[float | None] = mapped_column(Numeric(18, 2), nullable=True)
+    headcount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    region: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
+    )

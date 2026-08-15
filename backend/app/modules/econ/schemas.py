@@ -137,6 +137,30 @@ class EconConfigValueIn(_CamelModel):
     description: str | None = None
 
 
+# ── Профиль предприятия (ТЗ v19 УК-21, п.8, Р-4) — одна запись, параметр подстановки для п.9-10 ──
+class EnterpriseProfileOut(_CamelModel):
+    id: uuid.UUID
+    name: str | None = None
+    size_class: str | None = None      # MICRO/SMALL/MEDIUM/LARGE (209-ФЗ, В-28)
+    revenue_annual: float | None = None
+    headcount: int | None = None
+    industry: str | None = None
+    region: str | None = None
+    note: str | None = None
+    updated_by: uuid.UUID | None = None
+    updated_at: datetime | None = None
+
+
+class EnterpriseProfileIn(_CamelModel):
+    name: str | None = None
+    size_class: str | None = None
+    revenue_annual: float | None = None
+    headcount: int | None = None
+    industry: str | None = None
+    region: str | None = None
+    note: str | None = None
+
+
 # ── Дашборд стоимости (§5, RE-16) ──
 class TopRiskOut(_CamelModel):
     code: str

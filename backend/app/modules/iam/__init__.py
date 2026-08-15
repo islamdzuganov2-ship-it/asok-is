@@ -6,6 +6,7 @@
 и, при необходимости, криптофункции.
 """
 from app.modules.iam.deps import get_current_user, require_permission, require_role
+from app.modules.iam.identity import resolve_user_id
 from app.modules.iam.models import RolePermission, User
 from app.modules.iam.permissions import PERMISSIONS, Permission
 from app.modules.iam.permissions_service import (
@@ -33,6 +34,7 @@ from app.modules.iam.security import (
 __all__ = [
     "User",
     "RolePermission",
+    "resolve_user_id",
     "get_current_user",
     "require_role",
     "require_permission",

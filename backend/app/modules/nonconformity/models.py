@@ -74,6 +74,12 @@ class Nonconformity(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default=STATUS_IDENTIFIED, index=True)
     # Обязательный владелец: несоответствие без владельца не сохраняется (проверяет сервис).
     owner: Mapped[str] = mapped_column(String(255), nullable=False)
+    # ТЗ v19 УК-12: FK на users.id, необязательный до полного сопоставления строковых `owner`
+    # (backend/app/scripts/match_owners_to_users.py). Строка остаётся источником отображаемого
+    # имени — так исторические записи не ломаются, пока не сопоставлены.
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True,
+    )
 
     # --- Оценка (₽) и связи с контуром ---
     evaluated_ale: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
@@ -95,8 +101,14 @@ class Nonconformity(Base, TimestampMixin):
 
     # --- Исполнение и НЕЗАВИСИМАЯ верификация (SoD §3.3) ---
     executed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    executed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True,
+    )
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     verified_by: Mapped[str | None] = mapped_column(String(255), nullable=True)   # только роль AUDITOR
+    verified_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True,
+    )
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Подтверждённый при верификации ΔScore — вход метрики результативности руководителей (§7.1).
     delta_score_confirmed: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)

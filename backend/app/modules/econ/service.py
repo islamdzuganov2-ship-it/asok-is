@@ -18,11 +18,14 @@ from app.modules.econ import economics
 from app.modules.econ.models import (
     BP_KINDS,
     COST_METHODS,
+    ENTERPRISE_PROFILE_ID,
     EXECUTOR_TYPES,
     LINES,
+    SIZE_CLASSES,
     BusinessProcess,
     BusinessProcessCost,
     EconConfig,
+    EnterpriseProfile,
     SupportRate,
     SystemBusinessProcess,
 )
@@ -30,6 +33,7 @@ from app.modules.econ.schemas import (
     BpCostIn,
     BusinessProcessCreate,
     BusinessProcessUpdate,
+    EnterpriseProfileIn,
     SupportRateIn,
     SupportRateUpdate,
     SystemBpCreate,
@@ -136,6 +140,36 @@ async def config_value(db: AsyncSession, key: str, default: object = None) -> ob
     """Достать одно значение параметра (для движка/сервисов). Возвращает default, если ключа нет."""
     row = await db.get(EconConfig, key)
     return row.value if row is not None else default
+
+
+# ═══════════════════ Профиль предприятия (ТЗ v19 УК-21, п.8, Р-4) ═══════════════════
+# РОВНО одна запись — id зафиксирован (ENTERPRISE_PROFILE_ID), не справочник организаций.
+
+async def get_enterprise_profile(db: AsyncSession) -> EnterpriseProfile:
+    """Всегда возвращает запись — создаёт пустую при первом обращении (get-or-create),
+    чтобы фронту не приходилось различать «профиля ещё нет» и «профиль пуст»."""
+    profile = await db.get(EnterpriseProfile, ENTERPRISE_PROFILE_ID)
+    if profile is None:
+        profile = EnterpriseProfile(id=ENTERPRISE_PROFILE_ID)
+        db.add(profile)
+        await db.commit()
+        await db.refresh(profile)
+    return profile
+
+
+async def update_enterprise_profile(
+    db: AsyncSession, payload: EnterpriseProfileIn, updated_by: uuid.UUID | None,
+) -> EnterpriseProfile:
+    if payload.size_class is not None and payload.size_class not in SIZE_CLASSES:
+        raise ValidationError(f"Недопустимый класс размера: {payload.size_class}")
+
+    profile = await get_enterprise_profile(db)
+    for field_name, value in payload.model_dump(exclude_unset=True).items():
+        setattr(profile, field_name, value)
+    profile.updated_by = updated_by
+    await db.commit()
+    await db.refresh(profile)
+    return profile
 
 
 # ═══════════════════════ Бизнес-процессы (E9) ═══════════════════════

@@ -29,13 +29,15 @@ from app.modules.econ.schemas import (
     CostDashboardOut,
     EconConfigItem,
     EconConfigValueIn,
+    EnterpriseProfileIn,
+    EnterpriseProfileOut,
     SupportRateIn,
     SupportRateOut,
     SupportRateUpdate,
     SystemBpCreate,
     SystemBpOut,
 )
-from app.modules.iam import get_current_user, require_permission
+from app.modules.iam import get_current_user, require_permission, resolve_user_id
 
 router = APIRouter()
 
@@ -109,6 +111,29 @@ async def set_config(
     _: dict = Depends(require_permission("econ.config.edit")),
 ):
     return await service.set_config(db, key, payload.value, payload.description)
+
+
+# ═══════════════════════ Профиль предприятия (ТЗ v19 УК-21, п.8) ═══════════════════════
+# Одна запись-синглтон — параметр подстановки для бенчмарков (п.9-10), не справочник организаций.
+
+@router.get("/enterprise-profile", response_model=EnterpriseProfileOut)
+async def get_enterprise_profile(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    return await service.get_enterprise_profile(db)
+
+
+@router.put("/enterprise-profile", response_model=EnterpriseProfileOut)
+async def update_enterprise_profile(
+    payload: EnterpriseProfileIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("econ.config.edit")),
+):
+    # resolve_user_id: под DEMO_AUTH_BYPASS current_user["id"] синтетический и не существует
+    # в users — тихо пишем NULL вместо падения на FK (см. iam/identity.py).
+    updated_by = await resolve_user_id(db, current_user.get("id"))
+    return await service.update_enterprise_profile(db, payload, updated_by=updated_by)
 
 
 # ═══════════════════════ Бизнес-процессы (E9) ═══════════════════════

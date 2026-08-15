@@ -45,7 +45,13 @@ class ProposalOut(_CamelModel):
     risk_title: str | None = None
     owner: str | None = None
     owner_role: str | None = None
+    # ТЗ v19 УК-12: FK на пользователя рядом со строкой-снимком имени (owner). None, пока
+    # не сопоставлено скриптом match_owners_to_users.py — это НЕ ошибка, а честное «пока строка».
+    owner_user_id: uuid.UUID | None = None
     due_date: str | None = None
+    # ТЗ v19 УК-36: due_on — источник истины для сортировки/сравнения (пункт 11-12, 15).
+    # due_date остаётся для обратной совместимости фронта, не вычисляется из due_on обратно.
+    due_on: datetime | None = None
     status: str
     decided_by: str | None = None
     decided_at: datetime | None = None
@@ -53,7 +59,13 @@ class ProposalOut(_CamelModel):
     execution: str | None = None
     execution_comment: str | None = None
     executed_by: str | None = None
+    executed_by_user_id: uuid.UUID | None = None
     executed_at: datetime | None = None
+    # ТЗ v19 УК-13 (п.13, В-41): трудоёмкость в часах, проставляет исполнитель вручную при
+    # переводе меры «в работу». None ≠ 0 — считается отдельно как «без оценки часов».
+    effort_hours: float | None = None
+    effort_hours_set_by: uuid.UUID | None = None
+    effort_hours_set_at: datetime | None = None
     suz_link: str | None = None
     top_comment: str | None = None
     escalated: bool = False
