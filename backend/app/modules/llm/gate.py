@@ -36,7 +36,13 @@ REGRESSION_DELTA_PP = -12.0       # падение интегрального к
 
 @dataclass(frozen=True)
 class RuleSignal:
-    """Одно сработавшее правило: код, ярлык (как на схеме) и человекочитаемая деталь."""
+    """Одно сработавшее правило: код, ДЕЛОВОЙ ярлык (для вывода ЛПР) и человекочитаемая деталь.
+
+    `label` идёт в текст, который видит руководитель (as_block → rules_block → E7), поэтому
+    здесь обязана быть человекочитаемая формулировка, а не условие правила в виде псевдокода
+    («Severity>=High») — это техническая деталь схемы, не то, что нужно объяснять читателю
+    вывода. Условие как на схеме остаётся в `code` и в докстринге модуля.
+    """
     code: str
     label: str
     detail: str
@@ -79,7 +85,7 @@ def evaluate_gate(
     if q is not None and q < SEVERITY_Q_THRESHOLD:
         crit = f", критичность ИС: {criticality}" if criticality else ""
         signals.append(RuleSignal(
-            "severity_high", "Severity>=High",
+            "severity_high", "Критический уровень качества",
             f"интегральное качество {round(q * 100)}% ниже порога "
             f"{round(SEVERITY_Q_THRESHOLD * 100)}%{crit}",
         ))
@@ -89,7 +95,7 @@ def evaluate_gate(
         coverage = measured_subs / total_subs
         if coverage < COVERAGE_THRESHOLD:
             signals.append(RuleSignal(
-                "coverage_low", "Coverage<70%",
+                "coverage_low", "Недостаточное покрытие измерений",
                 f"измерено {measured_subs} из {total_subs} подхарактеристик "
                 f"({round(coverage * 100)}%), остальное — «Невозможно измерить»",
             ))
@@ -97,7 +103,7 @@ def evaluate_gate(
     # R3 — Regression Failed: деградация к предыдущему периоду.
     if delta_pp is not None and delta_pp <= REGRESSION_DELTA_PP:
         signals.append(RuleSignal(
-            "regression_failed", "Regression Failed",
+            "regression_failed", "Регресс к прошлому периоду",
             f"падение интегрального качества на {round(abs(delta_pp))} п.п. к прошлому периоду",
         ))
 
