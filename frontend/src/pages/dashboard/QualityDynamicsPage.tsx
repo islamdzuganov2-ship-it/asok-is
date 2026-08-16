@@ -28,6 +28,7 @@ import Sparkline from '../../components/Sparkline';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import { DynamicsModal } from '../../components/DynamicsModal';
 import { reasonKey, selectReasons } from '../../store/slices/dynamicsSlice';
+import { useCharacteristicWeights } from '../../hooks/useCharacteristicWeights';
 
 const { Title, Text } = Typography;
 
@@ -41,6 +42,19 @@ const lastValue = (series: number[]) => {
   for (let i = series.length - 1; i >= 0; i -= 1) if (series[i] >= 0) return series[i];
   return -1;
 };
+
+// Волатильность ряда — разброс max-min по измеренным точкам (ТЗ v20 п.6: «самые сильные
+// колебания», не абсолютный уровень). Ряд без ≥2 измеренных точек колебаний не показывает.
+const volatility = (series: number[]) => {
+  const vals = series.filter((v) => v >= 0);
+  return vals.length >= 2 ? Math.max(...vals) - Math.min(...vals) : 0;
+};
+
+// Системы по убыванию волатильности интегрального балла (п.6.1) — считается один раз: и данные
+// (DYNAMICS), и список систем статичны (моки).
+const SYSTEMS_BY_VOLATILITY = [...MANAGER_SCALE_SYSTEMS].sort(
+  (a, b) => volatility(DYNAMICS[b.name].system.series) - volatility(DYNAMICS[a.name].system.series),
+);
 
 // Точки ряда с подсветкой аномалий (крупный красный маркер).
 const seriesPoints = (series: number[]) => {
@@ -79,7 +93,8 @@ const QualityDynamicsPage: React.FC = () => {
   const dataMode = useSelector((s: RootState) => s.ui.dataMode);
   const reasons = useSelector(selectReasons);
   const isLive = dataMode === 'live';
-  const [systemId, setSystemId] = useState<string>(MANAGER_SCALE_SYSTEMS[0].id);
+  // ТЗ v20 п.6.1: по умолчанию открывается ИС с самыми сильными колебаниями, а не первая в списке.
+  const [systemId, setSystemId] = useState<string>(SYSTEMS_BY_VOLATILITY[0].id);
   const isAll = systemId === ALL_SYSTEMS;
   const system = useMemo(
     () => MANAGER_SCALE_SYSTEMS.find((s) => s.id === systemId) ?? MANAGER_SCALE_SYSTEMS[0],
@@ -87,11 +102,26 @@ const QualityDynamicsPage: React.FC = () => {
   );
   const dyn = DYNAMICS[system.name];
   const cbase = useChartBase();
+  const { weights: charWeights } = useCharacteristicWeights();
   const [charFilter, setCharFilter] = useState<string | undefined>();
   const [modalSeries, setModalSeries] = useState<DynSeries | null>(null);
   // Карточка подхарактеристик — сворачиваемая, изначально СВЁРНУТА; выбор фильтра её авто-раскрывает (T-22).
   const [subsOpen, setSubsOpen] = useState(false);
   const onCharFilter = (v?: string) => { setCharFilter(v); setSubsOpen(true); };
+
+  // ТЗ v20 п.6.2: по умолчанию карточка «по характеристикам» показывает не более двух
+  // характеристик — с наибольшим произведением волатильности и веса ГОСТ 25010 (просадки
+  // маловесных характеристик не заслоняют то, что реально давит на индекс). undefined/[] —
+  // «используется дефолт»; непустой выбор — пользователь явно выбрал набор через Select.
+  const [charDynSelection, setCharDynSelection] = useState<string[]>([]);
+  const defaultDynChars = useMemo(
+    () => [...dyn.chars]
+      .sort((a, b) => (volatility(b.series) * (charWeights[b.name] ?? 0)) - (volatility(a.series) * (charWeights[a.name] ?? 0)))
+      .slice(0, 2)
+      .map((c) => c.char),
+    [dyn, charWeights],
+  );
+  const shownDynChars = charDynSelection.length > 0 ? charDynSelection : defaultDynChars;
 
   // 0. Карточка «Качество информационной системы»: одна ИС по кварталам или все ИС разом.
   // Всплывающее окно показывается ТОЛЬКО когда в наведённой точке есть аномалия — в остальных
@@ -118,7 +148,8 @@ const QualityDynamicsPage: React.FC = () => {
         xAxis: { type: 'category', data: QUARTERS, boundaryGap: false, axisLabel: cbase.axisLabel, axisLine: cbase.axisLine },
         yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%', color: cbase.axisLabel.color }, splitLine: cbase.splitLine },
         color: LINE_COLORS,
-        series: MANAGER_SCALE_SYSTEMS.map((s) => ({
+        // ТЗ v20 п.6.1: системы с самыми сильными колебаниями — первыми (порядок отрисовки/легенды).
+        series: SYSTEMS_BY_VOLATILITY.map((s) => ({
           name: s.name, type: 'line', smooth: true, connectNulls: false,
           triggerLineEvent: true,
           emphasis: { focus: 'series', lineStyle: { width: 4 } },
@@ -164,7 +195,7 @@ const QualityDynamicsPage: React.FC = () => {
     xAxis: { type: 'category', data: QUARTERS, boundaryGap: false, axisLabel: cbase.axisLabel, axisLine: cbase.axisLine },
     yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%', color: cbase.axisLabel.color }, splitLine: cbase.splitLine },
     color: LINE_COLORS,
-    series: dyn.chars.map((c) => ({
+    series: dyn.chars.filter((c) => shownDynChars.includes(c.char)).map((c) => ({
       name: c.name, type: 'line', smooth: true, connectNulls: false,
       // Кликабельна вся ЛИНИЯ, а не только точки квартала.
       triggerLineEvent: true,
@@ -172,7 +203,7 @@ const QualityDynamicsPage: React.FC = () => {
       lineStyle: { width: 2 },
       data: seriesPoints(c.series),
     })),
-  }), [dyn, cbase]);
+  }), [dyn, cbase, shownDynChars]);
 
   const subs = charFilter ? dyn.subs.filter((s) => s.char === charFilter) : dyn.subs;
   const charName = charFilter ? dyn.chars.find((c) => c.char === charFilter)?.name : undefined;
@@ -273,10 +304,32 @@ const QualityDynamicsPage: React.FC = () => {
           <Space>
             <span style={accentDot(ACCENT.slate.color)} />
             <span style={{ color: BRAND.ink }}>Качество по характеристикам во времени</span>
+            {charDynSelection.length === 0 && (
+              <Text type="secondary" style={{ fontWeight: 400, fontSize: TYPE.caption.fontSize }}>
+                (по умолчанию — топ-2 по колебаниям с учётом веса ГОСТ 25010)
+              </Text>
+            )}
           </Space>
         }
         {...premiumCard('slate', { marginTop: 16 })}
-        extra={<Text type="secondary" style={TYPE.caption}>клик по линии или точке — причины изменения</Text>}
+        extra={
+          <Space size={8}>
+            <Select
+              mode="multiple"
+              allowClear
+              maxTagCount="responsive"
+              placeholder="Топ-2 по колебаниям (по умолчанию)"
+              style={{ minWidth: 220 }}
+              value={charDynSelection}
+              onChange={setCharDynSelection}
+              options={dyn.chars.map((c) => ({ value: c.char, label: c.name }))}
+            />
+            <Button size="small" onClick={() => setCharDynSelection(dyn.chars.map((c) => c.char))}>
+              Показать все
+            </Button>
+            <Text type="secondary" style={TYPE.caption}>клик по линии или точке — причины изменения</Text>
+          </Space>
+        }
       >
         <ReactECharts
           option={charChartOption}
@@ -284,9 +337,11 @@ const QualityDynamicsPage: React.FC = () => {
           style={{ height: 340, width: '100%' }}
           onEvents={{
             click: (p: any) => {
-              if (p.componentType === 'series' && dyn.chars[p.seriesIndex]) {
-                setModalSeries(dyn.chars[p.seriesIndex]);
-              }
+              if (p.componentType !== 'series') return;
+              // ТЗ v20 п.6.2: серии отфильтрованы (shownDynChars) — индекс серии больше не
+              // совпадает с индексом в dyn.chars, ищем по имени характеристики.
+              const target = dyn.chars.find((c) => c.name === p.seriesName);
+              if (target) setModalSeries(target);
             },
           }}
         />
