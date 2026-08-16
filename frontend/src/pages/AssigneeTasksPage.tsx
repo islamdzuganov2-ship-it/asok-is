@@ -24,6 +24,7 @@ import {
 } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, SPACE } from '../theme/premium';
+import { sorterFor } from '../theme/table';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -33,6 +34,17 @@ const parseRu = (d?: string): Date | null => {
   return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
 };
 const TODAY = new Date(2026, 5, 26).getTime();
+
+// Приоритет для сортировки по статусу — просроченное впереди, выполненное в хвосте (наглядно
+// для исполнителя: что горит сильнее всего). statusTag использует тот же порядок условий.
+const statusRank = (p: Proposal): number => {
+  if (p.execution === 'DONE') return 4;
+  if (p.execution === 'NOT_DONE') return 3;
+  const d = parseRu(p.dueDate);
+  if (d && d.getTime() < TODAY) return 0;
+  if (p.status === 'APPROVED') return 2;
+  return 1;
+};
 
 const statusTag = (p: Proposal) => {
   if (p.execution === 'DONE') return <Tag color="green">выполнено</Tag>;
@@ -80,15 +92,19 @@ const AssigneeTasksPage: React.FC = () => {
   };
 
   const columns: ColumnsType<Proposal> = [
-    { title: 'Поручение', dataIndex: 'riskTitle', render: (v: string, r) => (
+    { title: 'Поручение', dataIndex: 'riskTitle', sorter: sorterFor((r: Proposal) => r.riskTitle || r.metricName),
+      render: (v: string, r) => (
       <div>
         <Text strong style={{ color: BRAND.ink }}>{v || r.metricName}</Text>
         <div style={{ fontSize: 12, color: BRAND.inkSoft }}>{r.systemName} · {r.characteristic}</div>
       </div>
     ) },
     { title: 'Балл', dataIndex: 'calculatedScore', width: 76, align: 'center',
+      sorter: sorterFor((r: Proposal) => r.calculatedScore),
       render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> },
-    { title: 'Срок', dataIndex: 'dueDate', width: 116, render: (v: string, r) => (
+    { title: 'Срок', dataIndex: 'dueDate', width: 116,
+      sorter: sorterFor((r: Proposal) => parseRu(r.dueDate)?.getTime() ?? null),
+      render: (v: string, r) => (
       <Space direction="vertical" size={0}>
         <Text>{v || '—'}</Text>
         {r.dueChangeRequest?.status === 'PENDING' && <Tag color="gold" style={{ marginInlineEnd: 0 }}>перенос на рассмотрении</Tag>}
@@ -96,7 +112,8 @@ const AssigneeTasksPage: React.FC = () => {
         {r.dueChangeRequest?.status === 'DECLINED' && <Tag color="red" style={{ marginInlineEnd: 0 }}>перенос отклонён</Tag>}
       </Space>
     ) },
-    { title: 'Статус', key: 'status', width: 130, render: (_: unknown, r) => statusTag(r) },
+    { title: 'Статус', key: 'status', width: 130, sorter: sorterFor((r: Proposal) => statusRank(r)),
+      render: (_: unknown, r) => statusTag(r) },
     { title: 'Уточнения', key: 'clar', width: 96, align: 'center',
       render: (_: unknown, r) => (r.clarifications?.length ? <Tag icon={<CommentOutlined />}>{r.clarifications.length}</Tag> : <Text type="secondary">—</Text>) },
   ];

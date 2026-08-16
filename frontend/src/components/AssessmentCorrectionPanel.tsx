@@ -38,7 +38,7 @@ import {
   PERIOD_STATUS, isPeriodComplete, isPeriodLocked, recalcMetricRow, rowsMissingReason,
 } from '../constants/assessmentWorkflow';
 import { SPACE, TYPE } from '../theme/premium';
-import { numericColumn } from '../theme/table';
+import { numericColumn, sorterFor } from '../theme/table';
 
 const { Title, Text } = Typography;
 
@@ -50,6 +50,10 @@ const LEVEL_COLOR: Record<string, string> = {
   'Низкий уровень': 'red',
   'Невозможно измерить': 'default',
 };
+// Порядок значимости уровня для сортировки — от лучшего к худшему, не алфавитный.
+const LEVEL_RANK: Record<string, number> = Object.fromEntries(
+  Object.keys(LEVEL_COLOR).map((k, i) => [k, i]),
+);
 
 const AssessmentCorrectionPanel: React.FC = () => {
   const dataMode = useSelector((s: RootState) => s.ui.dataMode);
@@ -172,12 +176,14 @@ const AssessmentCorrectionPanel: React.FC = () => {
   };
 
   const periodColumns: ColumnsType<PeriodSummary> = [
-    { title: 'Информационная система', dataIndex: 'system_name', ellipsis: true },
-    { title: 'Период', dataIndex: 'period', width: 110 },
+    { title: 'Информационная система', dataIndex: 'system_name', ellipsis: true,
+      sorter: sorterFor((r: PeriodSummary) => r.system_name) },
+    { title: 'Период', dataIndex: 'period', width: 110, sorter: sorterFor((r: PeriodSummary) => r.period) },
     {
       // ui-audit-ignore UI-02 — колонка рендерит полосу Progress, а не число: полоса должна
       // занимать ширину колонки, выравнивание вправо её обрежет.
       title: 'Заполнено', key: 'filled', width: 180,
+      sorter: sorterFor((r: PeriodSummary) => r.filled / (r.total || TOTAL_SUBS)),
       render: (_, rec) => (
         <Progress
           percent={Math.round((rec.filled / (rec.total || TOTAL_SUBS)) * 100)}
@@ -189,6 +195,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
     },
     {
       title: 'Статус', key: 'status', width: 190,
+      sorter: sorterFor((r: PeriodSummary) => (isPeriodLocked(r.status) ? 1 : 0)),
       render: (_, rec) => (isPeriodLocked(rec.status)
         ? <Tag color="green" icon={<CheckCircleOutlined />}>Завершена (закрыта)</Tag>
         : <Tag color="gold" icon={<UnlockOutlined />}>Открыта на корректировку</Tag>),
@@ -209,11 +216,14 @@ const AssessmentCorrectionPanel: React.FC = () => {
   ];
 
   const metricColumns: ColumnsType<EditableMetric> = [
-    { title: 'Характеристика', dataIndex: 'characteristic', width: 200, ellipsis: true },
-    { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 220, ellipsis: true },
+    { title: 'Характеристика', dataIndex: 'characteristic', width: 200, ellipsis: true,
+      sorter: sorterFor((r: EditableMetric) => r.characteristic) },
+    { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 220, ellipsis: true,
+      sorter: sorterFor((r: EditableMetric) => r.subcharacteristic) },
     {
       title: <Tooltip title="A — фактически достигнутое значение (числитель)">A (факт)</Tooltip>,
       dataIndex: 'val_a', width: 110,
+      sorter: sorterFor((r: EditableMetric) => r.val_a),
       render: (_, rec) => (
         <InputNumber
           size="small" min={0} precision={2} style={{ width: '100%' }}
@@ -226,6 +236,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
     {
       title: <Tooltip title="B — база сравнения (знаменатель), B > 0">B (база)</Tooltip>,
       dataIndex: 'val_b', width: 110,
+      sorter: sorterFor((r: EditableMetric) => r.val_b),
       render: (_, rec) => (
         <InputNumber
           size="small" min={0} precision={2} style={{ width: '100%' }}
@@ -239,6 +250,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
     {
       title: <Tooltip title="Нет возможности собрать данные. Требует комментарий с причиной.">Невозм. изм.</Tooltip>,
       dataIndex: 'unmeasurable', width: 96, align: 'center',
+      sorter: sorterFor((r: EditableMetric) => (r.unmeasurable ? 1 : 0)),
       render: (_, rec) => (
         <Checkbox
           checked={!!rec.unmeasurable}
@@ -251,6 +263,7 @@ const AssessmentCorrectionPanel: React.FC = () => {
     },
     {
       title: 'Комментарий', dataIndex: 'expert_comment', width: 240,
+      sorter: sorterFor((r: EditableMetric) => r.expert_comment),
       render: (_, rec) => (
         <Input
           size="small"
@@ -264,17 +277,20 @@ const AssessmentCorrectionPanel: React.FC = () => {
     },
     numericColumn({
       title: 'X', dataIndex: 'calculatedX', width: 74,
+      sorter: sorterFor((r: EditableMetric) => r.calculatedX),
       render: (x: number | null | undefined) =>
         (x != null ? <Text strong>{x.toFixed(2)}</Text> : <Text type="secondary">—</Text>),
     }),
     {
       title: 'Уровень', dataIndex: 'qualityLevel', width: 170,
+      sorter: sorterFor((r: EditableMetric) => LEVEL_RANK[r.qualityLevel ?? ''] ?? -1),
       render: (level: string | null | undefined) => (level
         ? <Tag color={LEVEL_COLOR[level] ?? 'default'} style={{ fontSize: TYPE.micro.fontSize }}>{level}</Tag>
         : <Text type="secondary">—</Text>),
     },
     {
       title: 'Изм.', key: 'dirty', width: 48, align: 'center',
+      sorter: sorterFor((r: EditableMetric) => (edits[r.id] ? 1 : 0)),
       render: (_, rec) => (edits[rec.id] ? <Tag color="orange" style={{ fontSize: TYPE.micro.fontSize }}>●</Tag> : null),
     },
   ];

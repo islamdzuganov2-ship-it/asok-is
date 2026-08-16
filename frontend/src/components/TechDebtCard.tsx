@@ -12,7 +12,8 @@ import { FundOutlined } from '@ant-design/icons';
 import type { Proposal } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle, ACCENT } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
-import { numericColumn } from '../theme/table';
+import { numericColumn, sorterFor } from '../theme/table';
+import { parseRuDate } from '../utils/dates';
 
 const { Text } = Typography;
 const TODAY = new Date(2026, 5, 26).getTime();
@@ -77,11 +78,14 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
   const resolvedPct = totalActionable ? Math.round((lists.done.length / totalActionable) * 100) : 0;
 
   const detailColumns: ColumnsType<Proposal> = [
-    { title: 'Мера', dataIndex: 'riskTitle', render: (v: string, r) => v || r.metricName },
-    { title: 'ИС', dataIndex: 'systemName', width: 170 },
+    { title: 'Мера', dataIndex: 'riskTitle', sorter: sorterFor((r: Proposal) => r.riskTitle || r.metricName),
+      render: (v: string, r) => v || r.metricName },
+    { title: 'ИС', dataIndex: 'systemName', width: 170, sorter: sorterFor((r: Proposal) => r.systemName) },
     numericColumn<Proposal>({ title: '%', dataIndex: 'calculatedScore', width: 64,
+      sorter: sorterFor((r: Proposal) => r.calculatedScore),
       render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> }),
-    { title: 'Срок', dataIndex: 'dueDate', width: 104 },
+    { title: 'Срок', dataIndex: 'dueDate', width: 104,
+      sorter: sorterFor((r: Proposal) => parseRuDate(r.dueDate)?.getTime() ?? null) },
   ];
 
   const barText: React.CSSProperties = { fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft };

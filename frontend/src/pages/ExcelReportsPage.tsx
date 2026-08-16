@@ -19,7 +19,8 @@ import {
 import { RootState } from '../store';
 import { accentDot, pageTitle, GOLD, SPACE, premiumCard, TYPE } from '../theme/premium';
 import { BRAND, RAG } from '../theme/ragPalette';
-import { numericColumn } from '../theme/table';
+import { numericColumn, sorterFor } from '../theme/table';
+import { parseRuDate } from '../utils/dates';
 import {
     approveProposal, rejectProposal, selectVisibleProposals, type ProposalStatus,
 } from '../store/slices/governanceSlice';
@@ -59,6 +60,10 @@ const LEVEL_COLOR: Record<string, string> = {
     'Низкий уровень': 'red',
     'Невозможно измерить': 'default',
 };
+// Порядок значимости уровня для сортировки — от лучшего к худшему, не алфавитный.
+const LEVEL_RANK: Record<string, number> = Object.fromEntries(
+    Object.keys(LEVEL_COLOR).map((k, i) => [k, i]),
+);
 
 const reportCardStyle: React.CSSProperties = {
     border: '1px solid #d9e2f3',
@@ -131,15 +136,22 @@ export const ExcelReportsPage: React.FC = () => {
         const columns: ColumnsType<any> = [
             {
                 title: 'Характеристика', dataIndex: 'characteristic', width: 220, fixed: 'left' as const,
+                sorter: sorterFor((r: any) => r.characteristic),
                 render: (v: string) => (v === 'Интегральный показатель' ? <Text strong>{v}</Text> : v),
             },
             // Колонки-периоды генерируются динамически, но содержат проценты — те же правила.
             ...points.map((p) => numericColumn({
                 title: p.period, dataIndex: p.period, width: 100,
+                sorter: sorterFor((r: any) => r[p.period]),
                 render: (v: number | undefined) => (v == null ? '—' : `${v}%`),
             })),
             {
                 title: 'Тренд (перв.→посл.)', key: 'trend', width: 140, fixed: 'right' as const,
+                sorter: sorterFor((row: any) => {
+                    const first = row[points[0]?.period];
+                    const last = row[points[points.length - 1]?.period];
+                    return first == null || last == null ? null : last - first;
+                }),
                 render: (_: unknown, row: any) => {
                     const first = row[points[0].period];
                     const last = row[points[points.length - 1].period];
@@ -238,52 +250,56 @@ export const ExcelReportsPage: React.FC = () => {
     };
 
     const qualityColumns: ColumnsType<EditableMetric> = [
-        { title: 'Характеристика', dataIndex: 'characteristic', width: 220 },
-        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 230 },
-        numericColumn({ title: 'A', dataIndex: 'val_a', width: 70, render: (v: number | null) => (v ?? '—') }),
-        numericColumn({ title: 'B', dataIndex: 'val_b', width: 70, render: (v: number | null) => (v ?? '—') }),
+        { title: 'Характеристика', dataIndex: 'characteristic', width: 220, sorter: sorterFor((r: EditableMetric) => r.characteristic) },
+        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 230, sorter: sorterFor((r: EditableMetric) => r.subcharacteristic) },
+        numericColumn({ title: 'A', dataIndex: 'val_a', width: 70, sorter: sorterFor((r: EditableMetric) => r.val_a), render: (v: number | null) => (v ?? '—') }),
+        numericColumn({ title: 'B', dataIndex: 'val_b', width: 70, sorter: sorterFor((r: EditableMetric) => r.val_b), render: (v: number | null) => (v ?? '—') }),
         numericColumn({
             title: 'X', dataIndex: 'calculatedX', width: 80,
+            sorter: sorterFor((r: EditableMetric) => r.calculatedX),
             render: (x: number | null | undefined) =>
                 (x != null ? <Text strong>{x.toFixed(2)}</Text> : <Text type="secondary">—</Text>),
         }),
         {
             title: 'Уровень', dataIndex: 'qualityLevel', width: 170,
+            sorter: sorterFor((r: EditableMetric) => LEVEL_RANK[r.qualityLevel ?? ''] ?? -1),
             render: (level: string | null | undefined) =>
                 (level ? <Tag color={LEVEL_COLOR[level] ?? 'default'}>{level}</Tag> : <Text type="secondary">—</Text>),
         },
         {
             title: 'Комментарий', dataIndex: 'expert_comment', width: 280,
+            sorter: sorterFor((r: EditableMetric) => r.expert_comment),
             render: (_: unknown, row) => (activePeriodId ? <CommentCell row={row} periodId={activePeriodId} /> : null),
         },
     ];
 
     const risksColumns: ColumnsType<any> = [
-        { title: 'Характеристика', dataIndex: 'characteristic', width: 220 },
-        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 220 },
-        { title: 'Описание риска', dataIndex: 'risk_description' },
-        { title: 'Последствие риска', dataIndex: 'risk_consequence' },
-        { title: 'Меры минимизации', dataIndex: 'mitigation_measures' },
+        { title: 'Характеристика', dataIndex: 'characteristic', width: 220, sorter: sorterFor((r: any) => r.characteristic) },
+        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 220, sorter: sorterFor((r: any) => r.subcharacteristic) },
+        { title: 'Описание риска', dataIndex: 'risk_description', sorter: sorterFor((r: any) => r.risk_description) },
+        { title: 'Последствие риска', dataIndex: 'risk_consequence', sorter: sorterFor((r: any) => r.risk_consequence) },
+        { title: 'Меры минимизации', dataIndex: 'mitigation_measures', sorter: sorterFor((r: any) => r.mitigation_measures) },
     ];
 
     const defectsColumns: ColumnsType<any> = [
-        { title: 'N', dataIndex: 'id', width: 70 },
-        { title: 'Характеристика качества', dataIndex: 'characteristic', width: 240 },
-        { title: 'Цифровой показатель', dataIndex: 'digital_metric', width: 160 },
-        { title: 'Уровень качества', dataIndex: 'quality_metric_level', width: 180 },
-        { title: 'Описание недостатка ИС', dataIndex: 'defect_description' },
+        { title: 'N', dataIndex: 'id', width: 70, sorter: sorterFor((r: any) => r.id) },
+        { title: 'Характеристика качества', dataIndex: 'characteristic', width: 240, sorter: sorterFor((r: any) => r.characteristic) },
+        { title: 'Цифровой показатель', dataIndex: 'digital_metric', width: 160, sorter: sorterFor((r: any) => r.digital_metric) },
+        { title: 'Уровень качества', dataIndex: 'quality_metric_level', width: 180, sorter: sorterFor((r: any) => LEVEL_RANK[r.quality_metric_level ?? ''] ?? -1) },
+        { title: 'Описание недостатка ИС', dataIndex: 'defect_description', sorter: sorterFor((r: any) => r.defect_description) },
     ];
 
     const planColumns: ColumnsType<any> = [
-        { title: 'N', dataIndex: 'id', width: 70 },
-        { title: 'Характеристика', dataIndex: 'characteristic', width: 220 },
-        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 220 },
-        { title: 'Описание задачи', dataIndex: 'task_description' },
-        { title: 'ВНД банка', dataIndex: 'internal_document', width: 160 },
-        { title: 'Ответственный', dataIndex: 'assignee_fio', width: 180 },
-        { title: 'Срок', dataIndex: 'deadline', width: 130 },
+        { title: 'N', dataIndex: 'id', width: 70, sorter: sorterFor((r: any) => r.id) },
+        { title: 'Характеристика', dataIndex: 'characteristic', width: 220, sorter: sorterFor((r: any) => r.characteristic) },
+        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 220, sorter: sorterFor((r: any) => r.subcharacteristic) },
+        { title: 'Описание задачи', dataIndex: 'task_description', sorter: sorterFor((r: any) => r.task_description) },
+        { title: 'ВНД банка', dataIndex: 'internal_document', width: 160, sorter: sorterFor((r: any) => r.internal_document) },
+        { title: 'Ответственный', dataIndex: 'assignee_fio', width: 180, sorter: sorterFor((r: any) => r.assignee_fio) },
+        { title: 'Срок', dataIndex: 'deadline', width: 130, sorter: sorterFor((r: any) => r.deadline) },
         {
             title: 'Статус меры', key: 'measureStatus', width: 150,
+            sorter: sorterFor((r: any) => measureStatusByChar.get(normChar(r.characteristic || '')) ?? ''),
             render: (_: unknown, row: any) => {
                 const st = measureStatusByChar.get(normChar(row.characteristic || ''));
                 return st
@@ -294,16 +310,17 @@ export const ExcelReportsPage: React.FC = () => {
     ];
 
     const proposalsColumns: ColumnsType<any> = [
-        { title: 'ИС', dataIndex: 'systemName', width: 180 },
-        { title: 'Подхарактеристика', dataIndex: 'characteristic', width: 180 },
-        { title: 'Метрика', dataIndex: 'metricName', width: 180 },
-        numericColumn({ title: 'Расч. %', dataIndex: 'calculatedScore', width: 90, render: (v: number) => `${v}%` }),
-        { title: 'Обоснование (суждение)', dataIndex: 'rationale' },
-        { title: 'Что ожидается от ЛПР', dataIndex: 'expectation' },
-        { title: 'Ответственный', dataIndex: 'owner', width: 150 },
-        { title: 'Срок', dataIndex: 'dueDate', width: 110 },
+        { title: 'ИС', dataIndex: 'systemName', width: 180, sorter: sorterFor((r: any) => r.systemName) },
+        { title: 'Подхарактеристика', dataIndex: 'characteristic', width: 180, sorter: sorterFor((r: any) => r.characteristic) },
+        { title: 'Метрика', dataIndex: 'metricName', width: 180, sorter: sorterFor((r: any) => r.metricName) },
+        numericColumn({ title: 'Расч. %', dataIndex: 'calculatedScore', width: 90, sorter: sorterFor((r: any) => r.calculatedScore), render: (v: number) => `${v}%` }),
+        { title: 'Обоснование (суждение)', dataIndex: 'rationale', sorter: sorterFor((r: any) => r.rationale) },
+        { title: 'Что ожидается от ЛПР', dataIndex: 'expectation', sorter: sorterFor((r: any) => r.expectation) },
+        { title: 'Ответственный', dataIndex: 'owner', width: 150, sorter: sorterFor((r: any) => r.owner) },
+        { title: 'Срок', dataIndex: 'dueDate', width: 110, sorter: sorterFor((r: any) => parseRuDate(r.dueDate)?.getTime() ?? null) },
         {
             title: 'Статус', dataIndex: 'status', width: 160,
+            sorter: sorterFor((r: any) => PROPOSAL_STATUS_TAG[r.status as ProposalStatus]?.label ?? ''),
             render: (s: ProposalStatus) => <Tag color={PROPOSAL_STATUS_TAG[s].color}>{PROPOSAL_STATUS_TAG[s].label}</Tag>,
         },
         {

@@ -12,6 +12,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined, InboxOutlined } from '@ant-design/icons';
 import { Card } from 'antd';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE } from '../theme/premium';
+import { sorterFor } from '../theme/table';
 
 const { Title, Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -35,6 +36,8 @@ interface Risk {
 const SEVERITY_COLOR: Record<string, string> = {
   low: 'green', medium: 'gold', high: 'orange', critical: 'red',
 };
+// Порядок значимости для сортировки «Критичности» — не алфавитный (critical < high < low < medium).
+const SEVERITY_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
 const RiskBasePage: React.FC = () => {
   const [risks, setRisks] = useState<Risk[]>([]);
@@ -103,17 +106,24 @@ const RiskBasePage: React.FC = () => {
   };
 
   const columns: ColumnsType<Risk> = [
-    { title: 'Код', dataIndex: 'code', width: 130 },
-    { title: 'Название', dataIndex: 'title', width: 220, render: (t: string) => <Text strong>{t}</Text> },
-    { title: 'Категория', dataIndex: 'category', width: 150 },
-    { title: 'Характеристика', dataIndex: 'characteristic', width: 160 },
+    { title: 'Код', dataIndex: 'code', width: 130, sorter: sorterFor((r) => r.code) },
+    {
+      title: 'Название', dataIndex: 'title', width: 220, sorter: sorterFor((r) => r.title),
+      render: (t: string) => <Text strong>{t}</Text>,
+    },
+    { title: 'Категория', dataIndex: 'category', width: 150, sorter: sorterFor((r) => r.category) },
+    {
+      title: 'Характеристика', dataIndex: 'characteristic', width: 160,
+      sorter: sorterFor((r) => r.characteristic),
+    },
     {
       title: 'Критичность', dataIndex: 'severity', width: 120,
+      sorter: sorterFor((r) => SEVERITY_RANK[r.severity] ?? -1),
       render: (s: string) => <Tag color={SEVERITY_COLOR[s] ?? 'default'}>{s}</Tag>,
     },
-    { title: 'Меры минимизации', dataIndex: 'mitigation', ellipsis: true },
+    { title: 'Меры минимизации', dataIndex: 'mitigation', ellipsis: true, sorter: sorterFor((r) => r.mitigation) },
     {
-      title: 'Источник', dataIndex: 'source', width: 110,
+      title: 'Источник', dataIndex: 'source', width: 110, sorter: sorterFor((r) => r.source),
       render: (s: string) => <Tag>{s}</Tag>,
     },
     {

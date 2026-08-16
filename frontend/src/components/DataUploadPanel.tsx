@@ -21,6 +21,7 @@ import { RootState } from '../store';
 import { useImportIncidentsMutation } from '../store/api/apiSlice';
 import { matchColumn, type UploadSpec } from '../constants/uploadSpecs';
 import { SPACE, TYPE } from '../theme/premium';
+import { sorterFor } from '../theme/table';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -154,10 +155,11 @@ const DataUploadPanel: React.FC<{ spec: UploadSpec }> = ({ spec }) => {
               columns={[
                 {
                   title: 'Поле', dataIndex: 'label', width: 200,
+                  sorter: sorterFor((r: any) => r.label),
                   render: (v: string, r) => <Space size={6}><Text strong>{v}</Text>{r.required && <Tag color="red">обязательное</Tag>}</Space>,
                 },
-                { title: 'Синонимы заголовка', dataIndex: 'synonyms', render: (s: string[]) => s.join(', ') },
-                { title: 'Формат', dataIndex: 'format' },
+                { title: 'Синонимы заголовка', dataIndex: 'synonyms', sorter: sorterFor((r: any) => (r.synonyms || []).join(', ')), render: (s: string[]) => s.join(', ') },
+                { title: 'Формат', dataIndex: 'format', sorter: sorterFor((r: any) => r.format) },
               ]}
             />
             <ul style={{ marginBottom: 0, paddingLeft: SPACE.airy }}>

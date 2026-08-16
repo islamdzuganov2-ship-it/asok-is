@@ -16,6 +16,7 @@ import {
 } from '../store/api/apiSlice';
 import { RAG, BRAND, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
+import { sorterFor } from '../theme/table';
 import type { WidgetDef } from './DashboardShell';
 
 const { Text } = Typography;
@@ -97,10 +98,11 @@ const RiskTriggersWidget: React.FC = () => {
 const IncidentsByCategoryWidget: React.FC = () => {
   const { data: a, isLoading } = useGetIncidentAnalyticsQuery();
   const cols: ColumnsType<IncidentCategoryStat> = [
-    { title: 'Первопричина', dataIndex: 'category', key: 'category' },
-    { title: 'Сбоев', dataIndex: 'count', key: 'count', width: 90, align: 'right' },
-    { title: 'Открытых', dataIndex: 'openCount', key: 'openCount', width: 100, align: 'right' },
+    { title: 'Первопричина', dataIndex: 'category', key: 'category', sorter: sorterFor((r: IncidentCategoryStat) => r.category) },
+    { title: 'Сбоев', dataIndex: 'count', key: 'count', width: 90, align: 'right', sorter: sorterFor((r: IncidentCategoryStat) => r.count) },
+    { title: 'Открытых', dataIndex: 'openCount', key: 'openCount', width: 100, align: 'right', sorter: sorterFor((r: IncidentCategoryStat) => r.openCount) },
     { title: 'MTTR, ч', dataIndex: 'avgMttrHours', key: 'mttr', width: 100, align: 'right',
+      sorter: sorterFor((r: IncidentCategoryStat) => r.avgMttrHours),
       render: (v: number | null) => (v != null ? v.toFixed(1) : '—') },
   ];
   return (

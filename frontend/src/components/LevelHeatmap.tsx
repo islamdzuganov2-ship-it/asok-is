@@ -6,8 +6,9 @@
  * а строки систем крутятся. Цвет ячейки берётся из ЕДИНОЙ палитры уровней (как в
  * «бублике»), поэтому «Низкий уровень» = красный и там, и там (согласованность).
  */
-import React from 'react';
-import { LEVEL_COLORS, LEVEL_TAG_COLORS, BRAND } from '../theme/ragPalette';
+import React, { useMemo, useState } from 'react';
+import { CaretUpOutlined, CaretDownOutlined } from '@ant-design/icons';
+import { LEVEL_COLORS, LEVEL_TAG_COLORS, BRAND, ACCENT } from '../theme/ragPalette';
 import { TYPE } from '../theme/premium';
 
 export const BUCKET_LEVEL = [
@@ -67,15 +68,73 @@ const thBase: React.CSSProperties = {
   width: 86, minWidth: 86, whiteSpace: 'nowrap', verticalAlign: 'middle',
 };
 
+// ТЗ v19 п.12: сортировка строк (систем) теплокарты — по имени или по любому столбцу
+// (характеристике). У LevelHeatmap ровно один потребитель (DashboardPage.tsx) — ExecutiveDashboard
+// строит свою тепловую карту отдельной вёрсткой (RagDot-маркеры вместо процентных ячеек), поэтому
+// сортировка там реализована параллельно, тем же SortButton (экспортирован специально под это).
+export type HeatmapSortState = { col: number | 'name'; dir: 'asc' | 'desc' } | null;
+type SortState = HeatmapSortState;
+
+/** Иконка-сортировка — САМА кнопка (не текст заголовка): у характеристик заголовок уже занят
+ * переходом к подхарактеристикам (onCharClick), сортировка не должна с ним конкурировать за клик. */
+export const SortButton: React.FC<{ active: boolean; dir: 'asc' | 'desc' | undefined; onSort: () => void; label: string }> =
+  ({ active, dir, onSort, label }) => (
+    <span
+      role="button"
+      aria-label={label}
+      title={label}
+      onClick={(e) => { e.stopPropagation(); onSort(); }}
+      style={{
+        marginLeft: 4, padding: '0 2px', cursor: 'pointer', display: 'inline-block',
+        color: active ? ACCENT.slate.color : BRAND.dividerSoft, fontSize: 10,
+      }}
+    >
+      {active && dir === 'asc' ? <CaretUpOutlined /> : <CaretDownOutlined />}
+    </span>
+  );
+
 const LevelHeatmap: React.FC<Props> = ({
   xLabels, yLabels, matrix, charScores, onCharClick, cellScores, onCellClick, maxHeight = 460, cornerContent,
-}) => (
+}) => {
+  const [sort, setSort] = useState<SortState>(null);
+
+  const rowOrder = useMemo(() => {
+    const idx = yLabels.map((_, i) => i);
+    if (!sort) return idx;
+    const sign = sort.dir === 'asc' ? 1 : -1;
+    if (sort.col === 'name') {
+      return idx.sort((a, b) => sign * yLabels[a].localeCompare(yLabels[b], 'ru'));
+    }
+    const valueOf = (i: number): number | null => {
+      const v = cellScores?.[i]?.[sort.col as number];
+      return v != null && v >= 0 ? v : (matrix[i]?.[sort.col as number] ?? null);
+    };
+    return idx.sort((a, b) => {
+      const va = valueOf(a), vb = valueOf(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;   // «нет данных» — всегда в конец, по возрастанию и убыванию
+      if (vb == null) return -1;
+      return sign * (va - vb);
+    });
+  }, [sort, yLabels, matrix, cellScores]);
+
+  const toggleNameSort = () => setSort((s) =>
+    (s?.col === 'name' ? { col: 'name', dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col: 'name', dir: 'asc' }));
+  const toggleColSort = (i: number) => setSort((s) =>
+    (s?.col === i ? { col: i, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col: i, dir: 'desc' }));
+
+  return (
   <div style={{ maxHeight, overflow: 'auto', border: `1px solid ${BRAND.divider}`, borderRadius: 8 }}>
     <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
       <thead>
         <tr>
           <th style={{ ...thBase, left: 0, zIndex: 3, textAlign: 'left', minWidth: 200, paddingLeft: 12 }}>
-            {cornerContent ?? 'Система \\ характеристика'}
+            {cornerContent ?? (
+              <span>
+                Система \ характеристика
+                <SortButton active={sort?.col === 'name'} dir={sort?.dir} onSort={toggleNameSort} label="Сортировать по названию системы" />
+              </span>
+            )}
           </th>
           {xLabels.map((c, i) => {
             const sc = charScores?.[i];
@@ -86,7 +145,10 @@ const LevelHeatmap: React.FC<Props> = ({
                 title={onCharClick ? `${c} — нажмите для подхарактеристик` : c}
                 onClick={onCharClick ? () => onCharClick(c, i) : undefined}
               >
-                <div>{short(c)}</div>
+                <div>
+                  {short(c)}
+                  <SortButton active={sort?.col === i} dir={sort?.dir} onSort={() => toggleColSort(i)} label={`Сортировать по «${c}»`} />
+                </div>
                 {sc !== undefined && (
                   <div style={{ fontSize: TYPE.micro.fontSize, fontWeight: 500, color: scoreTextColor(sc) }}>
                     {sc < 0 ? 'н/д' : `${sc}%`}
@@ -98,7 +160,9 @@ const LevelHeatmap: React.FC<Props> = ({
         </tr>
       </thead>
       <tbody>
-        {yLabels.map((sys, y) => (
+        {rowOrder.map((y) => {
+          const sys = yLabels[y];
+          return (
           <tr key={sys}>
             <td style={{
               position: 'sticky', left: 0, zIndex: 1, background: BRAND.surface,
@@ -131,10 +195,12 @@ const LevelHeatmap: React.FC<Props> = ({
               );
             })}
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   </div>
-);
+  );
+};
 
 export default LevelHeatmap;

@@ -16,7 +16,9 @@ import { EXECUTIVE_SCALE, HEATMAP_CHARS_FULL } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND, critTagStyle, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, TYPE, SPACE } from '../../theme/premium';
 import { useChartTokens } from '../../theme/useThemeTokens';
-import { numericColumn } from '../../theme/table';
+import { numericColumn, sorterFor } from '../../theme/table';
+import { parseRuDate } from '../../utils/dates';
+import { SortButton, type HeatmapSortState } from '../../components/LevelHeatmap';
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
@@ -124,6 +126,7 @@ const ExecutiveDashboard: React.FC = () => {
   const [allOpen, setAllOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [showAllHeatmap, setShowAllHeatmap] = useState(false);
+  const [heatSort, setHeatSort] = useState<HeatmapSortState>(null);
   // Реестр мер качества по умолчанию скрыт — раскрывается по кнопке.
   const [showRegistry, setShowRegistry] = useState(false);
   // Фокус на характеристике для карточки ИС (клик по ячейке теплокарты).
@@ -180,7 +183,26 @@ const ExecutiveDashboard: React.FC = () => {
     const cb = sb ? CRIT_RANK[sb.criticality] : 9;
     return (ca - cb) || ((sa?.score ?? 100) - (sb?.score ?? 100));
   });
-  const shownHeatRows = showAllHeatmap ? orderedHeatRows : orderedHeatRows.slice(0, 5);
+  // ТЗ v19 п.12: явная сортировка поверх дефолтного порядка (по критичности) — по клику на
+  // стрелку в заголовке. Без активной сортировки — прежнее поведение (orderedHeatRows как есть).
+  const sortedHeatRows = useMemo(() => {
+    if (!heatSort) return orderedHeatRows;
+    const sign = heatSort.dir === 'asc' ? 1 : -1;
+    const rows = [...orderedHeatRows];
+    if (heatSort.col === 'name') {
+      return rows.sort((a, b) => sign * a.system.localeCompare(b.system, 'ru'));
+    }
+    return rows.sort((a, b) => {
+      const va = a.cells[heatSort.col as number]?.score;
+      const vb = b.cells[heatSort.col as number]?.score;
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return sign * (va - vb);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderedHeatRows.map((r) => r.system).join('|'), heatSort]);
+  const shownHeatRows = showAllHeatmap ? sortedHeatRows : sortedHeatRows.slice(0, 5);
 
   const globalIndex = data.globalIndex;
   const idxTok = ragToken(globalIndex);
@@ -356,9 +378,23 @@ const ExecutiveDashboard: React.FC = () => {
             <table style={{ borderCollapse: 'separate', borderSpacing: '0 8px', width: '100%' }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize }}>Система</th>
-                  {data.heatmap.characteristics.map((c) => (
-                    <th key={c} title={c} style={{ fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize, padding: '0 4px' }}>{abbr(c)}</th>
+                  <th style={{ textAlign: 'left', fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize }}>
+                    Система
+                    <SortButton
+                      active={heatSort?.col === 'name'} dir={heatSort?.dir}
+                      label="Сортировать по названию системы"
+                      onSort={() => setHeatSort((s) => (s?.col === 'name' ? { col: 'name', dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col: 'name', dir: 'asc' }))}
+                    />
+                  </th>
+                  {data.heatmap.characteristics.map((c, i) => (
+                    <th key={c} title={c} style={{ fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize, padding: '0 4px' }}>
+                      {abbr(c)}
+                      <SortButton
+                        active={heatSort?.col === i} dir={heatSort?.dir}
+                        label={`Сортировать по «${c}»`}
+                        onSort={() => setHeatSort((s) => (s?.col === i ? { col: i, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col: i, dir: 'desc' }))}
+                      />
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -482,12 +518,14 @@ const ExecutiveDashboard: React.FC = () => {
             pagination={{ pageSize: 8, hideOnSinglePage: true }}
             onRow={(rec) => ({ onClick: () => { setDecisionProposal(rec); setPendingOpen(false); }, style: { cursor: 'pointer' } })}
             columns={[
-              { title: 'Мера', dataIndex: 'riskTitle', render: (v: string, r) => v || r.metricName },
-              { title: 'ИС', dataIndex: 'systemName', width: 180 },
+              { title: 'Мера', dataIndex: 'riskTitle', sorter: sorterFor((r: Proposal) => r.riskTitle || r.metricName),
+                render: (v: string, r) => v || r.metricName },
+              { title: 'ИС', dataIndex: 'systemName', width: 180, sorter: sorterFor((r: Proposal) => r.systemName) },
               numericColumn<Proposal>({ title: '%', dataIndex: 'calculatedScore', width: 70,
                 render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag>,
                 sorter: (a, b) => a.calculatedScore - b.calculatedScore }),
-              { title: 'Срок', dataIndex: 'dueDate', width: 110 },
+              { title: 'Срок', dataIndex: 'dueDate', width: 110,
+                sorter: sorterFor((r: Proposal) => parseRuDate(r.dueDate)?.getTime() ?? null) },
             ] as ColumnsType<Proposal>}
           />
         )}
@@ -510,7 +548,7 @@ const ExecutiveDashboard: React.FC = () => {
           pagination={{ pageSize: 10, hideOnSinglePage: true }}
           onRow={(rec) => ({ onClick: () => { setActive(rec); setAllOpen(false); }, style: { cursor: 'pointer' } })}
           columns={[
-            { title: 'ИС', dataIndex: 'name' },
+            { title: 'ИС', dataIndex: 'name', sorter: sorterFor((r: ExecSystemInsight) => r.name) },
             {
               title: 'Критичность', dataIndex: 'criticality', width: 180,
               sorter: (a, b) => CRIT_RANK[a.criticality] - CRIT_RANK[b.criticality],
@@ -521,7 +559,8 @@ const ExecutiveDashboard: React.FC = () => {
               sorter: (a, b) => a.score - b.score,
               render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag>,
             }),
-            { title: 'Просевшая характеристика', dataIndex: 'weakCharacteristic', width: 220 },
+            { title: 'Просевшая характеристика', dataIndex: 'weakCharacteristic', width: 220,
+              sorter: sorterFor((r: ExecSystemInsight) => r.weakCharacteristic) },
           ] as ColumnsType<ExecSystemInsight>}
         />
       </Modal>

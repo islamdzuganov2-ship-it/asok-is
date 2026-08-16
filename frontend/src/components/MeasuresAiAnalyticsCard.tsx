@@ -10,7 +10,7 @@ import { Card, Button, Table, Tag, Typography, Alert, Spin, Space, Collapse } fr
 import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { ragToken, solidTagStyle, ACCENT } from '../theme/ragPalette';
 import { premiumCard, accentDot, SPACE, TYPE } from '../theme/premium';
-import { numericColumn } from '../theme/table';
+import { numericColumn, sorterFor } from '../theme/table';
 import type { Proposal } from '../store/slices/governanceSlice';
 import ConclusionFeedback from './ConclusionFeedback';
 
@@ -108,10 +108,15 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
             size="small"
             pagination={false}
             columns={[
-              { title: 'Характеристика (систематика)', dataIndex: 'characteristic' },
-              numericColumn({ title: 'Мер', dataIndex: 'count', width: 80, render: (v: number) => <Tag color="volcano">{v}</Tag> }),
-              numericColumn({ title: 'ИС охвачено', dataIndex: 'systems', width: 110 }),
+              { title: 'Характеристика (систематика)', dataIndex: 'characteristic',
+                sorter: sorterFor((r: AggItem) => r.characteristic) },
+              numericColumn({ title: 'Мер', dataIndex: 'count', width: 80,
+                sorter: sorterFor((r: AggItem) => r.count),
+                render: (v: number) => <Tag color="volcano">{v}</Tag> }),
+              numericColumn({ title: 'ИС охвачено', dataIndex: 'systems', width: 110,
+                sorter: sorterFor((r: AggItem) => r.systems) }),
               numericColumn({ title: 'Ср. балл', dataIndex: 'avg_score', width: 100,
+                sorter: sorterFor((r: AggItem) => r.avg_score),
                 render: (v: number | null) => v == null ? '—' : <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> }),
             ]}
           />

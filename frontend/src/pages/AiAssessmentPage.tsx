@@ -21,7 +21,7 @@ import {
 } from '@ant-design/icons';
 import { ragToken, solidTagStyle, BRAND } from '../theme/ragPalette';
 import { SPACE, premiumCard, accentDot, GOLD, TYPE } from '../theme/premium';
-import { numericColumn, numericText } from '../theme/table';
+import { numericColumn, numericText, sorterFor } from '../theme/table';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -247,6 +247,7 @@ const AiAssessmentPage: React.FC = () => {
   const valueColumns: ColumnsType<AiValue> = [
     {
       title: 'Субхарактеристика', dataIndex: 'subcharacteristic', ellipsis: true,
+      sorter: sorterFor((r: AiValue) => r.subcharacteristic),
       render: (v: string, rec) => (
         <Space size={4}>
           <Text style={{ fontSize: TYPE.caption.fontSize }}>{v}</Text>
@@ -254,23 +255,27 @@ const AiAssessmentPage: React.FC = () => {
         </Space>
       ),
     },
-    { title: 'Метрика', dataIndex: 'metric_kind', width: 110, render: (v: string) => <Tag style={{ fontSize: TYPE.micro.fontSize }}>{v}</Tag> },
+    { title: 'Метрика', dataIndex: 'metric_kind', width: 110, sorter: sorterFor((r: AiValue) => r.metric_kind), render: (v: string) => <Tag style={{ fontSize: TYPE.micro.fontSize }}>{v}</Tag> },
     numericColumn({
       title: 'Значение', dataIndex: 'raw_value', width: 90,
+      sorter: sorterFor((r: any) => r.raw_value),
       render: (v: number | null, rec: any) => rec.unmeasurable ? <Tag>Н/И</Tag> : v == null ? '—' : <Text strong>{v.toFixed(3)}</Text>,
     }),
     numericColumn({
       title: 'Эталон ±ε', key: 'baseline', width: 130,
+      sorter: sorterFor((r: any) => r.baseline),
       render: (_: unknown, rec: any) => rec.baseline == null ? <Text type="secondary">—</Text>
         : <Text style={TYPE.caption}>{rec.baseline} (−{rec.tol_low ?? 0}/+{rec.tol_high ?? 0})</Text>,
     }),
     numericColumn({
       title: 'X', dataIndex: 'normalized_x', width: 80,
+      sorter: sorterFor((r: any) => r.normalized_x),
       render: (v: number | null) => v == null ? '—'
         : <Tag style={solidTagStyle(ragToken(v * 100).strong)}>{v.toFixed(3)}</Tag>,
     }),
     {
       title: 'Вердикт', key: 'verdict', width: 140,
+      sorter: sorterFor((r: any) => (r.unmeasurable ? 0 : r.raw_value == null ? 1 : r.conformant == null ? 2 : r.conformant ? 4 : 3)),
       render: (_: unknown, rec) => {
         const verdict = rec.unmeasurable ? 'Невозможно измерить'
           : rec.raw_value == null ? 'Не рассчитано'
@@ -281,6 +286,7 @@ const AiAssessmentPage: React.FC = () => {
     },
     {
       title: 'Комментарий', dataIndex: 'expert_comment', ellipsis: true,
+      sorter: sorterFor((r: AiValue) => r.expert_comment),
       render: (v: string | null) => v ? <Text style={{ fontSize: TYPE.caption.fontSize }}>{v}</Text> : <Text type="secondary">—</Text>,
     },
   ];
@@ -528,13 +534,13 @@ const AiAssessmentPage: React.FC = () => {
               dataSource={report.rows} rowKey={(r) => `${r.characteristic}|${r.subcharacteristic}`}
               size="small" bordered pagination={false} scroll={{ y: 400 }}
               columns={[
-                { title: 'Характеристика', dataIndex: 'characteristic', width: 180, ellipsis: true },
-                { title: 'Субхарактеристика', dataIndex: 'subcharacteristic', ellipsis: true },
-                { title: 'Значение', dataIndex: 'raw_value', width: 90, render: (v: number | null) => v == null ? '—' : v.toFixed(3) },
-                numericColumn({ title: 'Эталон', dataIndex: 'baseline', width: 80, render: (v: number | null) => v == null ? '—' : v }),
-                numericColumn({ title: 'ε⁻/ε⁺', key: 'tol', width: 90, render: (_: unknown, r: any) => r.baseline == null ? '—' : `${r.tol_low ?? 0}/${r.tol_high ?? 0}` }),
-                numericColumn({ title: 'X', dataIndex: 'normalized_x', width: 70, render: (v: number | null) => v == null ? '—' : v.toFixed(3) }),
-                { title: 'Вердикт', dataIndex: 'verdict', width: 150, render: (v: string) => <Tag color={VERDICT_TAG[v]}>{v}</Tag> },
+                { title: 'Характеристика', dataIndex: 'characteristic', width: 180, ellipsis: true, sorter: sorterFor((r: ConfRow) => r.characteristic) },
+                { title: 'Субхарактеристика', dataIndex: 'subcharacteristic', ellipsis: true, sorter: sorterFor((r: ConfRow) => r.subcharacteristic) },
+                { title: 'Значение', dataIndex: 'raw_value', width: 90, sorter: sorterFor((r: any) => r.raw_value), render: (v: number | null) => v == null ? '—' : v.toFixed(3) },
+                numericColumn({ title: 'Эталон', dataIndex: 'baseline', width: 80, sorter: sorterFor((r: any) => r.baseline), render: (v: number | null) => v == null ? '—' : v }),
+                numericColumn({ title: 'ε⁻/ε⁺', key: 'tol', width: 90, sorter: sorterFor((r: any) => r.tol_low), render: (_: unknown, r: any) => r.baseline == null ? '—' : `${r.tol_low ?? 0}/${r.tol_high ?? 0}` }),
+                numericColumn({ title: 'X', dataIndex: 'normalized_x', width: 70, sorter: sorterFor((r: any) => r.normalized_x), render: (v: number | null) => v == null ? '—' : v.toFixed(3) }),
+                { title: 'Вердикт', dataIndex: 'verdict', width: 150, sorter: sorterFor((r: ConfRow) => r.verdict), render: (v: string) => <Tag color={VERDICT_TAG[v]}>{v}</Tag> },
               ]}
             />
           </Space>

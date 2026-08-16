@@ -13,7 +13,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined, ReloadOutlined, InboxOutlined } from '@ant-design/icons';
 import KpiCard from '../components/KpiCard';
 import { premiumCard, accentDot, accentColorOf, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
-import { numericColumn, numericText } from '../theme/table';
+import { numericColumn, numericText, sorterFor } from '../theme/table';
 import { BRAND, RAG } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
@@ -80,6 +80,10 @@ const NC_LEVEL: Record<string, { label: string; color: string }> = {
   MAJOR: { label: 'Существенное', color: 'orange' },
   CRITICAL: { label: 'Критическое', color: 'red' },
 };
+// Порядок значимости для сортировки «Уровня» — не алфавитный (MINOR < MAJOR < CRITICAL).
+const NC_LEVEL_RANK: Record<string, number> = Object.fromEntries(
+  Object.keys(NC_LEVEL).map((k, i) => [k, i]),
+);
 
 function authHeaders(): Record<string, string> {
   const t = localStorage.getItem('token');
@@ -148,16 +152,16 @@ const DashboardTab: React.FC = () => {
   }, []);
 
   const topCols: ColumnsType<TopRisk> = [
-    { title: 'Код', dataIndex: 'code', width: 130 },
+    { title: 'Код', dataIndex: 'code', width: 130, sorter: sorterFor((r: TopRisk) => r.code) },
     {
-      title: 'Риск', dataIndex: 'title',
+      title: 'Риск', dataIndex: 'title', sorter: sorterFor((r: TopRisk) => r.title),
       render: (t: string, r: TopRisk) => (
         <Space size={4}>{r.regulatory && <Tag color="volcano">рег.</Tag>}<Text strong>{t}</Text></Space>
       ),
     },
-    { title: 'ИС', dataIndex: 'system', width: 140, render: (s?: string) => s || '—' },
-    { title: 'Владелец', dataIndex: 'owner', width: 160, render: (o?: string) => o || '—' },
-    numericColumn({ title: 'ALE, ₽/год', dataIndex: 'aleAvg', width: 150, render: (v: number) => fmtMoney(v) }),
+    { title: 'ИС', dataIndex: 'system', width: 140, sorter: sorterFor((r: TopRisk) => r.system), render: (s?: string) => s || '—' },
+    { title: 'Владелец', dataIndex: 'owner', width: 160, sorter: sorterFor((r: TopRisk) => r.owner), render: (o?: string) => o || '—' },
+    numericColumn({ title: 'ALE, ₽/год', dataIndex: 'aleAvg', width: 150, sorter: sorterFor((r: TopRisk) => r.aleAvg), render: (v: number) => fmtMoney(v) }),
   ];
 
   // Пивот тепловой карты: ИС (строки) × подхарактеристика (столбцы).
@@ -294,15 +298,15 @@ const RiskEventsTab: React.FC = () => {
   };
 
   const columns: ColumnsType<RiskEvent> = [
-    { title: 'Код', dataIndex: 'code', width: 130 },
-    { title: 'Название', dataIndex: 'title', width: 220, render: (t: string) => <Text strong>{t}</Text> },
-    { title: 'Владелец', dataIndex: 'owner', width: 150, render: (o?: string) => o || '—' },
-    numericColumn({ title: 'ARO', dataIndex: 'aro', width: 90, render: (v: number) => fmtNum(v) }),
-    numericColumn({ title: 'ALE средний', dataIndex: 'aleAvg', width: 140, render: (v: number) => fmtMoney(v) }),
-    numericColumn({ title: 'ALE P90', dataIndex: 'aleP90', width: 140, render: (v: number) => fmtMoney(v) }),
-    numericColumn({ title: 'MaxSLE', dataIndex: 'maxSle', width: 140, render: (v: number) => fmtMoney(v) }),
+    { title: 'Код', dataIndex: 'code', width: 130, sorter: sorterFor((r: RiskEvent) => r.code) },
+    { title: 'Название', dataIndex: 'title', width: 220, sorter: sorterFor((r: RiskEvent) => r.title), render: (t: string) => <Text strong>{t}</Text> },
+    { title: 'Владелец', dataIndex: 'owner', width: 150, sorter: sorterFor((r: RiskEvent) => r.owner), render: (o?: string) => o || '—' },
+    numericColumn({ title: 'ARO', dataIndex: 'aro', width: 90, sorter: sorterFor((r: RiskEvent) => r.aro), render: (v: number) => fmtNum(v) }),
+    numericColumn({ title: 'ALE средний', dataIndex: 'aleAvg', width: 140, sorter: sorterFor((r: RiskEvent) => r.aleAvg), render: (v: number) => fmtMoney(v) }),
+    numericColumn({ title: 'ALE P90', dataIndex: 'aleP90', width: 140, sorter: sorterFor((r: RiskEvent) => r.aleP90), render: (v: number) => fmtMoney(v) }),
+    numericColumn({ title: 'MaxSLE', dataIndex: 'maxSle', width: 140, sorter: sorterFor((r: RiskEvent) => r.maxSle), render: (v: number) => fmtMoney(v) }),
     {
-      title: 'Статус', dataIndex: 'status', width: 120,
+      title: 'Статус', dataIndex: 'status', width: 120, sorter: sorterFor((r: RiskEvent) => r.status),
       render: (s: string) => {
         const m = RISK_STATUS[s] ?? { label: s, color: 'default' };
         return <Tag color={m.color}>{m.label}</Tag>;
@@ -453,30 +457,33 @@ const ReferencesTab: React.FC = () => {
   };
 
   const rateCols: ColumnsType<SupportRate> = [
-    { title: 'Линия', dataIndex: 'line', width: 80 },
+    { title: 'Линия', dataIndex: 'line', width: 80, sorter: sorterFor((r: SupportRate) => r.line) },
     {
       title: 'Исполнитель', dataIndex: 'executorType', width: 130,
+      sorter: sorterFor((r: SupportRate) => r.executorType),
       render: (t: string) => <Tag color={t === 'VENDOR' ? 'volcano' : 'blue'}>{t === 'VENDOR' ? 'Вендор' : 'Внутренний'}</Tag>,
     },
-    { title: 'Вендор', dataIndex: 'vendor', width: 150, render: (v?: string) => v || '—' },
-    numericColumn({ title: '₽/час', dataIndex: 'ratePerHour', width: 120, render: (v: number) => fmtMoney(v) }),
-    numericColumn({ title: 'K веч/ночь', dataIndex: 'kEvening', width: 110, render: (v: number) => fmtNum(v) }),
-    numericColumn({ title: 'K выходные', dataIndex: 'kWeekend', width: 110, render: (v: number) => fmtNum(v) }),
+    { title: 'Вендор', dataIndex: 'vendor', width: 150, sorter: sorterFor((r: SupportRate) => r.vendor), render: (v?: string) => v || '—' },
+    numericColumn({ title: '₽/час', dataIndex: 'ratePerHour', width: 120, sorter: sorterFor((r: SupportRate) => r.ratePerHour), render: (v: number) => fmtMoney(v) }),
+    numericColumn({ title: 'K веч/ночь', dataIndex: 'kEvening', width: 110, sorter: sorterFor((r: SupportRate) => r.kEvening), render: (v: number) => fmtNum(v) }),
+    numericColumn({ title: 'K выходные', dataIndex: 'kWeekend', width: 110, sorter: sorterFor((r: SupportRate) => r.kWeekend), render: (v: number) => fmtNum(v) }),
     {
       title: 'Область', dataIndex: 'systemId', width: 120,
+      sorter: sorterFor((r: SupportRate) => r.systemId),
       render: (s?: string | null) => <Tag>{s ? 'Для ИС' : 'Глобальная'}</Tag>,
     },
   ];
 
   const bpCols: ColumnsType<BusinessProcess> = [
-    { title: 'Код', dataIndex: 'code', width: 120 },
-    { title: 'Название', dataIndex: 'name', width: 220, render: (t: string) => <Text strong>{t}</Text> },
+    { title: 'Код', dataIndex: 'code', width: 120, sorter: sorterFor((r: BusinessProcess) => r.code) },
+    { title: 'Название', dataIndex: 'name', width: 220, sorter: sorterFor((r: BusinessProcess) => r.name), render: (t: string) => <Text strong>{t}</Text> },
     {
-      title: 'Тип', dataIndex: 'kind', width: 200,
+      title: 'Тип', dataIndex: 'kind', width: 200, sorter: sorterFor((r: BusinessProcess) => r.kind),
       render: (k: string) => BP_KINDS.find((x) => x.value === k)?.label ?? k,
     },
     numericColumn({
       title: 'C_мин, ₽', key: 'cost', width: 130,
+      sorter: sorterFor((bp: BusinessProcess) => costs[bp.id]),
       render: (_: unknown, bp: BusinessProcess) => fmtMoney(costs[bp.id]),
     }),
   ];
@@ -596,19 +603,20 @@ const ClosureTab: React.FC = () => {
   };
 
   const columns: ColumnsType<Nonconformity> = [
-    { title: 'Система', dataIndex: 'systemName', width: 160, render: (t: string) => <Text strong>{t}</Text> },
-    { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 190 },
+    { title: 'Система', dataIndex: 'systemName', width: 160, sorter: sorterFor((r: Nonconformity) => r.systemName), render: (t: string) => <Text strong>{t}</Text> },
+    { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 190, sorter: sorterFor((r: Nonconformity) => r.subcharacteristic) },
     {
       title: 'Уровень', dataIndex: 'level', width: 150,
+      sorter: sorterFor((r: Nonconformity) => NC_LEVEL_RANK[r.level] ?? -1),
       render: (l: string) => {
         const m = NC_LEVEL[l] ?? { label: l, color: 'default' };
         return <Tag color={m.color}>{m.label}</Tag>;
       },
     },
-    { title: 'Владелец', dataIndex: 'owner', width: 140 },
-    numericColumn({ title: 'ALE, ₽', dataIndex: 'evaluatedAle', width: 140, render: (v: number) => fmtMoney(v) }),
+    { title: 'Владелец', dataIndex: 'owner', width: 140, sorter: sorterFor((r: Nonconformity) => r.owner) },
+    numericColumn({ title: 'ALE, ₽', dataIndex: 'evaluatedAle', width: 140, sorter: sorterFor((r: Nonconformity) => r.evaluatedAle), render: (v: number) => fmtMoney(v) }),
     {
-      title: 'Статус', dataIndex: 'status', width: 160,
+      title: 'Статус', dataIndex: 'status', width: 160, sorter: sorterFor((r: Nonconformity) => r.status),
       render: (s: string) => {
         const m = NC_STATUS[s] ?? { label: s, color: 'default' };
         return <Tag color={m.color}>{m.label}</Tag>;
@@ -708,30 +716,35 @@ const ManagersTab: React.FC = () => {
   }), [rows]);
 
   const columns: ColumnsType<ManagerMetricRow> = [
-    { title: 'Владелец', dataIndex: 'owner', width: 200, render: (o: string) => <Text strong>{o}</Text> },
-    numericColumn({ title: 'Нагрузка', dataIndex: 'openCount', width: 110 }),
+    { title: 'Владелец', dataIndex: 'owner', width: 200, sorter: sorterFor((r: ManagerMetricRow) => r.owner), render: (o: string) => <Text strong>{o}</Text> },
+    numericColumn({ title: 'Нагрузка', dataIndex: 'openCount', width: 110, sorter: sorterFor((r: ManagerMetricRow) => r.openCount) }),
     numericColumn({
       title: 'Просрочено', dataIndex: 'overdueCount', width: 120,
+      sorter: sorterFor((r: ManagerMetricRow) => r.overdueCount),
       render: (v: number) => (
         <Text style={{ color: v > 0 ? RAG.bad.strong : BRAND.inkSoft }}>{v}</Text>
       ),
     }),
     numericColumn({
       title: 'Выполнено', dataIndex: 'completedCount', width: 120,
+      sorter: sorterFor((r: ManagerMetricRow) => r.completedCount),
       render: (v: number) => (
         <Text style={{ color: v > 0 ? RAG.good.strong : BRAND.inkSoft }}>{v}</Text>
       ),
     }),
     numericColumn({
       title: 'Средний возраст, дн', dataIndex: 'avgAgeDays', width: 170,
+      sorter: sorterFor((r: ManagerMetricRow) => r.avgAgeDays),
       render: (v: number | null) => fmtNum(v, 1),
     }),
     numericColumn({
       title: 'Δ ALE под управлением', dataIndex: 'deltaAleManaged', width: 200,
+      sorter: sorterFor((r: ManagerMetricRow) => r.deltaAleManaged),
       render: (v: number) => fmtMoney(v),
     }),
     numericColumn({
       title: 'Доля «принять», %', dataIndex: 'acceptShare', width: 160,
+      sorter: sorterFor((r: ManagerMetricRow) => r.acceptShare),
       // Высокая доля «принять» — сигнал: проблемы прячут вместо решения (§7.1).
       render: (v: number) => (
         <Text style={{ color: v >= 50 ? RAG.medium.strong : BRAND.inkSoft }}>{fmtNum(v, 1)}</Text>
@@ -739,6 +752,7 @@ const ManagersTab: React.FC = () => {
     }),
     numericColumn({
       title: 'Доля компенсирующих, %', dataIndex: 'compensatingShare', width: 200,
+      sorter: sorterFor((r: ManagerMetricRow) => r.compensatingShare),
       // Много компенсирующих — лечение симптомов вместо причин (§7.1).
       render: (v: number) => (
         <Text style={{ color: v >= 50 ? RAG.medium.strong : BRAND.inkSoft }}>{fmtNum(v, 1)}</Text>

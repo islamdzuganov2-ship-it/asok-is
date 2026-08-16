@@ -29,6 +29,7 @@ import {
 } from '../../store/slices/governanceSlice';
 import { BRAND, RAG, ACCENT } from '../../theme/ragPalette';
 import { pageContainer, pageTitle, GOLD, accentDot, SPACE, TYPE } from '../../theme/premium';
+import { sorterFor } from '../../theme/table';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import TaskBubbleTimeline from '../../components/TaskBubbleTimeline';
 import EmployeeEffectivenessCard from '../../components/EmployeeEffectivenessCard';
@@ -202,6 +203,7 @@ const TaskPlanDashboard: React.FC = () => {
   const listColumns = [
     {
       title: 'Тема задачи', key: 'title',
+      sorter: sorterFor((r: { p: Proposal }) => r.p.riskTitle || r.p.metricName),
       render: (_: unknown, r: { p: Proposal }) => {
         const h = healthOf(r.p);
         return (
@@ -213,7 +215,8 @@ const TaskPlanDashboard: React.FC = () => {
         );
       },
     },
-    { title: 'Ответственный', key: 'owner', render: (_: unknown, r: { p: Proposal }) => (r.p.owner ? <Text>{r.p.owner}</Text> : <Text type="secondary">не назначен</Text>) },
+    { title: 'Ответственный', key: 'owner', sorter: sorterFor((r: { p: Proposal }) => r.p.owner),
+      render: (_: unknown, r: { p: Proposal }) => (r.p.owner ? <Text>{r.p.owner}</Text> : <Text type="secondary">не назначен</Text>) },
     {
       title: 'Срок исполнения', key: 'due', width: 160,
       sorter: (a: { p: Proposal }, b: { p: Proposal }) => (parseRu(a.p.dueDate)?.getTime() ?? Infinity) - (parseRu(b.p.dueDate)?.getTime() ?? Infinity),

@@ -16,6 +16,7 @@ import { TeamOutlined } from '@ant-design/icons';
 import type { Proposal } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragByScore, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, SPACE, TYPE } from '../theme/premium';
+import { sorterFor } from '../theme/table';
 
 const { Text } = Typography;
 
@@ -111,6 +112,7 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
   const columns: ColumnsType<Row> = [
     {
       title: 'Сотрудник', dataIndex: 'owner', key: 'owner',
+      sorter: sorterFor((r: Row) => r.owner),
       render: (owner: string, r) => (
         <div>
           <Text strong style={{ color: BRAND.ink }}>{owner}</Text>
@@ -120,6 +122,7 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
     },
     {
       title: 'Кварталы', dataIndex: 'quarters', key: 'quarters', width: 150,
+      sorter: sorterFor((r: Row) => r.quarters?.length ?? 0),
       render: (qs: string[]) => (
         <Space size={4} wrap>
           {qs.length ? qs.map((q) => <Tag key={q} style={{ marginInlineEnd: 0 }}>{q}</Tag>) : <Text type="secondary">—</Text>}

@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { CalculatedMetric, useGetCalculatedMetricsQuery } from '../store/api/apiSlice';
 import { ExpertJudgmentModal } from '../components/ExpertJudgmentModal';
 import { premiumCard, SPACE, TYPE } from '../theme/premium';
+import { sorterFor } from '../theme/table';
 
 const { Title, Text } = Typography;
 
@@ -39,12 +40,13 @@ export const ExpertReviewPage: React.FC = () => {
     }
 
     const columns = [
-        { title: 'Метрика', dataIndex: 'name', key: 'name', width: '30%' },
+        { title: 'Метрика', dataIndex: 'name', key: 'name', width: '30%', sorter: sorterFor((r: CalculatedMetric) => r.name) },
         {
             title: 'Расчет',
             dataIndex: 'calculatedX',
             key: 'calculatedX',
             width: '18%',
+            sorter: sorterFor((r: CalculatedMetric) => r.calculatedX),
             render: (value: number) => (
                 <Progress percent={value} size="small" status={value < 41 ? 'exception' : value < 81 ? 'normal' : 'success'} />
             ),
@@ -54,12 +56,14 @@ export const ExpertReviewPage: React.FC = () => {
             dataIndex: 'systemLevel',
             key: 'systemLevel',
             width: '18%',
+            sorter: sorterFor((r: CalculatedMetric) => r.systemLevel),
             render: (value: string) => <Tag color={getLevelColor(value)}>{value}</Tag>,
         },
         {
             title: 'Комментарий',
             key: 'expertComment',
             width: '22%',
+            sorter: sorterFor((r: CalculatedMetric) => r.expertComment),
             render: (_: unknown, record: CalculatedMetric) => (
                 <Space direction="vertical" size="small">
                     {record.adjustedLevel && <Tag color={getLevelColor(record.adjustedLevel)}>{record.adjustedLevel}</Tag>}

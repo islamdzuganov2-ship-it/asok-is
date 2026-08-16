@@ -14,7 +14,7 @@ import { useDispatch } from 'react-redux';
 import ExcelUploadBlock from '../components/ExcelUploadBlock';
 import { subDescription, subArtifacts } from '../constants/subDescriptions';
 import { SPACE, TYPE } from '../theme/premium';
-import { numericColumn } from '../theme/table';
+import { numericColumn, sorterFor } from '../theme/table';
 import { apiSlice } from '../store/api/apiSlice';
 
 const { Text, Title } = Typography;
@@ -44,6 +44,10 @@ const LEVEL_TAG_COLOR: Record<string, string> = {
   'Низкий уровень':         'red',
   'Невозможно измерить':    'default',
 };
+// Порядок значимости уровня для сортировки — от лучшего к худшему, не алфавитный.
+const LEVEL_RANK: Record<string, number> = Object.fromEntries(
+  Object.keys(LEVEL_TAG_COLOR).map((k, i) => [k, i]),
+);
 
 const MetricsInputPage: React.FC = () => {
   const { id: periodId } = useParams<{ id: string }>();
@@ -161,6 +165,7 @@ const MetricsInputPage: React.FC = () => {
       title: 'Метрика',
       dataIndex: 'name',
       ellipsis: true,
+      sorter: sorterFor((r: MetricRow) => r.name),
       render: (name: string, rec: MetricRow) => {
         const sub = rec.subcharacteristic || name.split(' / ')[1];
         return (
@@ -181,6 +186,7 @@ const MetricsInputPage: React.FC = () => {
       title: <Tooltip title="A — фактически достигнутое значение показателя (числитель). Итог: прямая X=A/B, обратная X=1−A/B.">val_a (факт) <InfoCircleOutlined style={{ color: '#bbb' }} /></Tooltip>,
       dataIndex: 'val_a',
       width: 120,
+      sorter: sorterFor((r: MetricRow) => r.val_a),
       render: (_: unknown, rec: MetricRow) => (
         <InputNumber
           size="small"
@@ -197,6 +203,7 @@ const MetricsInputPage: React.FC = () => {
       title: <Tooltip title="B — базовое/плановое значение (знаменатель). Должно быть > 0; при B=0 отметьте «Невозможно измерить».">val_b (база) <InfoCircleOutlined style={{ color: '#bbb' }} /></Tooltip>,
       dataIndex: 'val_b',
       width: 120,
+      sorter: sorterFor((r: MetricRow) => r.val_b),
       render: (_: unknown, rec: MetricRow) => {
         const isZero = rec.val_b === 0 && !rec.unmeasurable;
         return (
@@ -224,6 +231,7 @@ const MetricsInputPage: React.FC = () => {
       dataIndex: 'unmeasurable',
       width: 92,
       align: 'center' as const,
+      sorter: sorterFor((r: MetricRow) => (r.unmeasurable ? 1 : 0)),
       render: (_: unknown, rec: MetricRow) => (
         <Checkbox
           checked={!!rec.unmeasurable}
@@ -235,6 +243,7 @@ const MetricsInputPage: React.FC = () => {
       title: 'Комментарий',
       dataIndex: 'expert_comment',
       width: 220,
+      sorter: sorterFor((r: MetricRow) => r.expert_comment),
       render: (_: unknown, rec: MetricRow) => {
         const required = !!rec.unmeasurable && !(rec.expert_comment || '').trim();
         return (
@@ -252,6 +261,7 @@ const MetricsInputPage: React.FC = () => {
       title: 'X',
       dataIndex: 'calculatedX',
       width: 72,
+      sorter: sorterFor((r: MetricRow) => r.calculatedX),
       render: (x: number | null | undefined) =>
         x != null ? <Text strong>{x.toFixed(4)}</Text> : <Text type="secondary">—</Text>,
     }),
@@ -259,6 +269,7 @@ const MetricsInputPage: React.FC = () => {
       title: 'Уровень',
       dataIndex: 'qualityLevel',
       width: 180,
+      sorter: sorterFor((r: MetricRow) => LEVEL_RANK[r.qualityLevel ?? ''] ?? -1),
       render: (level: string | null | undefined) =>
         level
           ? <Tag color={LEVEL_TAG_COLOR[level] ?? 'default'} style={{ fontSize: TYPE.micro.fontSize }}>{level}</Tag>

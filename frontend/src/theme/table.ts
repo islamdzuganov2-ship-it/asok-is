@@ -36,3 +36,29 @@ export function numericColumn<T = any>(col: ColumnType<any>): ColumnType<T> {
 
 /** Стиль для одиночного числа вне таблицы (показатель в карточке, счётчик в заголовке). */
 export const numericText = { fontVariantNumeric: 'tabular-nums' } as const;
+
+/**
+ * ТЗ v19 п.11-12: сортировка по каждому содержательному столбцу везде, не точечно.
+ *
+ * Один компаратор на все типы данных вместо ручного `(a,b) => a.x - b.x` в каждой колонке —
+ * тот код молча ломается на `null`/`undefined` (NaN расползается по всей сортировке) и на
+ * смеси чисел со строками («невозможно измерить» рядом с процентами). Здесь: null/undefined
+ * всегда в конец (не мешают увидеть реальные значения ни по возрастанию, ни по убыванию),
+ * числа — арифметически, всё остальное — локализованным сравнением строк (ru).
+ *
+ * Использование: `sorter: sorterFor((r) => r.score)` вместо `sorter: (a, b) => a.score - b.score`.
+ */
+export function sorterFor<T>(accessor: (row: T) => string | number | boolean | null | undefined) {
+  return (a: T, b: T): number => {
+    const av = accessor(a);
+    const bv = accessor(b);
+    const aMissing = av === null || av === undefined;
+    const bMissing = bv === null || bv === undefined;
+    if (aMissing && bMissing) return 0;
+    if (aMissing) return 1;
+    if (bMissing) return -1;
+    if (typeof av === 'number' && typeof bv === 'number') return av - bv;
+    if (typeof av === 'boolean' || typeof bv === 'boolean') return Number(av) - Number(bv);
+    return String(av).localeCompare(String(bv), 'ru');
+  };
+}
