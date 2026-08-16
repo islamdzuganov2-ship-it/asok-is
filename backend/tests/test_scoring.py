@@ -5,6 +5,7 @@
 """
 from app.modules.quality.scoring import (
     SubcharScore,
+    measure_weight,
     portfolio_score,
     weighted_system_score,
 )
@@ -124,3 +125,21 @@ def test_portfolio_points_contribution_sums_to_final_score():
     result = portfolio_score(system_scores, criticality, weights)
     total = sum(c["pointsContribution"] for c in result.system_contributions)
     assert abs(total - result.score) < 1e-3  # см. комментарий в test_points_contribution_sums_to_final_score
+
+
+# ── Вес меры (ТЗ v19 п.13, В-41) ──
+
+def test_measure_weight_multiplies_three_factors():
+    # характеристика=20 (Производительность), критичность MISSION=3, 10 часов → 600
+    assert measure_weight(20, 3, 10) == 600
+
+
+def test_measure_weight_none_hours_returns_none_not_zero():
+    """Мера без оценки часов НЕ должна тихо весить 0 — вызывающий код обязан считать её отдельно."""
+    assert measure_weight(20, 3, None) is None
+
+
+def test_measure_weight_zero_hours_is_not_none():
+    """0 часов — явная (пусть и подозрительная) оценка, а не «нет оценки»: сервисный слой её
+    отклоняет отдельной валидацией (test_governance.py), но сама функция не путает 0 с None."""
+    assert measure_weight(20, 3, 0) == 0

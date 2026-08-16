@@ -12,6 +12,11 @@
 
 Самодостаточный модуль: читает МОДЕЛИ nonconformity/governance напрямую (как dashboard_service),
 econ остаётся нижним слоем; в роутер монтируется отдельным эндпойнтом.
+
+ТЗ v19 п.13 (В-41): «взвешенная нагрузка» — экран загрузки/балансировки. Считается ТОЛЬКО по мерам
+(у несоответствий нет часов/трудоёмкости) через quality.measure_weight (характеристика × критичность
+ИС × часы). Меры без оценки часов — отдельный счётчик measuresWithoutEstimate, НЕ ноль молча: иначе
+исполнитель с 10 неоценёнными мерами выглядел бы «свободным» рядом с тем, у кого 2 оценённые.
 """
 from __future__ import annotations
 
@@ -31,6 +36,13 @@ from app.modules.governance.models import (
     Proposal,
 )
 from app.modules.nonconformity.models import STATUS_EVALUATED, STATUS_VERIFIED, Nonconformity
+from app.modules.quality import (
+    CHARACTERISTIC_WEIGHTS,
+    DEFAULT_CRITICALITY_WEIGHTS,
+    canonical_characteristic,
+    measure_weight,
+)
+from app.modules.systems import System
 
 
 class _CamelModel(BaseModel):
@@ -46,6 +58,11 @@ class ManagerMetricRow(_CamelModel):
     delta_ale_managed: float     # ₽ риска под управлением (оценённый/снятый)
     accept_share: float          # % решений «принять» (склонность прятать проблему)
     compensating_share: float    # % компенсирующих мер (лечение симптомов)
+    # ТЗ v19 п.13 (В-41): взвешенная нагрузка по открытым мерам — экран загрузки/балансировки.
+    weighted_load: float             # Σ measure_weight(характеристика × критичность × часы)
+    hours_estimated: float           # Σ effort_hours (только по мерам с оценкой)
+    measures_with_estimate: int      # открытых мер с проставленными часами
+    measures_without_estimate: int   # открытых мер БЕЗ оценки часов — не ноль молча (В-41)
 
 
 class ManagerMetricsOut(_CamelModel):
@@ -87,11 +104,18 @@ async def manager_metrics(db: AsyncSession) -> ManagerMetricsOut:
     now = _now()
     ncs = list((await db.execute(select(Nonconformity))).scalars().all())
     props = list((await db.execute(select(Proposal))).scalars().all())
+    # System.system_id на Proposal не заполняется (ProposalCreate принимает только system_name,
+    # см. governance/schemas.py) — критичность резолвим по имени, как event_service.cell_detail.
+    crit_by_system_name: dict[str, str] = {
+        name: cls.value
+        for name, cls in (await db.execute(select(System.name, System.criticality_class))).all()
+    }
 
     # Аккумуляторы по владельцу.
     acc: dict[str, dict] = defaultdict(lambda: {
         "open": 0, "overdue": 0, "completed": 0, "ages": [], "delta_ale": 0.0,
         "decisions": 0, "accepts": 0, "measures": 0, "compensating": 0,
+        "weighted_load": 0.0, "hours": 0.0, "with_estimate": 0, "without_estimate": 0,
     })
 
     for nc in ncs:
@@ -123,6 +147,7 @@ async def manager_metrics(db: AsyncSession) -> ManagerMetricsOut:
             continue
         a = acc[owner]
         done = p.execution == EXECUTION_DONE
+        is_open = p.status in (STATUS_PENDING, STATUS_APPROVED) and not done
         if done:
             a["completed"] += 1
             a["delta_ale"] += float(p.delta_ale_cash or 0)
@@ -138,6 +163,22 @@ async def manager_metrics(db: AsyncSession) -> ManagerMetricsOut:
             if p.measure_type == MEASURE_COMPENSATING:
                 a["compensating"] += 1
 
+        # Взвешенная нагрузка — только открытые меры (та же нагрузка, что "open"), только по
+        # мерам (не по несоответствиям — у них нет часов). effort_hours=None не участвует в
+        # weighted_load/hours (не 0) — считается отдельным счётчиком "без оценки" (В-41).
+        if is_open:
+            canon = canonical_characteristic(p.characteristic or "")
+            char_w = CHARACTERISTIC_WEIGHTS.get(canon, 1.0)  # неизвестная характеристика — нейтральный вес, не 0
+            crit_w = DEFAULT_CRITICALITY_WEIGHTS.get(crit_by_system_name.get(p.system_name, ""), 1.0)
+            hours = float(p.effort_hours) if p.effort_hours is not None else None
+            w = measure_weight(char_w, crit_w, hours)
+            if w is None:
+                a["without_estimate"] += 1
+            else:
+                a["weighted_load"] += w
+                a["hours"] += hours
+                a["with_estimate"] += 1
+
     rows: list[ManagerMetricRow] = []
     for owner, a in acc.items():
         ages = a["ages"]
@@ -150,6 +191,10 @@ async def manager_metrics(db: AsyncSession) -> ManagerMetricsOut:
             delta_ale_managed=round(a["delta_ale"], 2),
             accept_share=round(a["accepts"] / a["decisions"] * 100, 1) if a["decisions"] else 0.0,
             compensating_share=round(a["compensating"] / a["measures"] * 100, 1) if a["measures"] else 0.0,
+            weighted_load=round(a["weighted_load"], 2),
+            hours_estimated=round(a["hours"], 2),
+            measures_with_estimate=a["with_estimate"],
+            measures_without_estimate=a["without_estimate"],
         ))
     rows.sort(key=lambda r: (r.open_count, r.overdue_count), reverse=True)
 

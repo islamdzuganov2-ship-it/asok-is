@@ -37,6 +37,7 @@ from app.modules.quality.scoring import (
     PortfolioScoreBreakdown,
     SubcharScore,
     SystemScoreBreakdown,
+    measure_weight,
     portfolio_score,
     weighted_system_score,
 )
@@ -47,7 +48,7 @@ from app.modules.quality.weight_versions import (
     get_active_version,
     recompute_and_snapshot,
 )
-from app.modules.quality.weights import SUBCHAR_WEIGHTS, subchar_weight
+from app.modules.quality.weights import CHARACTERISTIC_WEIGHTS, SUBCHAR_WEIGHTS, subchar_weight
 
 __all__ = [
     "MetricCatalog",
@@ -78,6 +79,7 @@ __all__ = [
     "ai_aggregate",
     # ТЗ v19 УК-04..07: веса, свёртка, версии/история
     "SUBCHAR_WEIGHTS",
+    "CHARACTERISTIC_WEIGHTS",
     "subchar_weight",
     "SubcharScore",
     "SystemScoreBreakdown",
@@ -91,4 +93,6 @@ __all__ = [
     "get_active_version",
     "ensure_active_version",
     "recompute_and_snapshot",
+    # ТЗ v19 УК-13 (п.13): вес меры для нагрузки/балансировки исполнителей
+    "measure_weight",
 ]

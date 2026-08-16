@@ -159,6 +159,11 @@ class ExecutionIn(_CamelModel):
     comment: str
 
 
+class EffortHoursIn(_CamelModel):
+    """ТЗ v19 п.13 (В-41): трудоёмкость проставляет исполнитель вручную в часах."""
+    effort_hours: float
+
+
 class TaskUpdateIn(_CamelModel):
     suz_link: str | None = None
     top_comment: str | None = None

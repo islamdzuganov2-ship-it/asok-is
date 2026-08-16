@@ -142,6 +142,23 @@ async def set_execution(db: AsyncSession, p: Proposal, status: str, comment: str
     return p
 
 
+async def set_effort_hours(
+    db: AsyncSession, p: Proposal, hours: float, user_id: uuid.UUID | None,
+) -> Proposal:
+    """Трудоёмкость проставляет исполнитель вручную (В-41) — только по одобренной мере,
+    величина > 0 (оценка «ноль часов» бессмысленна и маскирует отсутствие оценки)."""
+    if p.status != STATUS_APPROVED:
+        raise ConflictError("Трудоёмкость можно указать только по одобренной мере")
+    if hours <= 0:
+        raise ValidationError("Трудоёмкость должна быть больше нуля")
+    p.effort_hours = hours
+    p.effort_hours_set_by = user_id
+    p.effort_hours_set_at = _now()
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+
 async def update_task(db: AsyncSession, p: Proposal, data: TaskUpdateIn) -> Proposal:
     patch = data.model_dump(exclude_unset=True)
     for field, value in patch.items():

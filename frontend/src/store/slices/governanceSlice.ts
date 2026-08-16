@@ -42,6 +42,11 @@ export interface Proposal {
   executionComment?: string;
   executedBy?: string;
   executedAt?: string;
+  // ТЗ v19 п.13 (В-41): трудоёмкость в часах — проставляет исполнитель вручную. undefined ≠ 0 —
+  // «нет оценки» отличается от «оценена в 0 часов» (см. AssigneeTasksPage, ManagersTab).
+  effortHours?: number;
+  effortHoursSetBy?: string;
+  effortHoursSetAt?: string;
   /** Демо-мера (засеяна для презентации). В режиме LLM такие меры скрываются. */
   isDemo?: boolean;
   /** История правок меры (аудит): кто, когда, какое поле, старое → новое значение. */
@@ -262,6 +267,17 @@ export const setExecution = createAsyncThunk<Proposal | null, ExecArg, { state: 
   },
 );
 
+/** Исполнитель проставляет трудоёмкость меры в часах вручную (п.13, В-41). */
+export const setEffortHours = createAsyncThunk<Proposal | null, { id: string; effortHours: number }, { state: RootState }>(
+  'governance/effort',
+  async ({ id, effortHours }, { getState }) => {
+    if (isLive(getState())) return await govApi(`/proposals/${id}/effort`, 'PATCH', { effortHours });
+    const p = getState().governance.proposals.find((x) => x.id === id);
+    if (!p || p.status !== 'APPROVED') return null;
+    return { ...p, effortHours, effortHoursSetAt: new Date().toISOString() };
+  },
+);
+
 type TaskArg = { id: string; suzLink?: string; topComment?: string; escalated?: boolean; owner?: string; ownerRole?: string; dueDate?: string };
 
 export const updateTask = createAsyncThunk<Proposal | null, TaskArg, { state: RootState }>(
@@ -391,7 +407,7 @@ const governanceSlice = createSlice({
       });
     // Мутации возвращают обновлённую меру (или null, если действие не применилось в mock).
     for (const thunk of [approveProposal, rejectProposal, updateProposalMeta, editProposal,
-      setExecution, updateTask, escalateTask, decideEscalation, resolveEscalation,
+      setExecution, setEffortHours, updateTask, escalateTask, decideEscalation, resolveEscalation,
       addClarification, requestDueChange, decideDueChange]) {
       builder.addCase(thunk.fulfilled, (state, action: PayloadAction<Proposal | null>) => {
         if (action.payload) {

@@ -127,3 +127,18 @@ def portfolio_score(
         criticality_weight_applied=round(total_weight, 4),
         system_contributions=contributions,
     )
+
+
+def measure_weight(
+    characteristic_weight: float, criticality_weight: float, effort_hours: float | None,
+) -> float | None:
+    """«Вес меры» (п.13, УК-13): характеристика × критичность ИС × трудоёмкость — эвристика для
+    сравнения нагрузки исполнителей («5 сложных» vs «15 лёгких» — считать надо не поштучно), а не
+    метрика из ГОСТ. Подхарактеристику взять негде: Proposal хранит только characteristic (см.
+    governance/models.py) — попытка сопоставить metric_name с подхарактеристикой была бы хрупким
+    сравнением строк без FK (та самая ловушка «Доступность» ×2, quality/weights.py). effort_hours —
+    рукой исполнителя (В-41); None (нет оценки) возвращает None, а НЕ 0 — мера без оценки часов не
+    должна тихо обнулять свой вес, её считают отдельным счётчиком (см. вызывающий код)."""
+    if effort_hours is None:
+        return None
+    return round(characteristic_weight * criticality_weight * effort_hours, 4)

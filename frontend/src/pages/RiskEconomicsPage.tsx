@@ -43,6 +43,9 @@ interface Nonconformity {
 interface ManagerMetricRow {
   owner: string; openCount: number; overdueCount: number; completedCount: number;
   avgAgeDays: number | null; deltaAleManaged: number; acceptShare: number; compensatingShare: number;
+  // ТЗ v19 п.13 (В-41): взвешенная нагрузка по открытым мерам — экран загрузки/балансировки.
+  weightedLoad: number; hoursEstimated: number;
+  measuresWithEstimate: number; measuresWithoutEstimate: number;
 }
 interface ManagerMetrics { mode: string; note: string; generatedAt: string; rows: ManagerMetricRow[] }
 interface FunnelStage { status: string; count: number }
@@ -713,6 +716,9 @@ const ManagersTab: React.FC = () => {
     open: rows.reduce((s, r) => s + r.openCount, 0),
     overdue: rows.reduce((s, r) => s + r.overdueCount, 0),
     delta: rows.reduce((s, r) => s + r.deltaAleManaged, 0),
+    // ТЗ v19 п.13 (В-41): сколько мер вообще без оценки часов — видно ДО таблицы, чтобы не
+    // спутать «мало нагрузки» с «нагрузку никто не оценил» (не ноль молча).
+    withoutEstimate: rows.reduce((s, r) => s + r.measuresWithoutEstimate, 0),
   }), [rows]);
 
   const columns: ColumnsType<ManagerMetricRow> = [
@@ -758,6 +764,25 @@ const ManagersTab: React.FC = () => {
         <Text style={{ color: v >= 50 ? RAG.medium.strong : BRAND.inkSoft }}>{fmtNum(v, 1)}</Text>
       ),
     }),
+    numericColumn({
+      title: 'Взвеш. нагрузка', dataIndex: 'weightedLoad', width: 150,
+      sorter: sorterFor((r: ManagerMetricRow) => r.weightedLoad),
+      // ТЗ v19 п.13: характеристика × критичность ИС × часы — «5 сложных» не равны «15 лёгким».
+      render: (v: number) => fmtNum(v, 0),
+    }),
+    numericColumn({
+      title: 'Часы (оценено)', dataIndex: 'hoursEstimated', width: 140,
+      sorter: sorterFor((r: ManagerMetricRow) => r.hoursEstimated),
+      render: (v: number) => `${fmtNum(v, 1)} ч`,
+    }),
+    numericColumn({
+      title: 'Мер без оценки часов', dataIndex: 'measuresWithoutEstimate', width: 180,
+      sorter: sorterFor((r: ManagerMetricRow) => r.measuresWithoutEstimate),
+      // Отдельный счётчик (В-41): не ноль молча — иначе неоценённая нагрузка выглядит «свободной».
+      render: (v: number) => (
+        <Text style={{ color: v > 0 ? RAG.medium.strong : BRAND.inkSoft }}>{v}</Text>
+      ),
+    }),
   ];
 
   return (
@@ -769,6 +794,9 @@ const ManagersTab: React.FC = () => {
           color={totals.overdue > 0 ? RAG.bad.strong : undefined} />
         <KpiCard title="Δ ALE под управлением" value={fmtMln(totals.delta)} hint="₽/год"
           loading={loading} />
+        <KpiCard title="Мер без оценки часов" value={totals.withoutEstimate} loading={loading}
+          color={totals.withoutEstimate > 0 ? RAG.medium.strong : undefined}
+          hint="не входят во взвешенную нагрузку" />
       </Space>
 
       <Alert type="info" showIcon
@@ -780,7 +808,7 @@ const ManagersTab: React.FC = () => {
       <Card {...premiumCard('slate')} styles={{ body: { padding: 0 } }}>
         <Table<ManagerMetricRow>
           columns={columns} dataSource={rows} rowKey="owner" loading={loading} size="small"
-          scroll={{ x: 1280 }} pagination={{ pageSize: 15, hideOnSinglePage: true }}
+          scroll={{ x: 1750 }} pagination={{ pageSize: 15, hideOnSinglePage: true }}
           locale={{ emptyText: 'Нет данных: метрики появятся, когда у несоответствий и мер будут указаны владельцы.' }}
         />
       </Card>

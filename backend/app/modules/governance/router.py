@@ -19,6 +19,7 @@ from app.modules.governance import economics_service, service
 from app.modules.governance.schemas import (
     DecisionIn,
     EditIn,
+    EffortHoursIn,
     EscalateIn,
     EscalationDecisionIn,
     ExecutionIn,
@@ -29,7 +30,7 @@ from app.modules.governance.schemas import (
     ProposalOut,
     TaskUpdateIn,
 )
-from app.modules.iam import get_current_user, require_permission
+from app.modules.iam import get_current_user, require_permission, resolve_user_id
 
 router = APIRouter()
 
@@ -106,6 +107,17 @@ async def report_execution(
 ):
     p = await service.get_or_404(db, pid)
     return await service.set_execution(db, p, payload.status, payload.comment, _username(user))
+
+
+@router.patch("/proposals/{pid}/effort", response_model=ProposalOut)
+async def set_effort_hours(
+    pid: uuid.UUID, payload: EffortHoursIn,
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.propose")),
+):
+    """Исполнитель проставляет трудоёмкость меры в часах вручную (п.13, В-41)."""
+    p = await service.get_or_404(db, pid)
+    uid = await resolve_user_id(db, user.get("id"))
+    return await service.set_effort_hours(db, p, payload.effort_hours, uid)
 
 
 @router.patch("/proposals/{pid}/task", response_model=ProposalOut)
