@@ -17,6 +17,7 @@ import type { Proposal } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragByScore, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, SPACE, TYPE } from '../theme/premium';
 import { sorterFor } from '../theme/table';
+import { useCharacteristicWeights } from '../hooks/useCharacteristicWeights';
 
 const { Text } = Typography;
 
@@ -60,6 +61,11 @@ interface Props {
 
 export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style }) => {
   const [quarter, setQuarter] = useState<string | undefined>();
+  const { weights: charWeights } = useCharacteristicWeights();
+  // Вес меры для взвешенной эффективности — по её характеристике (ГОСТ 25010, ТЗ v20 п.3).
+  // Неизвестная характеристика (не должна встречаться — веса покрывают всю QUALITY_MODEL) даёт 0:
+  // мера не тянет ни числитель, ни знаменатель, вместо падения расчёта.
+  const weightOf = (p: Proposal) => charWeights[p.characteristic] ?? 0;
 
   // Назначенные меры = не отклонённые, с ответственным.
   const assigned = useMemo(
@@ -80,6 +86,9 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
 
   const rows = useMemo<Row[]>(() => {
     const byOwner = new Map<string, Row>();
+    // Вес по владельцу — отдельно от Row (счётчики в Row остаются простыми числами задач для
+    // столбцов таблицы; эффективность считается по весам параллельно).
+    const weightByOwner = new Map<string, { applied: number; done: number }>();
     for (const p of scoped) {
       const owner = (p.owner as string).trim();
       const r = byOwner.get(owner) ?? { owner, role: p.ownerRole, quarters: [], total: 0, done: 0, awaiting: 0, overdue: 0, effectiveness: 0 };
@@ -89,19 +98,36 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
       if (d) { const q = quarterOf(d); if (!r.quarters.includes(q)) r.quarters.push(q); }
       if (!r.role && p.ownerRole) r.role = p.ownerRole;
       byOwner.set(owner, r);
+
+      const w = weightByOwner.get(owner) ?? { applied: 0, done: 0 };
+      const weight = weightOf(p);
+      w.applied += weight;
+      if (bucketOf(p) === 'done') w.done += weight;
+      weightByOwner.set(owner, w);
     }
     const out = [...byOwner.values()];
-    out.forEach((r) => { r.effectiveness = r.total ? Math.round((r.done / r.total) * 100) : 0; r.quarters.sort((a, b) => quarterSort(a) - quarterSort(b)); });
+    out.forEach((r) => {
+      const w = weightByOwner.get(r.owner);
+      r.effectiveness = w && w.applied > 0 ? Math.round((w.done / w.applied) * 100) : 0;
+      r.quarters.sort((a, b) => quarterSort(a) - quarterSort(b));
+    });
     // Сортировка: больше назначено → выше; при равенстве — выше эффективность.
     return out.sort((a, b) => (b.total - a.total) || (b.effectiveness - a.effectiveness));
-  }, [scoped]);
+  }, [scoped, charWeights]);
 
-  // Итоги «по всем сотрудникам» — для подписи под заголовком.
-  const totals = useMemo(() => rows.reduce(
-    (acc, r) => ({ done: acc.done + r.done, awaiting: acc.awaiting + r.awaiting, overdue: acc.overdue + r.overdue, total: acc.total + r.total }),
-    { done: 0, awaiting: 0, overdue: 0, total: 0 },
-  ), [rows]);
-  const overallEff = totals.total ? Math.round((totals.done / totals.total) * 100) : 0;
+  // Итоги «по всем сотрудникам» — для подписи под заголовком. Взвешено так же, как построчно
+  // (не среднее построчных effectiveness — иначе владелец с одной мелкой мерой и владелец с
+  // десятками весомых учитывались бы поровну).
+  const totals = useMemo(() => {
+    const counts = scoped.reduce(
+      (acc, p) => ({ done: acc.done + (bucketOf(p) === 'done' ? 1 : 0), awaiting: acc.awaiting + (bucketOf(p) === 'awaiting' ? 1 : 0), overdue: acc.overdue + (bucketOf(p) === 'overdue' ? 1 : 0), total: acc.total + 1 }),
+      { done: 0, awaiting: 0, overdue: 0, total: 0 },
+    );
+    const weightApplied = scoped.reduce((a, p) => a + weightOf(p), 0);
+    const weightDone = scoped.reduce((a, p) => a + (bucketOf(p) === 'done' ? weightOf(p) : 0), 0);
+    return { ...counts, weightApplied, weightDone };
+  }, [scoped, charWeights]);
+  const overallEff = totals.weightApplied > 0 ? Math.round((totals.weightDone / totals.weightApplied) * 100) : 0;
 
   const numCol = (title: string, key: Bucket, color: string): ColumnsType<Row>[number] => ({
     title, dataIndex: key, key, width: 104, align: 'center' as const,
@@ -125,7 +151,16 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
       sorter: sorterFor((r: Row) => r.quarters?.length ?? 0),
       render: (qs: string[]) => (
         <Space size={4} wrap>
-          {qs.length ? qs.map((q) => <Tag key={q} style={{ marginInlineEnd: 0 }}>{q}</Tag>) : <Text type="secondary">—</Text>}
+          {qs.length ? qs.map((q) => (
+            <Tag
+              key={q}
+              style={{ marginInlineEnd: 0, cursor: 'pointer' }}
+              color={quarter === q ? 'gold' : undefined}
+              onClick={(e) => { e.stopPropagation(); setQuarter(quarter === q ? undefined : q); }}
+            >
+              {q}
+            </Tag>
+          )) : <Text type="secondary">—</Text>}
         </Space>
       ),
     },
@@ -164,8 +199,9 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
       style={{ ...premiumCard('gold').style, ...style }}
     >
       <Text type="secondary" style={{ fontSize: 12 }}>
-        Ответственные за меры качества · эффективность = выполнено ÷ назначено.
-        {totals.total > 0 && <> Итого по всем: <Text strong style={{ color: RAG[ragByScore(overallEff)].strong }}>{overallEff}%</Text> ({totals.done}/{totals.total}).</>}
+        Ответственные за меры качества · эффективность взвешена по весам характеристик ГОСТ 25010
+        (выполненные меры весомых характеристик значат больше, чем мелкие).
+        {totals.total > 0 && <> Итого по всем: <Text strong style={{ color: RAG[ragByScore(overallEff)].strong }}>{overallEff}%</Text> ({totals.done}/{totals.total} мер).</>}
       </Text>
       {rows.length === 0 ? (
         <Empty style={{ padding: 24 }} description="Нет назначенных мер с ответственным в выбранном периоде" />
