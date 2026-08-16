@@ -117,3 +117,69 @@ async def test_recompute_ale_expert_aro_overrides_frequency(db_session):
     assert res.aro == 3.0                       # экспертный ARO не перетирается частотой
     assert res.ale_avg == 192000.0             # 3 × 64000
     assert ev.aro is not None and float(ev.aro) == 3.0
+
+
+# ── ТЗ v19 п.4: ячейка теплокарты (ИС × характеристика) → риски + меры + деньги ──
+
+async def test_cell_detail_aggregates_risks_and_money(db_session):
+    sys = await _system(db_session, name="ИС-теплокарта")
+    ev1 = await service.create_event(db_session, RiskEventCreate(code="RE-CELL-1", title="Риск A", system_id=sys.id), "rm")
+    ev1.ale_avg = 100000
+    ev2 = await service.create_event(db_session, RiskEventCreate(code="RE-CELL-2", title="Риск B", system_id=sys.id), "rm")
+    ev2.ale_avg = 50000
+    await db_session.commit()
+    await service.link_subchar(db_session, ev1.id, SubcharLinkIn(characteristic="Надёжность", subcharacteristic="Отказоустойчивость"))
+    await service.link_subchar(db_session, ev2.id, SubcharLinkIn(characteristic="Надёжность", subcharacteristic="Восстанавливаемость (MTTR)"))
+    # Риск другой характеристики не должен попасть в выдачу.
+    await service.link_subchar(db_session, ev1.id, SubcharLinkIn(characteristic="Защищённость", subcharacteristic="Целостность"))
+
+    result = await service.cell_detail(db_session, "ИС-теплокарта", "Надёжность")
+    assert result.system_name == "ИС-теплокарта"
+    assert result.total_ale == 150000.0
+    assert len(result.risks) == 2
+    # Отсортировано по ALE по убыванию — риск A (100000) первый.
+    assert result.risks[0].code == "RE-CELL-1"
+    assert result.risks[0].subcharacteristics == ["Отказоустойчивость"]
+    assert result.risks[1].code == "RE-CELL-2"
+
+
+async def test_cell_detail_includes_linked_measures_with_money(db_session):
+    sys = await _system(db_session, name="ИС-меры")
+    ev = await service.create_event(db_session, RiskEventCreate(code="RE-CELL-3", title="Риск с мерой", system_id=sys.id), "rm")
+    ev.ale_avg = 80000
+    await db_session.commit()
+    await service.link_subchar(db_session, ev.id, SubcharLinkIn(characteristic="Надёжность", subcharacteristic="Отказоустойчивость"))
+
+    from app.modules.governance import Proposal
+    proposal = Proposal(system_name="ИС-меры", characteristic="Надёжность", risk_title="Резервирование узла",
+                        status="APPROVED", rosi=1.8, verdict="ELIMINATE")
+    db_session.add(proposal)
+    await db_session.flush()
+    await service.link_measure(db_session, ev.id, MeasureLinkIn(proposal_id=proposal.id, ale_reduction_share=0.7))
+
+    result = await service.cell_detail(db_session, "ИС-меры", "Надёжность")
+    assert len(result.risks) == 1
+    measures = result.risks[0].measures
+    assert len(measures) == 1
+    assert measures[0].title == "Резервирование узла"
+    assert measures[0].ale_reduction_share == 0.7
+    assert measures[0].rosi == 1.8
+    assert measures[0].verdict == "ELIMINATE"
+
+
+async def test_cell_detail_unknown_system_returns_empty_not_error(db_session):
+    result = await service.cell_detail(db_session, "Несуществующая ИС", "Надёжность")
+    assert result.risks == []
+    assert result.total_ale == 0.0
+
+
+async def test_cell_detail_ignores_archived_risks(db_session):
+    sys = await _system(db_session, name="ИС-архив")
+    ev = await service.create_event(db_session, RiskEventCreate(code="RE-CELL-4", title="Архивный риск", system_id=sys.id), "rm")
+    ev.ale_avg = 999999
+    await db_session.commit()
+    await service.link_subchar(db_session, ev.id, SubcharLinkIn(characteristic="Надёжность", subcharacteristic="Отказоустойчивость"))
+    await service.archive_event(db_session, ev)
+
+    result = await service.cell_detail(db_session, "ИС-архив", "Надёжность")
+    assert result.risks == []

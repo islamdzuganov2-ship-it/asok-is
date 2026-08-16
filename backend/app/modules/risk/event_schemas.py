@@ -112,3 +112,31 @@ class AleResultOut(_CamelModel):
     ale_avg: float | None = None
     ale_p90: float | None = None
     max_sle: float | None = None
+
+
+# ── ТЗ v19 п.4: связь теплокарты (ИС × характеристика) с рисками, мерами и деньгами ──
+class HeatmapCellMeasureOut(_CamelModel):
+    proposal_id: uuid.UUID
+    title: str
+    status: str
+    ale_reduction_share: float | None = None
+    rosi: float | None = None
+    verdict: str | None = None
+
+
+class HeatmapCellRiskOut(_CamelModel):
+    id: uuid.UUID
+    code: str
+    title: str
+    ale_avg: float | None = None
+    ale_p90: float | None = None
+    status: str
+    subcharacteristics: list[str]
+    measures: list[HeatmapCellMeasureOut]
+
+
+class HeatmapCellDetailOut(_CamelModel):
+    system_name: str
+    characteristic: str
+    total_ale: float
+    risks: list[HeatmapCellRiskOut]

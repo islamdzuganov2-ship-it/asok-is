@@ -7,18 +7,33 @@
  *   • Меры менеджера по качеству, ожидающие одобрения (с пояснением «что ждут и почему»)
  * Минимум текста и цвета, спокойные тона.
  */
-import React, { useState } from 'react';
-import { Modal, Typography, Tag, Divider, List, Empty, Space, Button } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Modal, Typography, Tag, Divider, List, Empty, Space, Button, Spin } from 'antd';
 import {
-  UserOutlined, RiseOutlined, BulbOutlined, ClockCircleOutlined, RightOutlined,
+  UserOutlined, RiseOutlined, BulbOutlined, ClockCircleOutlined, RightOutlined, DollarOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import { useSelector, shallowEqual } from 'react-redux';
 import { selectVisibleProposals, type Proposal } from '../store/slices/governanceSlice';
-import { ragToken, levelLabel, solidTagStyle } from '../theme/ragPalette';
+import { ragToken, levelLabel, solidTagStyle, RAG, BRAND, ACCENT } from '../theme/ragPalette';
 import { SPACE, TYPE } from '../theme/premium';
 import { guidanceFor } from '../constants/characteristicGuidance';
 import type { ExecSystemInsight } from '../data/mockDashboards';
 import { MeasureDecisionModal } from './MeasureDecisionModal';
+
+const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
+
+// ТЗ v19 п.4: риски + меры + деньги для ячейки теплокарты (ИС × характеристика).
+interface CellMeasure {
+  proposalId: string; title: string; status: string;
+  aleReductionShare: number | null; rosi: number | null; verdict: string | null;
+}
+interface CellRisk {
+  id: string; code: string; title: string; aleAvg: number | null; aleP90: number | null;
+  status: string; subcharacteristics: string[]; measures: CellMeasure[];
+}
+interface CellDetail { systemName: string; characteristic: string; totalAle: number; risks: CellRisk[] }
+
+const fmtMoney = (v: number) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -51,6 +66,26 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
   const visible = useSelector(selectVisibleProposals, shallowEqual);
   const proposals = visible.filter((p) => p.systemName === system?.name);
   const [decisionProposal, setDecisionProposal] = useState<Proposal | null>(null);
+
+  // ТЗ v19 п.4: риски и деньги по ЭТОЙ ячейке (ИС × характеристика) — до раннего return, иначе
+  // хук вызывался бы условно (system иногда null) и нарушал бы порядок хуков между рендерами.
+  const [cell, setCell] = useState<CellDetail | null>(null);
+  const [cellLoading, setCellLoading] = useState(false);
+  useEffect(() => {
+    if (!open || !system || !characteristic) { setCell(null); return; }
+    let alive = true;
+    setCellLoading(true);
+    const token = localStorage.getItem('token');
+    const url = new URL(`${VITE_API}/risk-events/by-cell`, window.location.origin);
+    url.searchParams.set('system_name', system.name);
+    url.searchParams.set('characteristic', characteristic);
+    fetch(url.toString(), { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: CellDetail) => { if (alive) setCell(d); })
+      .catch(() => { if (alive) setCell(null); })  // обогащение, не критический путь — модалка работает и без денег
+      .finally(() => { if (alive) setCellLoading(false); });
+    return () => { alive = false; };
+  }, [open, system?.name, characteristic]);
 
   if (!system) return null;
   const tok = ragToken(system.score);
@@ -117,6 +152,66 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
           )}
         />
       </Block>
+
+      {characteristic && (
+        <>
+          <Divider style={{ margin: '12px 0' }} />
+          <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
+            <DollarOutlined /> Риски и деньги по «{characteristic}»
+          </Text>
+          <div style={{ marginTop: 8 }}>
+            {cellLoading ? (
+              <Spin size="small" />
+            ) : !cell || cell.risks.length === 0 ? (
+              <Text type="secondary" style={{ fontSize: TYPE.bodySm.fontSize }}>
+                Риски по этой характеристике не заведены в реестре.
+              </Text>
+            ) : (
+              <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                <Text strong style={{ color: RAG.bad.strong }}>
+                  Суммарный ALE: {fmtMoney(cell.totalAle)} / год
+                </Text>
+                {cell.risks.map((r) => (
+                  <div key={r.id} style={{ background: BRAND.surfaceSoft, borderRadius: 8, padding: 10 }}>
+                    <Space style={{ justifyContent: 'space-between', width: '100%' }} align="start">
+                      <Space size={4}>
+                        <WarningOutlined style={{ color: RAG.medium.strong }} />
+                        <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>{r.title}</Text>
+                      </Space>
+                      {r.aleAvg != null && (
+                        <Tag color="red">{fmtMoney(r.aleAvg)}/год</Tag>
+                      )}
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, display: 'block', marginTop: 2 }}>
+                      {r.code} · {r.subcharacteristics.join(', ')}
+                    </Text>
+                    {r.measures.length > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        {r.measures.map((m) => (
+                          <div key={m.proposalId} style={{ fontSize: TYPE.caption.fontSize, marginTop: 2 }}>
+                            <Tag style={{ fontSize: TYPE.micro.fontSize }} color={ACCENT.slate.color}>мера</Tag>
+                            <Text style={{ fontSize: TYPE.caption.fontSize }}>{m.title}</Text>
+                            {m.aleReductionShare != null && (
+                              <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
+                                {' '}· снимает {Math.round(m.aleReductionShare * 100)}% ALE
+                              </Text>
+                            )}
+                            {m.rosi != null && (
+                              <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
+                                {' '}· ROSI {m.rosi.toFixed(1)}
+                              </Text>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </Space>
+            )}
+          </div>
+        </>
+      )}
 
       <Divider style={{ margin: '12px 0' }} />
 
