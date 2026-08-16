@@ -17,9 +17,17 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.iam import get_current_user, require_permission
+from app.modules.iam import get_current_user, require_permission, resolve_user_id
 from app.modules.quality.models import FormulaType, MetricCatalog
-from app.modules.quality.schemas import MetricCreate, MetricOut, MetricUpdate
+from app.modules.quality.schemas import MetricCreate, MetricOut, MetricUpdate, WeightsOut
+from app.modules.quality.weight_versions import (
+    DEFAULT_CRITICALITY_WEIGHTS,
+    RecomputeReport,
+    ensure_active_version,
+    get_active_version,
+    recompute_and_snapshot,
+)
+from app.modules.quality.weights import ISO_KEY_BY_PAIR, SUBCHAR_WEIGHTS, TOTAL_WEIGHT
 
 router = APIRouter()
 
@@ -90,3 +98,38 @@ async def delete_metric(
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Metric not found")
     await db.commit()
+
+
+# ═══════════════════ Веса подхарактеристик (ТЗ v19 УК-04..07) ═══════════════════
+
+@router.get("/weights", response_model=WeightsOut)
+async def get_weights(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> WeightsOut:
+    """Текущий применяемый весовой вектор — открыт всем аутентифицированным: объяснимость
+    (пункт 1) требует, чтобы ЛЮБОЙ пользователь мог увидеть, откуда взялись веса в баллах."""
+    active = await get_active_version(db)
+    return WeightsOut(
+        active_version_id=active.id if active else None,
+        active_version_label=active.label if active else None,
+        total_weight=TOTAL_WEIGHT,
+        subchar_weights=[
+            {"characteristic": c, "subcharacteristic": s, "weight": w, "isoKey": ISO_KEY_BY_PAIR[(c, s)]}
+            for (c, s), w in SUBCHAR_WEIGHTS.items()
+        ],
+        criticality_weights=DEFAULT_CRITICALITY_WEIGHTS,
+    )
+
+
+@router.post("/weights/recompute", response_model=RecomputeReport)
+async def recompute_weights(
+    apply: bool = False,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("quality.catalog.edit")),
+) -> RecomputeReport:
+    """Пересчёт истории под текущими весами (Р-3, §6 ТЗ v19: обязательный отчёт «до/после»
+    до применения). apply=false (по умолчанию) — только отчёт, ничего не пишет. apply=true —
+    активирует версию весов (если изменилась) и записывает снапшоты по каждой (ИС, период)."""
+    created_by = await resolve_user_id(db, current_user.get("id"))
+    return await recompute_and_snapshot(db, apply=apply, created_by=created_by)
