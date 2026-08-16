@@ -21,10 +21,23 @@ import {
   approveProposal, rejectProposal, setExecution, updateProposalMeta, editProposal,
   type EditableProposalFields, type Proposal, type ProposalStatus,
 } from '../store/slices/governanceSlice';
-import { DollarOutlined } from '@ant-design/icons';
+import { DollarOutlined, FileTextOutlined } from '@ant-design/icons';
 import { ragToken, solidTagStyle, RAG, ACCENT } from '../theme/ragPalette';
 import { SPACE, TYPE } from '../theme/premium';
 import { fmtMoney, fmtNum } from '../utils/money';
+
+// ТЗ v19 п.14: карточка меры на языке топ-менеджмента (что не так → деньги/срок → решение →
+// стоимость → результат → ответственный), ≤80 слов, без формул — считает бэкенд
+// (governance/management_summary.py, персона TOP_MANAGER). Кэш по мере не нужен: бэкенд уже
+// кэширует по содержимому факта (llm/service.py generate_management_summary).
+interface ManagementSummary {
+  text: string;
+  wordCount: number;
+  hasMoney: boolean;
+  hasDeadline: boolean;
+  hasResponsible: boolean;
+  missing: string[];
+}
 
 const { Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -105,6 +118,21 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
   useEffect(() => {
     if (open && !horizon) { fetchRosiHorizon().then(setHorizon); }
   }, [open, horizon]);
+  const [mgmtSummary, setMgmtSummary] = useState<ManagementSummary | null>(null);
+  const [mgmtLoading, setMgmtLoading] = useState(false);
+  useEffect(() => {
+    if (!open || !proposal?.id) { setMgmtSummary(null); return; }
+    let alive = true;
+    setMgmtLoading(true);
+    const token = localStorage.getItem('token');
+    fetch(`${VITE_API}/governance/proposals/${proposal.id}/management-summary`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive) setMgmtSummary(d); })
+      .catch(() => { if (alive) setMgmtSummary(null); })
+      .finally(() => { if (alive) setMgmtLoading(false); });
+    return () => { alive = false; };
+  }, [open, proposal?.id]);
   // Редактируемые топ-менеджментом поля (ответственный/срок) до принятия решения.
   const [editOwner, setEditOwner] = useState('');
   const [editOwnerRole, setEditOwnerRole] = useState('');
@@ -220,6 +248,29 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
         <Tag>{p.characteristic}</Tag>
         <Tag style={solidTagStyle(tok.strong)}>{p.calculatedScore}%</Tag>
       </Space>
+
+      {(mgmtLoading || mgmtSummary?.text) && (
+        <div style={{
+          background: '#F5F6F8', borderRadius: 8, padding: 12, marginBottom: 12,
+          borderInlineStart: `3px solid ${ACCENT.slate.color}`,
+        }}>
+          <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
+            <FileTextOutlined /> Для топ-менеджмента
+          </Text>
+          {mgmtLoading ? (
+            <Paragraph style={{ marginBottom: 0, marginTop: 4 }} type="secondary">Готовится…</Paragraph>
+          ) : (
+            <>
+              <Paragraph style={{ marginBottom: 0, marginTop: 4 }}>{mgmtSummary!.text}</Paragraph>
+              {mgmtSummary!.missing.length > 0 && (
+                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block', marginTop: 4 }}>
+                  Не заполнено на мере: {mgmtSummary!.missing.join(', ')} — цифры ниже неполные, не нулевые.
+                </Text>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {hasEconomics && (
         <div style={{ background: '#F5F6F8', borderRadius: 8, padding: 12, marginBottom: 12 }}>

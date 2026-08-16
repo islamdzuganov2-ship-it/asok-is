@@ -28,6 +28,7 @@ from app.modules.llm.reasoning import ReasoningInput, ReasoningTrace, generate_r
 from app.modules.llm.service import (
     complete,
     generate_judgment_conclusion,
+    generate_management_summary,
     generate_measures_analytics,
     generate_summary,
     is_available,
@@ -56,6 +57,7 @@ __all__ = [
     "generate_summary",
     "generate_judgment_conclusion",
     "generate_measures_analytics",
+    "generate_management_summary",
     "ReasoningInput",
     "ReasoningTrace",
     "run_reasoning",

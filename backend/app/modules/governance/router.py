@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.governance import economics_service, service
+from app.modules.governance import economics_service, management_summary, service
 from app.modules.governance.schemas import (
     DecisionIn,
     EditIn,
@@ -177,3 +177,14 @@ async def recompute_economics(
     """ROSI + рекомендованный вердикт (устранить/компенсировать/принять) по портфелю снимаемых рисков."""
     p = await service.get_or_404(db, pid)
     return await economics_service.recompute_economics(db, p)
+
+
+@router.get("/proposals/{pid}/management-summary", response_model=management_summary.ManagementSummaryOut)
+async def get_management_summary(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db), _: dict = Depends(get_current_user),
+):
+    """Карточка меры на языке топ-менеджмента (п.14): что не так → деньги/срок → решение →
+    стоимость → результат → ответственный, ≤80 слов, без формул (см. модуль)."""
+    p = await service.get_or_404(db, pid)
+    return management_summary.build_management_summary(p)

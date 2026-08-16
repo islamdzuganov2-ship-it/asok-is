@@ -41,7 +41,12 @@ from dataclasses import asdict, dataclass
 
 from app.infrastructure.config import settings
 from app.modules.llm import brain
-from app.modules.llm.prompts import CONCLUSION_SYSTEM_PROMPT, SYSTEM_PROMPT  # noqa: F401  (публичный контракт модуля)
+from app.modules.llm.personas import TOP_MANAGER
+from app.modules.llm.prompts import (  # noqa: F401  (публичный контракт модуля)
+    CONCLUSION_SYSTEM_PROMPT,
+    MEASURE_CARD_SUMMARY_PROMPT,
+    SYSTEM_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -658,6 +663,165 @@ def generate_summary(system_name: str, period_label: str,
             text = _grounded_fallback(system_name, period_label, metrics_block)
     else:
         text = _grounded_fallback(system_name, period_label, metrics_block)
+
+    _cache_put(key, text)
+    return text
+
+
+# ─── Резюме карточки меры для топ-менеджмента (ТЗ v19 п.14, УК-14) ─────────────────────
+# Отдельный однопроходный вызов (не общий конвейер reasoning.py: там вход — суждения/риски/
+# метрики по всей ИС за период, здесь — уже посчитанные поля ОДНОЙ меры). Берёт системную роль
+# и формат персоны TOP_MANAGER напрямую (personas.py) — тот же адресат, та же честность.
+#
+# Пользователь настоял явно (сессия ТЗ v19): изложение проблемы/решения строится АНАЛИЗОМ
+# переданных фактов, а не «подстановкой в формулу» и не переписыванием вслепую. Маленькая
+# локальная модель инструкцию формата иногда игнорирует — поэтому контракт (лимит слов, запрет
+# жаргона формул, обязательность денег/срока/ответственного) проверяется ПОСЛЕ генерации, а не
+# только просьбой в промпте; при нарушении — честный детерминированный fallback (та же
+# деградация, что и у остальных generate_* здесь).
+
+_JARGON_RE = re.compile(r"[A-ZА-Я]\s*=|A/B\b|\bDIRECT\b|\bINVERSE\b", re.IGNORECASE)
+_ABSENT_MARKERS = ("не оценен", "не назначен", "не сформулирован", "не указан")
+_LONG_NUMBER_RE = re.compile(r"\d[\d\s]{3,}\d")
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"\S+", text or ""))
+
+
+def _has_absence_marker(text: str) -> bool:
+    low = (text or "").lower()
+    return any(m in low for m in _ABSENT_MARKERS)
+
+
+def _numbers_in(text: str) -> set[str]:
+    return {re.sub(r"\s+", "", n) for n in _LONG_NUMBER_RE.findall(text or "")}
+
+
+def _covers_money(text: str, money_note: str) -> bool:
+    if "не оценен" in money_note.lower():
+        return _has_absence_marker(text)
+    return "₽" in text or _has_absence_marker(text)
+
+
+def _covers_deadline(text: str, deadline_note: str) -> bool:
+    if "не назначен" in deadline_note.lower():
+        return _has_absence_marker(text)
+    return bool(re.search(r"\d{1,2}[.\-]\d{1,2}", text)) or _has_absence_marker(text)
+
+
+def _covers_responsible(text: str, responsible_name: str | None) -> bool:
+    if not responsible_name:
+        return _has_absence_marker(text)
+    return responsible_name.lower() in text.lower() or _has_absence_marker(text)
+
+
+_TOKEN_RE = re.compile(r"[а-яё]{6,}")
+
+
+def _covers_ask(text: str, ask: str, problem: str) -> bool:
+    """Проверка, что «решение» (запрошенное у ЛПР действие) отражено, а не потеряно за
+    пересказом проблемы. Найдено эмпирически (браузерная проверка): маленькая модель иногда
+    пересказывает факты «Что не так»/«Деньги»/«Срок»/«Ответственный» и МОЛЧА теряет именно
+    раздел «Решение» — деньги/срок/ответственный при этом проходят отдельные проверки выше,
+    так что без этой проверки брак было бы не поймать.
+
+    Слова, общие с «problem» (проблема и решение часто говорят об одном и том же — общая
+    лексика неизбежна), исключаются из сравнения, иначе проверка ложно засчитывала бы пересказ
+    проблемы за отражение решения."""
+    if "не сформулирован" in ask.lower():
+        return _has_absence_marker(text)
+    ask_tokens = set(_TOKEN_RE.findall(ask.lower()))
+    distinctive = ask_tokens - set(_TOKEN_RE.findall(problem.lower()))
+    if not distinctive:
+        distinctive = ask_tokens
+    if not distinctive:
+        return True  # в «ask» нет содержательных слов ≥6 букв — проверять нечего
+    low = text.lower()
+    return any(t in low for t in distinctive) or _has_absence_marker(text)
+
+
+def _management_summary_fallback(
+    problem: str, ask: str, money_note: str, deadline_note: str,
+    cost_note: str, result_note: str, responsible_note: str,
+) -> str:
+    """Детерминированная запись по тому же контракту (лимит слов, честные пометки «не
+    оценено»/«не назначен») — когда LLM недоступна или её ответ не проходит проверку ниже.
+    Свободный текст полей (обоснование/ожидание) обрезается по словам, не по символам, и
+    помечается «…» — это честное сокращение изложения, а не домысливание содержания."""
+    def _clip(s: str, n: int) -> str:
+        words = (s or "").split()
+        return (s or "").strip() if len(words) <= n else " ".join(words[:n]) + "…"
+
+    sentences = [
+        f"Что не так: {_clip(problem, 18) or 'проблема не описана в обосновании меры'}.",
+        f"Деньги и срок: {money_note}; {deadline_note}.",
+        f"Решение: {_clip(ask, 14) or 'конкретное решение от руководителя не сформулировано'}.",
+        f"Стоимость: {cost_note}.",
+        f"Результат: {result_note}.",
+        f"Ответственный: {responsible_note}.",
+    ]
+    text = " ".join(sentences)
+    words = text.split()
+    return text if len(words) <= 80 else " ".join(words[:80]) + "…"
+
+
+def generate_management_summary(
+    problem: str, ask: str, money_note: str, deadline_note: str,
+    cost_note: str, result_note: str, responsible_note: str,
+    responsible_name: str | None = None,
+) -> str:
+    """Управленческая записка по одной мере — контракт «что не так → деньги/срок → решение →
+    стоимость → результат → ответственный», ≤80 слов, без формул/технических обозначений.
+
+    `*_note` — уже честно оформленные строки («500 000 ₽/год» либо «не оценено», «до
+    01.09.2026» либо «не назначен») — их готовит вызывающий код (домен governance, который
+    один знает поля Proposal); эта функция ORM не импортирует. `responsible_name` — «сырое»
+    имя ответственного, только чтобы проверить, что LLM его не потеряла при пересказе.
+    """
+    key = hash(("mgmt_summary", problem, ask, money_note, deadline_note,
+                cost_note, result_note, responsible_note))
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    fallback = _management_summary_fallback(
+        problem, ask, money_note, deadline_note, cost_note, result_note, responsible_note,
+    )
+
+    facts = (
+        f"Что не так: {problem}\n"
+        f"Решение (ожидание от руководителя): {ask}\n"
+        f"Деньги (цена бездействия): {money_note}\n"
+        f"Срок: {deadline_note}\n"
+        f"Стоимость решения: {cost_note}\n"
+        f"Ожидаемый результат: {result_note}\n"
+        f"Ответственный: {responsible_note}"
+    )
+    text = complete(MEASURE_CARD_SUMMARY_PROMPT.format(facts=facts),
+                    system=TOP_MANAGER.system_prompt, max_tokens=TOP_MANAGER.max_tokens)
+
+    if text:
+        reasons = []
+        if _word_count(text) > 80:
+            reasons.append("превышен лимит 80 слов")
+        if _JARGON_RE.search(text):
+            reasons.append("технический жаргон формул в тексте для руководителя")
+        if _numbers_in(text) - _numbers_in(facts):
+            reasons.append("числа вне переданных фактов")
+        if not _covers_money(text, money_note):
+            reasons.append("денежная оценка не отражена")
+        if not _covers_deadline(text, deadline_note):
+            reasons.append("срок не отражён")
+        if not _covers_responsible(text, responsible_name):
+            reasons.append("ответственный не отражён")
+        if not _covers_ask(text, ask, problem):
+            reasons.append("решение (запрошенное действие) не отражено")
+        if reasons:
+            logger.warning("Резюме карточки меры отбраковано (%s) — честный fallback", "; ".join(reasons))
+            text = fallback
+    else:
+        text = fallback
 
     _cache_put(key, text)
     return text
