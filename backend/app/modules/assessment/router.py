@@ -77,6 +77,7 @@ def _empty_dashboard() -> dict:
         "totalMetrics": 0,
         "characteristics": [],
         "systemDetails": [],
+        "periodsUsed": {"distinct": [], "earliest": None, "latest": None, "bySystem": {}},
     }
 
 
@@ -145,8 +146,16 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     # (сиды пишут периоды одной транзакцией) и не по строке («Q4-2025» > «Q2-2026») — DEF-13.
     rows = sorted(rows, key=lambda r: period_sort_key(r[1].period), reverse=True)
     latest_period_per_system: dict[str, str] = {}
+    # ТЗ v19 п.15: «эффекты в разрезе сроков, чётко отражать рамки времени» — дашборд молча
+    # показывал «последний период на каждую ИС» без указания, какой это период. Разные ИС часто
+    # на РАЗНЫХ последних периодах (одна прислала данные за Q2-2026, другая ещё на Q4-2025) —
+    # не сказать этого явно значит выдать цифру, для которой пользователь не может задать
+    # «за какой период», что напрямую нарушает §6 ТЗ («не показываем число без ответа на почему»).
+    period_label_by_system: dict[str, str] = {}
     for _, period, system, _ in rows:
         latest_period_per_system.setdefault(str(system.id), str(period.id))
+        if latest_period_per_system[str(system.id)] == str(period.id):
+            period_label_by_system[system.name] = period.period
     latest_rows = [
         (value, system, metric)
         for value, period, system, metric in rows
@@ -285,6 +294,14 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     # Контракт со фронтом — 0..1 (как и раньше: DashboardPage.tsx делает *100 сам).
     global_health_score = round(portfolio.score / 100, 4) if portfolio.score is not None else 0.0
 
+    distinct_periods = sorted(set(period_label_by_system.values()), key=period_sort_key)
+    periods_used = {
+        "distinct": distinct_periods,
+        "earliest": distinct_periods[0] if distinct_periods else None,
+        "latest": distinct_periods[-1] if distinct_periods else None,
+        "bySystem": period_label_by_system,
+    }
+
     return {
         "globalHealthScore": global_health_score,
         # ТЗ v19 УК-01..03: объяснимая цифра — из чего сложился portfolio-балл (какая ИС сколько
@@ -301,6 +318,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
         "totalMetrics": total_metrics,
         "characteristics": characteristics_out,
         "systemDetails": system_details,
+        "periodsUsed": periods_used,
     }
 
 

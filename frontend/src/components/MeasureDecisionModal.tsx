@@ -27,6 +27,28 @@ import { SPACE, TYPE } from '../theme/premium';
 import { fmtMoney, fmtNum } from '../utils/money';
 
 const { Text, Paragraph } = Typography;
+const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
+
+// ТЗ v19 п.15: горизонт/ставка ROSI читаются из /econ/config (EconConfig — редактируется без
+// деплоя, backend/app/modules/econ/service.py). Модуль-уровневый кэш — параметр общий для всех
+// мер и не меняется на лету, повторный фетч на каждое открытие карточки не нужен.
+let horizonCache: { months: number; rate: number } | null = null;
+async function fetchRosiHorizon(): Promise<{ months: number; rate: number } | null> {
+  if (horizonCache) return horizonCache;
+  try {
+    const token = localStorage.getItem('token');
+    const r = await fetch(`${VITE_API}/econ/config`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!r.ok) return null;
+    const items: { key: string; value: unknown }[] = await r.json();
+    const months = items.find((i) => i.key === 'rosi_horizon_months')?.value;
+    const rate = items.find((i) => i.key === 'discount_rate_annual')?.value;
+    if (typeof months === 'number' && typeof rate === 'number') {
+      horizonCache = { months, rate };
+      return horizonCache;
+    }
+  } catch { /* необязательная подпись — тихо остаёмся без неё, ROSI-число всё равно верное */ }
+  return null;
+}
 
 const MEASURE_TYPE_LABEL: Record<string, string> = {
   ELIMINATING: 'Устраняющая (снимает первопричину)',
@@ -79,6 +101,10 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
     proposal ? s.governance.proposals.find((x) => x.id === proposal.id) ?? proposal : null);
   const [comment, setComment] = useState('');
   const [execComment, setExecComment] = useState('');
+  const [horizon, setHorizon] = useState<{ months: number; rate: number } | null>(horizonCache);
+  useEffect(() => {
+    if (open && !horizon) { fetchRosiHorizon().then(setHorizon); }
+  }, [open, horizon]);
   // Редактируемые топ-менеджментом поля (ответственный/срок) до принятия решения.
   const [editOwner, setEditOwner] = useState('');
   const [editOwnerRole, setEditOwnerRole] = useState('');
@@ -221,7 +247,9 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
             )}
             {p.rosi != null && (
               <div>
-                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>ROSI</Text>
+                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>
+                  ROSI{horizon ? ` за ${Math.round(horizon.months / 12 * 10) / 10} г.` : ''}
+                </Text>
                 <Text strong style={{ color: p.rosi >= 0 ? RAG.good.strong : RAG.bad.strong }}>{fmtNum(p.rosi, 2)}</Text>
               </div>
             )}
@@ -232,6 +260,12 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
               </div>
             )}
           </div>
+          {p.rosi != null && horizon && (
+            <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block', marginTop: 4 }}>
+              ROSI и окупаемость — за горизонт {horizon.months} мес. под ставку дисконтирования {Math.round(horizon.rate * 100)}%/год
+              (параметр контура, меняется без релиза)
+            </Text>
+          )}
           {(p.deltaAleCash != null || p.deltaAleDeferred != null || p.deltaAleCapacity != null) && (
             <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, display: 'block', marginTop: 6 }}>
               из них: касса {fmtMoney(p.deltaAleCash)} · отложенная {fmtMoney(p.deltaAleDeferred)} · высвобожденная мощность {fmtMoney(p.deltaAleCapacity)}

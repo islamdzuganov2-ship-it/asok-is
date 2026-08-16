@@ -50,6 +50,9 @@ interface LiveDashboard {
   xAxisLabels?: string[];
   yAxisLabels?: string[];
   problematicSystems?: { id: string; name: string; criticality: string; lowMetricsCount: number }[];
+  // ТЗ v19 п.15: за какой период(ы) собран показанный балл — разные ИС нередко на разных
+  // последних периодах, молчать об этом значит не дать ответить на «за какой это срок».
+  periodsUsed?: { distinct: string[]; earliest: string | null; latest: string | null; bySystem: Record<string, string> };
 }
 
 // Бакет уровня (0..5) → представительный % для RAG-индикации.
@@ -272,6 +275,16 @@ const ExecutiveDashboard: React.FC = () => {
                 {isLive ? 'LLM · live' : 'Демо'}
               </Tag>
             </Text>
+            {isLive && live?.periodsUsed && live.periodsUsed.distinct.length > 0 && (
+              <div>
+                <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
+                  Данные за период{live.periodsUsed.distinct.length > 1 ? 'ы' : ''}:{' '}
+                  {live.periodsUsed.distinct.length > 1
+                    ? `${live.periodsUsed.earliest} – ${live.periodsUsed.latest} (разные ИС на разных последних периодах)`
+                    : live.periodsUsed.latest}
+                </Text>
+              </div>
+            )}
           </Col>
           <Col>
             <Badge count={pendingCount} offset={[-6, 6]} color={RAG.medium.color}>

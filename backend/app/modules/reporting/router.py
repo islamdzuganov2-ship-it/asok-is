@@ -25,12 +25,22 @@ from app.infrastructure.database import get_db
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
 from app.modules.iam import get_current_user, require_permission
 from app.modules.llm import brain as llm_brain
-from app.modules.quality import CHARACTERISTICS, canonical_characteristic
+from app.modules.quality import (
+    CHARACTERISTICS,
+    DEFAULT_CRITICALITY_WEIGHTS,
+    QUALITY_MODEL,
+    SUBCHAR_WEIGHTS,
+    SubcharScore,
+    canonical_characteristic,
+    portfolio_score,
+    weighted_system_score,
+)
 from app.modules.reporting.models import DefectMatrix, QualityPlanMatrix, RiskMatrix
 from app.modules.reporting.schemas import (
     DashboardDataOut,
     DefectMatrixRow,
     FullExcelMatricesOut,
+    PeriodsUsedOut,
     ProblematicSystemOut,
     QualityPlanMatrixRow,
     RiskMatrixRow,
@@ -370,17 +380,24 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
             xAxisLabels=[],
             yAxisLabels=[],
             problematicSystems=[],
+            periodsUsed=PeriodsUsedOut(distinct=[], earliest=None, latest=None, bySystem={}),
         )
 
-    global_score = round((sum(measured) / len(measured)) * 100, 2)
     system_names = sorted({value.period.system.name for value in values})
 
+    # ТЗ v19 УК-07 (Р-6): та же двухуровневая свёртка, что и /assessments/dashboard — раньше
+    # здесь было НЕЗАВИСИМОЕ плоское среднее по ВСЕМ строкам разом (DEF-12 обещал консистентность
+    # «как в /assessments/dashboard» комментарием, а не общим кодом — веса подхарактеристик и
+    # критичности до этого экрана не доходили; ExecutiveDashboard.tsx ходит именно сюда).
     cells: dict[tuple[str, str], list[float]] = defaultdict(list)
     low_counts: dict[UUID, int] = defaultdict(int)
     systems_by_id: dict[UUID, System] = {}
     present_chars: set[str] = set()
+    subchar_x: dict[str, dict[tuple[str, str], float]] = defaultdict(dict)
+    period_label_by_system: dict[str, str] = {}
     for value in values:
         systems_by_id[value.period.system.id] = value.period.system
+        period_label_by_system[value.period.system.name] = value.period.period
         if value.calculated_x is None:
             continue
         # Нормализация имени характеристики к модели 25010 (DEF-02): теплокарта = 8 характеристик, как в моках.
@@ -390,8 +407,28 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
         score = float(value.calculated_x)
         present_chars.add(canon)
         cells[(value.period.system.name, canon)].append(score)
+        subchar_x[value.period.system.name][(canon, value.metric.subcharacteristic)] = score * 100
         if score < 0.41:
             low_counts[value.period.system.id] += 1
+
+    crit_by_name: dict[str, str] = {
+        s.name: (s.criticality_class.value if hasattr(s.criticality_class, "value") else str(s.criticality_class))
+        for s in systems_by_id.values()
+    }
+    system_scores: dict[str, float | None] = {}
+    for name in system_names:
+        subchar_scores = [
+            SubcharScore(
+                characteristic=char_title, subcharacteristic=sub,
+                weight=SUBCHAR_WEIGHTS[(char_title, sub)],
+                x=subchar_x.get(name, {}).get((char_title, sub)),
+            )
+            for char_title, subs_def in QUALITY_MODEL
+            for sub, _formula in subs_def
+        ]
+        system_scores[name] = weighted_system_score(subchar_scores).score
+    portfolio = portfolio_score(system_scores, crit_by_name, DEFAULT_CRITICALITY_WEIGHTS)
+    global_score = round(portfolio.score, 2) if portfolio.score is not None else 0.0
 
     # Канонические характеристики в фиксированном порядке модели (только присутствующие).
     characteristic_names = [c for c in CHARACTERISTICS if c in present_chars]
@@ -406,6 +443,14 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
         ]
         for (system_name, characteristic), scores in cells.items()
     ]
+
+    distinct_periods = sorted(set(period_label_by_system.values()), key=period_sort_key)
+    periods_used = PeriodsUsedOut(
+        distinct=distinct_periods,
+        earliest=distinct_periods[0] if distinct_periods else None,
+        latest=distinct_periods[-1] if distinct_periods else None,
+        bySystem=period_label_by_system,
+    )
 
     problematic = [
         ProblematicSystemOut(
@@ -452,6 +497,7 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
         xAxisLabels=characteristic_names,
         yAxisLabels=system_names,
         problematicSystems=problematic,
+        periodsUsed=periods_used,
     )
 
 

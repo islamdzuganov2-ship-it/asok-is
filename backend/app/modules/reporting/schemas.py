@@ -2,7 +2,7 @@
 
 Выделены из бывшего app/schemas/assessment.py: это контракты ОТЧЁТНОСТИ, а не оценки.
 """
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -56,6 +56,16 @@ class ProblematicSystemOut(BaseModel):
     lowMetricsCount: int
 
 
+class PeriodsUsedOut(BaseModel):
+    """ТЗ v19 п.15: за какой период(ы) собран показанный балл — см. periods_used в
+    assessment/router.py get_dashboard, тот же контракт, независимая реализация здесь
+    (управленческий дашборд — отдельный агрегирующий эндпоинт, DEF-12)."""
+    distinct: List[str]
+    earliest: Optional[str] = None
+    latest: Optional[str] = None
+    bySystem: Dict[str, str]
+
+
 class DashboardDataOut(BaseModel):
     globalHealthScore: float
     aiInsights: str
@@ -63,3 +73,4 @@ class DashboardDataOut(BaseModel):
     xAxisLabels: List[str]
     yAxisLabels: List[str]
     problematicSystems: List[ProblematicSystemOut]
+    periodsUsed: Optional[PeriodsUsedOut] = None
