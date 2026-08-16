@@ -115,20 +115,6 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
     return out.sort((a, b) => (b.total - a.total) || (b.effectiveness - a.effectiveness));
   }, [scoped, charWeights]);
 
-  // Итоги «по всем сотрудникам» — для подписи под заголовком. Взвешено так же, как построчно
-  // (не среднее построчных effectiveness — иначе владелец с одной мелкой мерой и владелец с
-  // десятками весомых учитывались бы поровну).
-  const totals = useMemo(() => {
-    const counts = scoped.reduce(
-      (acc, p) => ({ done: acc.done + (bucketOf(p) === 'done' ? 1 : 0), awaiting: acc.awaiting + (bucketOf(p) === 'awaiting' ? 1 : 0), overdue: acc.overdue + (bucketOf(p) === 'overdue' ? 1 : 0), total: acc.total + 1 }),
-      { done: 0, awaiting: 0, overdue: 0, total: 0 },
-    );
-    const weightApplied = scoped.reduce((a, p) => a + weightOf(p), 0);
-    const weightDone = scoped.reduce((a, p) => a + (bucketOf(p) === 'done' ? weightOf(p) : 0), 0);
-    return { ...counts, weightApplied, weightDone };
-  }, [scoped, charWeights]);
-  const overallEff = totals.weightApplied > 0 ? Math.round((totals.weightDone / totals.weightApplied) * 100) : 0;
-
   const numCol = (title: string, key: Bucket, color: string): ColumnsType<Row>[number] => ({
     title, dataIndex: key, key, width: 104, align: 'center' as const,
     sorter: (a: Row, b: Row) => a[key] - b[key],
@@ -198,11 +184,6 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
       {...premiumCard('gold')}
       style={{ ...premiumCard('gold').style, ...style }}
     >
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        Ответственные за меры качества · эффективность взвешена по весам характеристик ГОСТ 25010
-        (выполненные меры весомых характеристик значат больше, чем мелкие).
-        {totals.total > 0 && <> Итого по всем: <Text strong style={{ color: RAG[ragByScore(overallEff)].strong }}>{overallEff}%</Text> ({totals.done}/{totals.total} мер).</>}
-      </Text>
       {rows.length === 0 ? (
         <Empty style={{ padding: 24 }} description="Нет назначенных мер с ответственным в выбранном периоде" />
       ) : (
