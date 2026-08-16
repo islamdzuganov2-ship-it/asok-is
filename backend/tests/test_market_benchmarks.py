@@ -1,9 +1,11 @@
-"""Тесты структуры рыночных бенчмарков (ТЗ v19 п.9-10, В-30а) — без числового наполнения.
+"""Тесты структуры рыночных бенчмарков (ТЗ v19 п.9-10).
 
-В-30а (какими открытыми источниками пользоваться) заказчиком НЕ решён: тесты проверяют, что
-СТРУКТУРА держит инвариант «источник и дата обязательны» и что сравнение честно отвечает
-«нет данных», а не подставляет ноль/выдуманное среднее, когда бенчмарка ещё нет (обычное
-состояние — таблица пуста после миграции).
+В-30а закрыт 16.08.2026 (см. docs/ТЗ_19_Управленческий_Контур_и_Веса.md §0, доп. к Р-7) —
+seed_market_benchmarks() наполняет таблицу source-данными, тесты на сам сид — в
+test_market_benchmarks_seed.py. Этот файл — по-прежнему про СТРУКТУРНЫЙ инвариант: «источник и
+дата обязательны» и что сравнение честно отвечает «нет данных», а не подставляет ноль/выдуманное
+среднее, когда под конкретную комбинацию бенчмарка нет (каждый тест здесь работает с изолированной
+db_session и своими ad hoc записями — сид из main.py в них не запускается).
 """
 from datetime import date
 
@@ -112,7 +114,7 @@ async def test_compare_bp_without_benchmark_is_honest_not_fabricated(db_session)
     out = await service.compare_business_process(db_session, bp.id)
     assert out.own_value == 120.0
     assert out.benchmark is None
-    assert "В-30а" in out.note
+    assert "не внесён" in out.note
 
 
 async def test_compare_bp_with_benchmark_computes_delta(db_session):
@@ -165,7 +167,7 @@ async def test_compare_rate_without_benchmark_is_honest(db_session):
     out = await service.compare_support_rate(db_session, rate.id)
     assert out.own_value == 1500.0
     assert out.benchmark is None
-    assert "В-30а" in out.note
+    assert "не внесён" in out.note
 
 
 async def test_compare_rate_matches_by_executor_type_and_company_size(db_session):
