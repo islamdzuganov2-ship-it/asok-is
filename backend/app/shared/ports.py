@@ -76,3 +76,25 @@ class DataWarehouseSink(Protocol):
     """ВЫГРУЗКА рассчитанного анализа/дашбордов/заключений АСОК ИС обратно в хранилище."""
 
     def write_analytics(self, dataset: str, rows: Sequence[dict[str, Any]]) -> int: ...
+
+
+# ─── Уведомления (ТЗ v19 п.6): доставка вовне — канал НЕ выбран заказчиком ────────
+# Решение сессии (docs/ТЗ_19 §4): SMTP/мессенджер не определены — строим порт и заглушку,
+# домены эмитят события ЭТОГО контракта уже сейчас (см. shared/notification_events.py — каталог
+# типов), реальный канал подключается адаптером без изменений в доменах.
+@dataclass(frozen=True)
+class NotificationEvent:
+    """Одно событие, о котором нужно оповестить получателя — не привязано к каналу доставки."""
+    event_type: str    # см. shared.notification_events — каталог типов, не строка на месте
+    recipient: str      # ФИО/логин получателя (адрес почты пока не у всех пользователей есть)
+    subject: str
+    body: str
+    entity_type: str    # "proposal" | "nonconformity" — на что ссылается событие
+    entity_id: str
+
+
+@runtime_checkable
+class NotificationPort(Protocol):
+    """Доставка одного события получателю. Канал (email/мессенджер/ITSM) решает адаптер."""
+
+    def notify(self, event: NotificationEvent) -> bool: ...

@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     ITSM_API_TOKEN: str = ""
     DWH_URL: str = ""         # Хранилище данных (приём сырья + выгрузка анализа)
     DWH_TOKEN: str = ""
+    # ТЗ v19 п.6: канал уведомлений НЕ выбран заказчиком (решение сессии — «SMTP не определён,
+    # строить порт и заглушку»). Пустой хост = канал не настроен, работает StubNotificationPort
+    # (события пишутся в лог, не теряются молча). Реальный SMTP/мессенджер-клиент подключается
+    # сюда же по конфигурации, когда канал определится — домены (governance и т.д.) не меняются.
+    NOTIFICATION_SMTP_HOST: str = ""
+    NOTIFICATION_FROM_ADDRESS: str = ""
 
     # CORS
     CORS_ORIGINS: List[str] = [
