@@ -36,7 +36,13 @@ interface AnalyticsResp {
 
 const CONFIDENCE_COLOR: Record<string, string> = { высокая: 'green', средняя: 'gold', низкая: 'red' };
 
-const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposals }) => {
+interface MeasuresAiAnalyticsCardProps {
+  proposals: Proposal[];
+  /** ТЗ v19 п.3: клик по строке — переход к мерам этой характеристики (в реестре ниже). */
+  onOpenCharacteristic?: (characteristic: string) => void;
+}
+
+const MeasuresAiAnalyticsCard: React.FC<MeasuresAiAnalyticsCardProps> = ({ proposals, onOpenCharacteristic }) => {
   const [data, setData] = useState<AnalyticsResp | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -107,9 +113,17 @@ const MeasuresAiAnalyticsCard: React.FC<{ proposals: Proposal[] }> = ({ proposal
             rowKey="characteristic"
             size="small"
             pagination={false}
+            onRow={onOpenCharacteristic ? (rec) => ({
+              onClick: () => onOpenCharacteristic(rec.characteristic),
+              style: { cursor: 'pointer' },
+              title: `Показать меры по «${rec.characteristic}» в реестре ниже`,
+            }) : undefined}
             columns={[
               { title: 'Характеристика (систематика)', dataIndex: 'characteristic',
-                sorter: sorterFor((r: AggItem) => r.characteristic) },
+                sorter: sorterFor((r: AggItem) => r.characteristic),
+                render: (v: string) => onOpenCharacteristic
+                  ? <a onClick={(e) => { e.stopPropagation(); onOpenCharacteristic(v); }}>{v}</a>
+                  : v },
               numericColumn({ title: 'Мер', dataIndex: 'count', width: 80,
                 sorter: sorterFor((r: AggItem) => r.count),
                 render: (v: number) => <Tag color="volcano">{v}</Tag> }),

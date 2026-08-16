@@ -129,6 +129,8 @@ const ExecutiveDashboard: React.FC = () => {
   const [heatSort, setHeatSort] = useState<HeatmapSortState>(null);
   // Реестр мер качества по умолчанию скрыт — раскрывается по кнопке.
   const [showRegistry, setShowRegistry] = useState(false);
+  // ТЗ v19 п.3: переход «туда» из AI-карточки мер — характеристика, по которой кликнули.
+  const [registryPreset, setRegistryPreset] = useState<string | null>(null);
   // Фокус на характеристике для карточки ИС (клик по ячейке теплокарты).
   const [activeChar, setActiveChar] = useState<string | undefined>(undefined);
   // Балл выбранной характеристики — для корректной карточки характеристики (T-56).
@@ -311,7 +313,10 @@ const ExecutiveDashboard: React.FC = () => {
       )}
 
       {/* Топ проблемных ИС — AI-аналитика по мерам (предложения LLM, не карточки) */}
-      <MeasuresAiAnalyticsCard proposals={proposals} />
+      <MeasuresAiAnalyticsCard
+        proposals={proposals}
+        onOpenCharacteristic={(c) => { setShowRegistry(true); setRegistryPreset(c); }}
+      />
 
       {/* ТОП-3 проблемных ИС */}
       <Row align="middle" justify="space-between" style={{ marginBottom: 4 }}>
@@ -475,14 +480,14 @@ const ExecutiveDashboard: React.FC = () => {
           type={showRegistry ? 'default' : 'primary'}
           ghost={showRegistry}
           icon={<UnorderedListOutlined />}
-          onClick={() => setShowRegistry((v) => !v)}
+          onClick={() => setShowRegistry((v) => { if (v) setRegistryPreset(null); return !v; })}
         >
           {showRegistry ? 'Скрыть реестр мер качества' : 'Показать реестр мер качества'}
           {showRegistry ? <DownOutlined style={{ marginLeft: SPACE.snug }} /> : <RightOutlined style={{ marginLeft: SPACE.snug }} />}
         </Button>
         {showRegistry && (
           <div style={{ marginTop: 12 }}>
-            <MeasuresRegistryCard proposals={proposals} onOpen={setDecisionProposal} />
+            <MeasuresRegistryCard proposals={proposals} onOpen={setDecisionProposal} presetCharacteristic={registryPreset} />
           </div>
         )}
       </div>
