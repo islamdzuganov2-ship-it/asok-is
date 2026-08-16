@@ -46,6 +46,7 @@ from app.modules.reporting.schemas import (
     RiskMatrixRow,
 )
 from app.modules.governance import list_proposals  # кросс-доменный фасад (T-15: метки мер)
+from app.modules.incidents import list_incidents  # кросс-доменный фасад (ТЗ v20: AI-резюме ИС)
 from app.modules.llm import decisions as llm_decisions
 from app.modules.llm import gate as llm_gate
 from app.modules.llm import personas as llm_personas
@@ -251,6 +252,100 @@ async def measures_analytics(
         "fired_rules": [ln.lstrip("- ") for ln in rules_block.splitlines() if ln.strip()],
         "persona": {"code": persona.code, "title": persona.title, "audience": persona.audience},
         "decisions": result["decisions"],
+    }
+
+
+class SystemCharIn(BaseModel):
+    characteristic: str
+    score: float          # 0..100, отрицательное — «невозможно измерить» (см. ExecutiveDashboard)
+    weight: float          # вес характеристики ГОСТ 25010 (см. /quality/weights)
+
+
+class SystemInsightIn(BaseModel):
+    """Управленческий срез по ОДНОЙ ИС — тело формирует фронт (баллы/веса уже посчитаны там же,
+    что и карточки «Топ проблемных ИС», единый источник цифр)."""
+    system: str
+    score: int
+    criticality: str = ""
+    characteristics: list[SystemCharIn] = []
+
+
+def _weights_block(chars: list[SystemCharIn]) -> str:
+    measured = [c for c in chars if c.score >= 0]
+    ordered = sorted(measured, key=lambda c: c.weight, reverse=True)
+    return "\n".join(f"{c.characteristic} | балл {round(c.score)}% | вес {c.weight:g}" for c in ordered)
+
+
+def _system_measures_block(rows: list) -> str:
+    lines = []
+    for p in rows[:10]:
+        title = p.risk_title or p.metric_name or "мера"
+        detail = f"{p.characteristic or '—'} | {title} | {p.status}"
+        if p.owner:
+            detail += f", ответственный {p.owner}"
+        if p.due_date:
+            detail += f", срок {p.due_date}"
+        lines.append(detail)
+    return "\n".join(lines)
+
+
+@router.post("/system-insight")
+async def system_insight(
+    payload: SystemInsightIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("view.reports")),
+) -> dict:
+    """AI-резюме КОНКРЕТНОЙ ИС на карточках «Топ проблемных ИС» (доработка ТЗ v20 п.2).
+
+    Раньше «AI-резюме» было шаблонной строкой («Интегральная оценка… Наиболее просевшая…»)
+    без единого обращения к LLM — заказчик отметил несоответствие подписи содержанию. Теперь —
+    тот же конвейер рассуждения (BL-005), что и у «AI-аналитики по мерам»: баллы и веса
+    характеристик (ГОСТ 25010), связанные технические сбои (реестр incidents) и уже выработанные
+    меры (governance) — единственные факты, на которые может ссылаться вывод (grounding).
+    """
+    weights_block = _weights_block(payload.characteristics)
+    worst_chars = [
+        c.characteristic for c in sorted(payload.characteristics, key=lambda c: c.score)
+        if c.score >= 0
+    ][:3]
+
+    risk_rows = await risks_for_characteristics(db, worst_chars, limit=6)
+    risk_lines = [f"- {r.title}: {r.mitigation or '—'}" for r in risk_rows]
+    incident_rows = await list_incidents(db, system=payload.system)
+    incident_lines = [
+        f"- {inc.title} ({inc.category}/{inc.severity}, "
+        + ("не восстановлен" if inc.resolved_at is None else "восстановлен") + ")"
+        for inc in incident_rows[:6]
+    ]
+    risks_block = "\n".join(risk_lines)
+    if incident_lines:
+        risks_block = (risks_block + "\n" if risks_block else "") + "Технические сбои:\n" + "\n".join(incident_lines)
+
+    measure_rows = await list_proposals(db, system=payload.system)
+    measures_block = _system_measures_block(measure_rows)
+
+    gate_result = llm_gate.evaluate_gate(q=payload.score / 100.0, criticality=payload.criticality)
+    rules_block = gate_result.as_block()
+
+    roles = current_user.get("roles") or []
+    persona = llm_personas.resolve(roles[0] if roles else "")
+
+    measured_subs = sum(1 for c in payload.characteristics if c.score >= 0)
+    total_subs = len(payload.characteristics) or measured_subs
+
+    result = await asyncio.to_thread(
+        llm_reasoning.generate_reasoned_conclusion,
+        payload.system, "текущий период",
+        "",                      # проф.суждения не подмешиваем — это управленческий срез, не карточка оценки
+        risks_block, "", measures_block, weights_block, rules_block,
+        gate_result.severity, payload.criticality, measured_subs, total_subs, persona.code,
+    )
+    return {
+        "analytics": result["conclusion"],
+        "llm": llm_service.is_available(),
+        "confidence": result["confidence"],
+        "fingerprint": result["fingerprint"],
+        "fired_rules": [ln.lstrip("- ") for ln in rules_block.splitlines() if ln.strip()],
     }
 
 

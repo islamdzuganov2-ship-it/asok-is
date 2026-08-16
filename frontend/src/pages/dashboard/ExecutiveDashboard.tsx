@@ -153,6 +153,10 @@ const ExecutiveDashboard: React.FC = () => {
   const [activeChar, setActiveChar] = useState<string | undefined>(undefined);
   // Балл выбранной характеристики — для корректной карточки характеристики (T-56).
   const [activeCharScore, setActiveCharScore] = useState<number | undefined>(undefined);
+  // ТЗ v20: настоящее AI-резюме по ИС (POST /reports/system-insight) — по кнопке, на замену
+  // шаблонной строке «Интегральная оценка… Наиболее просевшая…», которая никогда не звала LLM,
+  // хотя карточка была подписана «AI-резюме». По id ИС — у каждой карточки свой запрос.
+  const [aiInsights, setAiInsights] = useState<Record<string, { loading: boolean; text?: string; error?: boolean }>>({});
 
   // Источник данных: 'mock' (демо) ↔ 'live' (реальное API + LLM, без моков).
   const [live, setLive] = useState<LiveDashboard | null>(null);
@@ -183,6 +187,63 @@ const ExecutiveDashboard: React.FC = () => {
   // Полные названия характеристик для сопоставления мер с ячейками (по режиму).
   const heatCharsFull = isLive ? data.heatmap.characteristics : HEATMAP_CHARS_FULL;
 
+  // Разбивка каждой ИС по характеристикам (балл + вес ГОСТ 25010) — единый источник и для
+  // взвешенного ранжирования, и для запроса AI-резюме по системе. Строится из ТЕХ ЖЕ данных,
+  // что видны в тепловой карте (heatmap.rows), а не из мок-поля System.score: у демо-данных
+  // это поле никогда не было взвешенным (отсюда «рандомный» на вид порядок карточек в демо).
+  const charBreakdownOf = useMemo(() => {
+    const map = new Map<string, { characteristic: string; score: number; weight: number }[]>();
+    data.heatmap.rows.forEach((row) => {
+      map.set(row.system, heatCharsFull.map((c, i) => ({
+        characteristic: c, score: row.cells[i]?.score ?? -1, weight: charWeights[c] ?? 0,
+      })));
+    });
+    return map;
+  }, [data.heatmap.rows, heatCharsFull, charWeights]);
+
+  // ТЗ v20 п.2: балл ранжирования — взвешенный по ГОСТ 25010, из charBreakdownOf, для ОБОИХ
+  // режимов одинаково (раньше в демо использовался статичный мок-балл, в live — свой расчёт).
+  const weightedScoreOf = useMemo(() => {
+    const map = new Map<string, number>();
+    charBreakdownOf.forEach((chars, sysName) => {
+      const measured = chars.filter((c) => c.score >= 0);
+      const totalWeight = measured.reduce((a, c) => a + c.weight, 0);
+      const score = totalWeight > 0
+        ? Math.round(measured.reduce((a, c) => a + c.score * c.weight, 0) / totalWeight)
+        : (measured.length ? Math.round(measured.reduce((a, c) => a + c.score, 0) / measured.length) : 0);
+      map.set(sysName, score);
+    });
+    return map;
+  }, [charBreakdownOf]);
+
+  // Системы с ПЕРЕОПРЕДЕЛЁННЫМ взвешенным баллом — единственный источник для карточек/списков/
+  // модалок ниже (topCards/orderedHeatRows/allOpen/ActionInsightModal), чтобы цифра, по которой
+  // сортируем, и цифра на бейдже всегда совпадали.
+  const systems = useMemo(
+    () => data.systems.map((s) => ({ ...s, score: weightedScoreOf.get(s.name) ?? s.score })),
+    [data.systems, weightedScoreOf],
+  );
+
+  // ТЗ v20: настоящий вызов LLM по ИС — балл, веса характеристик (charBreakdownOf), связанные
+  // технические сбои и уже выработанные меры собирает и обосновывает бэкенд (grounding, BL-005).
+  const genSystemInsight = async (sys: ExecSystemInsight) => {
+    setAiInsights((prev) => ({ ...prev, [sys.id]: { loading: true } }));
+    try {
+      const token = localStorage.getItem('token');
+      const characteristics = charBreakdownOf.get(sys.name) ?? [];
+      const r = await fetch(`${VITE_API}/reports/system-insight`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ system: sys.name, score: sys.score, criticality: sys.criticality, characteristics }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setAiInsights((prev) => ({ ...prev, [sys.id]: { loading: false, text: d.analytics } }));
+    } catch {
+      setAiInsights((prev) => ({ ...prev, [sys.id]: { loading: false, error: true } }));
+    }
+  };
+
   // Зелёная точка — только если есть мера, ПО КОТОРОЙ НЕ ПРИНЯТО РЕШЕНИЕ (ожидает решения).
   const cellHasMeasure = (sys: string, fullChar: string) =>
     proposals.some((p) =>
@@ -191,15 +252,16 @@ const ExecutiveDashboard: React.FC = () => {
       && norm(p.characteristic) === norm(fullChar));
 
   // ТЗ v20 п.2: топ-3 проблемных ИС — по баллу качества, взвешенному по весам ГОСТ 25010
-  // (data.systems[].score, см. buildExecFromLive), не по статичному полю «класс критичности».
-  const topCards = [...data.systems]
+  // (тяжелее весом характеристика → сильнее тянет ранжирование), не по статичному полю
+  // «класс критичности» и не по неучтённому мок-баллу.
+  const topCards = [...systems]
     .sort((a, b) => a.score - b.score)
     .slice(0, 3);
 
   // Строки теплокарты: худшие по взвешенному баллу — первые. По умолчанию топ-5, остальное под кнопкой.
   const orderedHeatRows = [...data.heatmap.rows].sort((a, b) => {
-    const sa = data.systems.find((s) => s.name === a.system);
-    const sb = data.systems.find((s) => s.name === b.system);
+    const sa = systems.find((s) => s.name === a.system);
+    const sb = systems.find((s) => s.name === b.system);
     return (sa?.score ?? 100) - (sb?.score ?? 100);
   });
   // ТЗ v19 п.12: явная сортировка поверх дефолтного порядка (по критичности) — по клику на
@@ -376,7 +438,6 @@ const ExecutiveDashboard: React.FC = () => {
         <Col>
           <Title level={5} style={{ color: BRAND.ink, margin: 0 }}>
             <FireOutlined style={{ color: RAG.medium.color }} /> Топ проблемных ИС — требуют внимания
-            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, marginLeft: 8 }}>(по баллу качества, взвешенному по ГОСТ 25010 · всего систем: {data.systems.length})</Text>
           </Title>
         </Col>
         <Col>
@@ -386,6 +447,7 @@ const ExecutiveDashboard: React.FC = () => {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         {topCards.map((sys) => {
           const tok = ragToken(sys.score);
+          const insight = aiInsights[sys.id];
           return (
             <Col xs={24} md={8} key={sys.id}>
               <Card
@@ -395,9 +457,16 @@ const ExecutiveDashboard: React.FC = () => {
                 styles={{ body: { padding: 16 } }}
               >
                 <Space style={{ marginBottom: 8 }} wrap>
-                  <Tag icon={<RobotOutlined />} color="default" style={{ borderRadius: 12 }}>
-                    AI-резюме
-                  </Tag>
+                  <Button
+                    size="small"
+                    type={insight?.text ? 'default' : 'primary'}
+                    ghost={!!insight?.text}
+                    icon={<RobotOutlined />}
+                    loading={!!insight?.loading}
+                    onClick={(e) => { e.stopPropagation(); genSystemInsight(sys); }}
+                  >
+                    {insight?.loading ? 'Генерация…' : insight?.text ? 'AI-резюме' : 'Собрать AI-резюме'}
+                  </Button>
                   <Tag style={solidTagStyle(tok.strong)}>
                     {sys.score}%
                   </Tag>
@@ -413,7 +482,9 @@ const ExecutiveDashboard: React.FC = () => {
                   ellipsis={{ rows: 3 }}
                   style={{ fontSize: TYPE.bodySm.fontSize, marginBottom: 8 }}
                 >
-                  {sys.aiSummary}
+                  {insight?.error
+                    ? 'Не удалось получить анализ LLM — попробуйте ещё раз или проверьте backend.'
+                    : insight?.text ?? sys.aiSummary}
                 </Paragraph>
                 <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>
                   → {sys.recommendation}
@@ -458,7 +529,7 @@ const ExecutiveDashboard: React.FC = () => {
               </thead>
               <tbody>
                 {shownHeatRows.map((r) => {
-                  const sys = data.systems.find((s) => s.name === r.system || s.name.includes(r.system));
+                  const sys = systems.find((s) => s.name === r.system || s.name.includes(r.system));
                   return (
                     <tr key={r.system}>
                       <td
@@ -588,10 +659,10 @@ const ExecutiveDashboard: React.FC = () => {
         onCancel={() => setAllOpen(false)}
         footer={null}
         width={760}
-        title={`Все системы — оценка качества (${data.systems.length})`}
+        title={`Все системы — оценка качества (${systems.length})`}
       >
         <Table<ExecSystemInsight>
-          dataSource={[...data.systems].sort((a, b) => a.score - b.score)}
+          dataSource={[...systems].sort((a, b) => a.score - b.score)}
           rowKey="id"
           size="small"
           pagination={{ pageSize: 10, hideOnSinglePage: true }}
