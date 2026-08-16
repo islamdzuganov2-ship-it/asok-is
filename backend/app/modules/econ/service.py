@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +22,9 @@ from app.modules.econ.models import (
     BP_KINDS,
     COST_METHODS,
     ENTERPRISE_PROFILE_ID,
+    EXECUTOR_INTERNAL,
     EXECUTOR_TYPES,
+    EXECUTOR_VENDOR,
     LINES,
     SIZE_CLASSES,
     BusinessProcess,
@@ -464,24 +466,36 @@ async def compare_business_process(db: AsyncSession, bp_id: uuid.UUID) -> Benchm
 
 async def compare_support_rate(db: AsyncSession, rate_id: uuid.UUID) -> BenchmarkComparisonOut:
     """Сравнение своей ставки сопровождения с рыночным ориентиром — тип исполнителя × размер
-    компании (п.10, EnterpriseProfile — параметр подстановки)."""
+    компании (п.10, EnterpriseProfile — параметр подстановки).
+
+    Рынок труда специалистов на практике не сегментирован по размеру банка ни в одном найденном
+    источнике (В-30а, см. сид `seed_market_benchmarks`): если под конкретный size_class ориентира
+    нет, сравнение откатывается на запись без company_size_class и явно помечает это в ответе —
+    честнее, чем молчать «нет данных», когда общий ориентир на самом деле есть.
+    """
     rate = await db.get(SupportRate, rate_id)
     if rate is None:
         raise NotFoundError("Ставка сопровождения не найдена")
     profile = await get_enterprise_profile(db)
     bench = await _latest_benchmark(db, BENCHMARK_SUPPORT_RATE, rate.executor_type, profile.size_class)
-    return _comparison(float(rate.rate_per_hour), "₽/час", bench, no_own="")
+    size_note = ""
+    if bench is None and profile.size_class is not None:
+        bench = await _latest_benchmark(db, BENCHMARK_SUPPORT_RATE, rate.executor_type, None)
+        if bench is not None:
+            size_note = " Рынок не сегментирован по размеру банка — показан общий ориентир."
+    return _comparison(float(rate.rate_per_hour), "₽/час", bench, no_own="", note_suffix=size_note)
 
 
 def _comparison(
     own: float | None, own_unit: str, bench: MarketBenchmark | None, no_own: str,
+    note_suffix: str = "",
 ) -> BenchmarkComparisonOut:
     if own is None:
         return BenchmarkComparisonOut(own_value=None, own_unit=own_unit, note=no_own)
     if bench is None:
         return BenchmarkComparisonOut(
             own_value=own, own_unit=own_unit,
-            note="Рыночный ориентир не внесён (открытые источники не согласованы, В-30а)",
+            note="Рыночный ориентир для этой комбинации не внесён",
         )
     if not bench.value:
         note = "ориентир внесён с нулевым значением — сравнение невозможно"
@@ -492,5 +506,87 @@ def _comparison(
         note = f"{direction} рыночного ориентира на {abs(delta_pct)}%"
     return BenchmarkComparisonOut(
         own_value=own, own_unit=own_unit, benchmark=MarketBenchmarkOut.model_validate(bench),
-        delta_pct=delta_pct, note=note,
+        delta_pct=delta_pct, note=note + note_suffix,
     )
+
+
+# ── Сид source-данных (В-30а закрыт 16.08.2026, см. docs/ТЗ_19_Управленческий_Контур_и_Веса.md
+# §0 доп. к Р-7). Каждая строка — цифра с реальным источником, не «на глаз»:
+# - где источник не делит по типу БП (BP_KINDS) — внесена ОДНА агрегированная оценка на все три,
+#   note каждой строки явно говорит, что это не три независимых измерения;
+# - где рынок специалистов не делит ставку по размеру банка-работодателя — company_size_class
+#   оставлен пустым осознанно (см. compare_support_rate — откат на такую запись с пометкой).
+DEFAULT_BENCHMARKS: list[dict] = [
+    {
+        "kind": BENCHMARK_BP_COST,
+        "dimension": dim,
+        "company_size_class": None,
+        "value": 12_500.00,
+        "unit": "₽/мин",
+        "source": (
+            "Киберпротект (со ссылкой на РБК Компании, Anti-Malware.ru, Strategy Partners, "
+            "TAdviser) — стоимость часа простоя ИТ для банков/страхования РФ, диапазон "
+            "500 000–1 000 000 ₽/час, контекст МСБ"
+        ),
+        "observed_on": date(2026, 8, 16),
+        "note": (
+            "Внесена середина диапазона источника (750 000 ₽/час = 12 500 ₽/мин). Источник НЕ "
+            "делит по типу бизнес-процесса — эта оценка применена одинаково ко всем трём "
+            "BP_KINDS, это не три независимых измерения. Дата — дата обращения к источнику "
+            "(точная дата публикации у источника не зафиксирована)."
+        ),
+    }
+    for dim in BP_KINDS
+] + [
+    {
+        "kind": BENCHMARK_SUPPORT_RATE,
+        "dimension": EXECUTOR_INTERNAL,
+        "company_size_class": None,
+        "value": 516.26,
+        "unit": "₽/час",
+        "source": (
+            "hh.ru — статистика зарплат по вакансии «Системный администратор», Москва (медиана)"
+        ),
+        "observed_on": date(2026, 8, 16),
+        "note": (
+            "82 601 ₽/мес ÷ 160 ч = 516,26 ₽/час — валовая ставка ФОТ, БЕЗ K_накладных. С учётом "
+            "econ_config.k_overhead=1,6 ориентировочно ≈826 ₽/час эквивалент полной внутренней "
+            "ставки — расчётная величина для сравнения, не наблюдение источника. Вторичный "
+            "источник (разбивка по грейдам, валовые ₽/час без накладных): L1 281–563, "
+            "L2 500–875, L3 813–1250 — для справки, отдельно не заведено (dimension бенчмарка "
+            "ставки — INTERNAL/VENDOR, не линия L1/L2/L3). Не сегментировано по размеру банка-"
+            "работодателя ни в одном найденном источнике — company_size_class пуст осознанно."
+        ),
+    },
+    {
+        "kind": BENCHMARK_SUPPORT_RATE,
+        "dimension": EXECUTOR_VENDOR,
+        "company_size_class": None,
+        "value": 3_100.00,
+        "unit": "₽/час",
+        "source": "augment-tech.ru — ставки аренды DevOps-инженера (аутстаффинг), 09.06.2026",
+        "observed_on": date(2026, 6, 9),
+        "note": (
+            "Ближайший открытый аналог вендорской ставки сопровождения — прямых ставок "
+            "L1/L2/L3-аутстаффинга не найдено. Усреднено по 2 грейдам: Middle 2 800–3 000 "
+            "₽/час (середина 2 900), Senior 3 200–3 400 ₽/час (середина 3 300) → среднее "
+            "3 100 ₽/час. Не сегментировано по размеру банка-заказчика."
+        ),
+    },
+]
+
+
+async def seed_market_benchmarks(db: AsyncSession) -> int:
+    """Идемпотентный сид рыночных бенчмарков: добавляет только отсутствующие (kind, dimension) —
+    не трогает то, что уже введено вручную или предыдущим сидом (в т.ч. с другим source/value)."""
+    rows = (await db.execute(select(MarketBenchmark.kind, MarketBenchmark.dimension))).all()
+    existing = {(k, d) for k, d in rows}
+    added = 0
+    for item in DEFAULT_BENCHMARKS:
+        if (item["kind"], item["dimension"]) in existing:
+            continue
+        db.add(MarketBenchmark(**item))
+        added += 1
+    if added:
+        await db.commit()
+    return added
