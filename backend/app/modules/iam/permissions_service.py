@@ -11,7 +11,7 @@ SUPER_ADMIN всегда получает ВЕСЬ каталог (мимо ма
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.iam.models import RolePermission, User
+from app.modules.iam.models import MandatorySection, RolePermission, User
 from app.modules.iam.permissions import (
     ADMIN_PERMISSIONS,
     ALL_PERMISSION_KEYS,
@@ -98,6 +98,25 @@ async def set_role_permissions(db: AsyncSession, role: str, permissions: list[st
     await db.commit()
     _invalidate()
     return sorted(valid)
+
+
+# ── Обязательные разделы (ТЗ v20 п.10) — без роли, без кэша: таблица маленькая и читается
+# редко (загрузка «Настройки»/матрицы), кэш процесса ради неё избыточен.
+
+async def get_mandatory_sections(db: AsyncSession) -> list[str]:
+    rows = (await db.execute(select(MandatorySection.permission))).scalars().all()
+    return sorted(rows)
+
+
+async def set_mandatory_sections(db: AsyncSession, permissions: list[str]) -> list[str]:
+    """Полная замена набора обязательных разделов. Только ключи из существующего каталога —
+    опечатка в ключе иначе тихо создала бы «обязательный» раздел, которого нет ни в одном меню."""
+    valid = sorted({p for p in permissions if p in ALL_PERMISSION_KEYS})
+    await db.execute(delete(MandatorySection))
+    for p in valid:
+        db.add(MandatorySection(permission=p))
+    await db.commit()
+    return valid
 
 
 async def seed_rbac_defaults(db: AsyncSession) -> int:

@@ -71,6 +71,8 @@ PERMISSIONS: list[Permission] = [
     Permission("risk.reembed", "Система", "Пересчёт эмбеддингов базы рисков"),
     Permission("admin.users.manage", "Администрирование", "Заводить и менять пользователей"),
     Permission("admin.permissions.manage", "Администрирование", "Раздавать права ролям"),
+    Permission("admin.mandatory_sections.manage", "Администрирование", "Фиксировать обязательные дашборды",
+               "Разделы, обязательные для всех пользователей — их нельзя скрыть в персональных настройках"),
 ]
 
 ALL_PERMISSION_KEYS: frozenset[str] = frozenset(p.key for p in PERMISSIONS)
@@ -83,6 +85,7 @@ PROTECTED_SUPERADMIN_PERMISSIONS: frozenset[str] = frozenset({
     "view.admin.users", "view.admin.permissions",
     "admin.users.manage", "admin.permissions.manage",
     "view.admin.llm_quality", "llm.quality.run",
+    "admin.mandatory_sections.manage",
 })
 
 # Встроенные роли — их права ФИКСИРОВАНЫ в коде (не редактируются матрицей):

@@ -18,11 +18,15 @@ from app.modules.iam.models import User, UserPreference
 from app.modules.iam.permissions import PERMISSIONS, group_order
 from app.modules.iam.permissions_service import (
     BuiltinRoleError,
+    get_mandatory_sections,
     get_matrix,
     get_role_permissions,
+    set_mandatory_sections,
     set_role_permissions,
 )
 from app.modules.iam.schemas import (
+    MandatorySectionsIn,
+    MandatorySectionsOut,
     MePermissionsOut,
     PasswordResetIn,
     PermissionCatalogOut,
@@ -137,6 +141,27 @@ async def update_role_permissions(
     except BuiltinRoleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {role: saved}
+
+
+# ═══════════════ Обязательные разделы (ТЗ v20 п.10) ═══════════════
+
+@router.get("/mandatory-sections", response_model=MandatorySectionsOut)
+async def list_mandatory_sections(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> MandatorySectionsOut:
+    """Открыт любому аутентифицированному: пользователь должен видеть, что именно закреплено
+    администратором и почему тумблер в «Настройке» недоступен, а не гадать."""
+    return MandatorySectionsOut(permissions=await get_mandatory_sections(db))
+
+
+@router.put("/mandatory-sections", response_model=MandatorySectionsOut)
+async def update_mandatory_sections(
+    payload: MandatorySectionsIn,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("admin.mandatory_sections.manage")),
+) -> MandatorySectionsOut:
+    return MandatorySectionsOut(permissions=await set_mandatory_sections(db, payload.permissions))
 
 
 # ═══════════════════════ Пользователи ═══════════════════════

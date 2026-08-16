@@ -99,3 +99,11 @@ class PreferencesOut(BaseModel):
 
 class PreferencesIn(BaseModel):
     prefs: dict
+
+
+class MandatorySectionsOut(BaseModel):
+    permissions: list[str]
+
+
+class MandatorySectionsIn(BaseModel):
+    permissions: list[str]
