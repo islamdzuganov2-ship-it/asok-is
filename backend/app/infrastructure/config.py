@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     # сюда же по конфигурации, когда канал определится — домены (governance и т.д.) не меняются.
     NOTIFICATION_SMTP_HOST: str = ""
     NOTIFICATION_FROM_ADDRESS: str = ""
+    # ТЗ v19 п.6: интеграция с внешним таск-трекером — решение сессии «не сейчас» (внутренний
+    # Гант уже закрывает потребность). Пустой URL = заглушка, как у соседних интеграций выше.
+    TASK_SYNC_API_URL: str = ""
+    TASK_SYNC_API_TOKEN: str = ""
 
     # CORS
     CORS_ORIGINS: List[str] = [

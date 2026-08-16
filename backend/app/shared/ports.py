@@ -98,3 +98,26 @@ class NotificationPort(Protocol):
     """Доставка одного события получателю. Канал (email/мессенджер/ITSM) решает адаптер."""
 
     def notify(self, event: NotificationEvent) -> bool: ...
+
+
+# ─── Синхронизация задач (ТЗ v19 п.6): интеграция с внешним таск-трекером — НЕ сейчас ──
+# Решение сессии (docs/ТЗ_19 §4): не интегрировать сейчас — внутренний Гант (TaskPlanDashboard.tsx
+# поверх governance.Proposal) уже закрывает планирование задач. Контракт готов заранее, чтобы
+# подключение внешнего трекера (Jira/СUЗ и т.п.) не требовало правок в доменах.
+@dataclass(frozen=True)
+class ExternalTask:
+    external_id: str
+    title: str
+    status: str
+    assignee: str | None = None
+    due_date: str | None = None
+
+
+@runtime_checkable
+class TaskSyncPort(Protocol):
+    """Двусторонняя синхронизация мер/поручений с внешним таск-трекером."""
+
+    def push_task(self, entity_type: str, entity_id: str, title: str,
+                  assignee: str | None, due_date: str | None) -> str: ...  # → внешний ID
+
+    def fetch_status(self, external_id: str) -> ExternalTask | None: ...
