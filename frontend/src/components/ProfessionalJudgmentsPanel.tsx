@@ -170,7 +170,7 @@ const ProfessionalJudgmentsPanel: React.FC<Props> = ({ periodId, periodLabel }) 
                 type="warning"
                 showIcon
                 style={{ marginBottom: SPACE.cozy }}
-                message="Сработавшие правила (движок решает — LLM объясняет)"
+                message="Основание разбора — сработавшие правила контроля качества"
                 description={
                   <Space direction="vertical" size={2}>
                     {conclusion.fired_rules.map((r, i) => (
@@ -196,7 +196,7 @@ const ProfessionalJudgmentsPanel: React.FC<Props> = ({ periodId, periodLabel }) 
               </>
             )}
             <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
-              Суждений учтено: {conclusion.judgments_count}. LLM: {conclusion.llm ? 'да' : 'fallback'}.
+              Суждений учтено: {conclusion.judgments_count}. Содержательный анализ: {conclusion.llm ? 'да' : 'нет (по формальным правилам)'}.
               {conclusion.confidence ? ` Уверенность: ${conclusion.confidence}.` : ''}
             </Text>
             <ConclusionFeedback fingerprint={conclusion.fingerprint} currentText={conclusion.conclusion} />

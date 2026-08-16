@@ -163,7 +163,7 @@ const MeasuresAiAnalyticsCard: React.FC<MeasuresAiAnalyticsCardProps> = ({ propo
                 <>
                   {data.fired_rules && data.fired_rules.length > 0 && (
                     <div style={{ marginBottom: 8 }}>
-                      <Text strong style={{ fontSize: TYPE.caption.fontSize }}>Сработавшие правила (движок решает — LLM объясняет):</Text>
+                      <Text strong style={{ fontSize: TYPE.caption.fontSize }}>Основание разбора — сработавшие правила контроля качества:</Text>
                       {data.fired_rules.map((r, i) => (
                         <div key={i}><Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>• {r}</Text></div>
                       ))}
