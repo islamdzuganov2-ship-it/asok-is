@@ -668,8 +668,10 @@ export const apiSlice = createApi({
         }),
         // ТЗ v20 — веса подхарактеристик ГОСТ 25010, источник для взвешенных карточек
         // (критичность ИС, эффективность сотрудников, подпись под спидометром, «Динамика»).
+        // Домен quality смонтирован под /metrics (ТЗ v13, api/v1/api.py) — НЕ /quality, несмотря
+        // на имя python-модуля app.modules.quality; правильный полный путь — /metrics/weights.
         getQualityWeights: builder.query<QualityWeightsOut, void>({
-            query: () => '/quality/weights',
+            query: () => '/metrics/weights',
             providesTags: ['Metrics'],
         }),
         // ─── RBAC / администрирование (BL-008) ───
