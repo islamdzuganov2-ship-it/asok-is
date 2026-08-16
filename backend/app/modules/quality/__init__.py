@@ -15,7 +15,14 @@ from app.modules.quality.ai_quality_model import (
     ai_model_tree,
 )
 from app.modules.quality.calculation import calculate_metric, map_to_level
-from app.modules.quality.models import FormulaType, MetricAttribute, MetricCatalog, MetricCharacteristic
+from app.modules.quality.models import (
+    FormulaType,
+    MetricAttribute,
+    MetricCatalog,
+    MetricCharacteristic,
+    ScoreHistorySnapshot,
+    WeightSetVersion,
+)
 from app.modules.quality.quality_model import (
     ABBR,
     CHARACTERISTICS,
@@ -26,6 +33,22 @@ from app.modules.quality.quality_model import (
     canonical_characteristic,
 )
 from app.modules.quality.schemas import MetricCatalogResponse, MetricCreate, MetricOut, MetricUpdate
+from app.modules.quality.scoring import (
+    PortfolioScoreBreakdown,
+    SubcharScore,
+    SystemScoreBreakdown,
+    measure_weight,
+    portfolio_score,
+    weighted_system_score,
+)
+from app.modules.quality.weight_versions import (
+    DEFAULT_CRITICALITY_WEIGHTS,
+    RecomputeReport,
+    ensure_active_version,
+    get_active_version,
+    recompute_and_snapshot,
+)
+from app.modules.quality.weights import CHARACTERISTIC_WEIGHTS, SUBCHAR_WEIGHTS, subchar_weight
 
 __all__ = [
     "MetricCatalog",
@@ -54,4 +77,22 @@ __all__ = [
     "ai_compute_metric",
     "ai_normalize_to_baseline",
     "ai_aggregate",
+    # ТЗ v19 УК-04..07: веса, свёртка, версии/история
+    "SUBCHAR_WEIGHTS",
+    "CHARACTERISTIC_WEIGHTS",
+    "subchar_weight",
+    "SubcharScore",
+    "SystemScoreBreakdown",
+    "PortfolioScoreBreakdown",
+    "weighted_system_score",
+    "portfolio_score",
+    "WeightSetVersion",
+    "ScoreHistorySnapshot",
+    "DEFAULT_CRITICALITY_WEIGHTS",
+    "RecomputeReport",
+    "get_active_version",
+    "ensure_active_version",
+    "recompute_and_snapshot",
+    # ТЗ v19 УК-13 (п.13): вес меры для нагрузки/балансировки исполнителей
+    "measure_weight",
 ]

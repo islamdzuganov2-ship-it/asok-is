@@ -24,7 +24,7 @@ import {
   useGetLlmQualityQuery, useRunLlmQualityMutation,
   type LlmCharacteristicCheck, type LlmQualityHistoryRow, type LlmSubcheck,
 } from '../../store/api/apiSlice';
-import { numericColumn, numericText } from '../../theme/table';
+import { numericColumn, numericText, sorterFor } from '../../theme/table';
 import { pageContainer, pageTitle, GOLD, premiumCard, accentDot, TYPE, SPACE } from '../../theme/premium';
 import { BRAND, RAG, ragToken, levelLabel, solidTagStyle } from '../../theme/ragPalette';
 
@@ -50,14 +50,18 @@ const ScoreTag: React.FC<{ score: number | null }> = ({ score }) => {
 
 const subColumns: ColumnsType<LlmSubcheck> = [
   { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 260,
+    sorter: sorterFor((r: LlmSubcheck) => r.subcharacteristic),
     render: (v: string) => <span style={{ color: BRAND.ink }}>{v}</span> },
   { title: 'Что измеряется', dataIndex: 'what', width: 280,
+    sorter: sorterFor((r: LlmSubcheck) => r.what),
     render: (v: string) => <Text type="secondary">{v}</Text> },
   numericColumn<LlmSubcheck>({
     title: 'Балл', dataIndex: 'score', width: 130,
+    sorter: sorterFor((r: LlmSubcheck) => r.score),
     render: (_: unknown, row: LlmSubcheck) => <ScoreTag score={row.score} />,
   }),
   { title: 'Обоснование', dataIndex: 'evidence',
+    sorter: sorterFor((r: LlmSubcheck) => r.evidence),
     render: (v: string) => <Text style={TYPE.caption}>{v}</Text> },
 ];
 
@@ -88,37 +92,45 @@ const LlmQualityPage: React.FC = () => {
 
   const charColumns: ColumnsType<LlmCharacteristicCheck> = [
     { title: 'Характеристика ISO/IEC 25010', dataIndex: 'characteristic',
+      sorter: sorterFor((r: LlmCharacteristicCheck) => r.characteristic),
       render: (v: string) => <span style={{ color: BRAND.ink, fontWeight: 600 }}>{v}</span> },
     numericColumn<LlmCharacteristicCheck>({
       title: 'Балл', dataIndex: 'score', width: 130,
+      sorter: sorterFor((r: LlmCharacteristicCheck) => r.score),
       render: (_: unknown, row: LlmCharacteristicCheck) => <ScoreTag score={row.score} />,
     }),
     numericColumn<LlmCharacteristicCheck>({
       title: 'Измерено', dataIndex: 'measured', width: 130,
+      sorter: sorterFor((r: LlmCharacteristicCheck) => r.measured),
       render: (_: unknown, row: LlmCharacteristicCheck) =>
         <span style={numericText}>{row.measured} из {row.total}</span>,
     }),
   ];
 
   const historyColumns: ColumnsType<LlmQualityHistoryRow> = [
-    { title: 'Дата прогона', dataIndex: 'generated_at', width: 200 },
+    { title: 'Дата прогона', dataIndex: 'generated_at', width: 200, sorter: sorterFor((r: LlmQualityHistoryRow) => r.generated_at) },
     { title: 'Режим', dataIndex: 'mode', width: 110,
+      sorter: sorterFor((r: LlmQualityHistoryRow) => r.mode),
       render: (v: string) => <Tag>{v === 'full' ? 'с инференсом' : 'быстрый'}</Tag> },
     { title: 'Запуск', dataIndex: 'trigger', width: 130,
+      sorter: sorterFor((r: LlmQualityHistoryRow) => r.trigger),
       render: (v: string) => <Text type="secondary">{v === 'schedule' ? 'по расписанию' : 'вручную'}</Text> },
     numericColumn<LlmQualityHistoryRow>({
       title: 'Интеграл', dataIndex: 'integral', width: 110,
+      sorter: sorterFor((r: LlmQualityHistoryRow) => r.integral),
       render: (v: number | null) => <span style={numericText}>{pct(v)}</span>,
     }),
     numericColumn<LlmQualityHistoryRow>({
       title: 'Покрытие', dataIndex: 'coverage', width: 110,
+      sorter: sorterFor((r: LlmQualityHistoryRow) => r.coverage),
       render: (v: number) => <span style={numericText}>{pct(v)}</span>,
     }),
     numericColumn<LlmQualityHistoryRow>({
       title: 'Длительность', dataIndex: 'duration_s', width: 130,
+      sorter: sorterFor((r: LlmQualityHistoryRow) => r.duration_s),
       render: (v: number) => <span style={numericText}>{v} с</span>,
     }),
-    { title: 'Модель', dataIndex: 'model', render: (v?: string) => <Text style={TYPE.caption}>{v ?? '—'}</Text> },
+    { title: 'Модель', dataIndex: 'model', sorter: sorterFor((r: LlmQualityHistoryRow) => r.model), render: (v?: string) => <Text style={TYPE.caption}>{v ?? '—'}</Text> },
   ];
 
   return (

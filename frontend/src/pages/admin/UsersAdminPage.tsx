@@ -16,6 +16,7 @@ import {
 import { roleLabel } from '../../constants/roles';
 import { pageContainer, pageTitle, GOLD, premiumCard, TYPE } from '../../theme/premium';
 import { RAG, BRAND, solidTagStyle } from '../../theme/ragPalette';
+import { sorterFor } from '../../theme/table';
 
 const { Title, Text } = Typography;
 
@@ -93,14 +94,16 @@ const UsersAdminPage: React.FC = () => {
   };
 
   const columns: ColumnsType<AdminUser> = [
-    { title: 'Логин', dataIndex: 'username', key: 'username', render: (v) => <Text strong>{v}</Text> },
-    { title: 'Имя', dataIndex: 'full_name', key: 'full_name', render: (v) => v || <Text type="secondary">—</Text> },
+    { title: 'Логин', dataIndex: 'username', key: 'username', sorter: sorterFor((r: AdminUser) => r.username), render: (v) => <Text strong>{v}</Text> },
+    { title: 'Имя', dataIndex: 'full_name', key: 'full_name', sorter: sorterFor((r: AdminUser) => r.full_name), render: (v) => v || <Text type="secondary">—</Text> },
     {
       title: 'Роль', dataIndex: 'role', key: 'role',
+      sorter: sorterFor((r: AdminUser) => roleLabel(r.role)),
       render: (r: string) => <Tag style={solidTagStyle(BRAND.ink)}>{roleLabel(r)}</Tag>,
     },
     {
       title: 'Статус', dataIndex: 'is_active', key: 'is_active',
+      sorter: sorterFor((r: AdminUser) => (r.is_active ? 1 : 0)),
       render: (a: boolean) => <Tag style={solidTagStyle(a ? RAG.good.strong : RAG.muted.strong)}>{a ? 'Активен' : 'Отключён'}</Tag>,
     },
     {

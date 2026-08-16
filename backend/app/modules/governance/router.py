@@ -15,10 +15,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.governance import economics_service, service
+from app.modules.governance import economics_service, management_summary, service
 from app.modules.governance.schemas import (
     DecisionIn,
     EditIn,
+    EffortHoursIn,
     EscalateIn,
     EscalationDecisionIn,
     ExecutionIn,
@@ -29,7 +30,7 @@ from app.modules.governance.schemas import (
     ProposalOut,
     TaskUpdateIn,
 )
-from app.modules.iam import get_current_user, require_permission
+from app.modules.iam import get_current_user, require_permission, resolve_user_id
 
 router = APIRouter()
 
@@ -108,6 +109,28 @@ async def report_execution(
     return await service.set_execution(db, p, payload.status, payload.comment, _username(user))
 
 
+@router.patch("/proposals/{pid}/effort", response_model=ProposalOut)
+async def set_effort_hours(
+    pid: uuid.UUID, payload: EffortHoursIn,
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.propose")),
+):
+    """Исполнитель проставляет трудоёмкость меры в часах вручную (п.13, В-41)."""
+    p = await service.get_or_404(db, pid)
+    uid = await resolve_user_id(db, user.get("id"))
+    return await service.set_effort_hours(db, p, payload.effort_hours, uid)
+
+
+@router.post("/proposals/{pid}/rewrite-for-executor", response_model=ProposalOut)
+async def rewrite_for_executor(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.propose")),
+):
+    """Переписать меру на язык исполнителя — конкретные шаги для «Плана задач» (п.16)."""
+    p = await service.get_or_404(db, pid)
+    uid = await resolve_user_id(db, user.get("id"))
+    return await service.rewrite_for_executor(db, p, uid)
+
+
 @router.patch("/proposals/{pid}/task", response_model=ProposalOut)
 async def update_task(
     pid: uuid.UUID, payload: TaskUpdateIn,
@@ -165,3 +188,14 @@ async def recompute_economics(
     """ROSI + рекомендованный вердикт (устранить/компенсировать/принять) по портфелю снимаемых рисков."""
     p = await service.get_or_404(db, pid)
     return await economics_service.recompute_economics(db, p)
+
+
+@router.get("/proposals/{pid}/management-summary", response_model=management_summary.ManagementSummaryOut)
+async def get_management_summary(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db), _: dict = Depends(get_current_user),
+):
+    """Карточка меры на языке топ-менеджмента (п.14): что не так → деньги/срок → решение →
+    стоимость → результат → ответственный, ≤80 слов, без формул (см. модуль)."""
+    p = await service.get_or_404(db, pid)
+    return management_summary.build_management_summary(p)

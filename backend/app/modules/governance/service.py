@@ -30,11 +30,37 @@ from app.modules.governance.schemas import (
     ProposalCreate,
     TaskUpdateIn,
 )
+from app.infrastructure.integrations.notifications import get_notification_port
+from app.modules.llm import generate_executor_brief
 from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
+from app.shared.notification_events import (
+    EVENT_MEASURE_APPROVED,
+    EVENT_MEASURE_ESCALATED,
+    EVENT_MEASURE_ESCALATION_DECIDED,
+    EVENT_MEASURE_EXECUTOR_BRIEF_READY,
+    EVENT_MEASURE_REJECTED,
+    EVENT_TITLES,
+)
+from app.shared.ports import NotificationEvent
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _notify(event_type: str, recipient: str | None, p: Proposal, body: str) -> None:
+    """Эмитит событие уведомления через порт (ТЗ v19 п.6) — доставка вне зоны ответственности
+    домена (см. shared/ports.py, infrastructure/integrations/notifications). Без получателя
+    (owner/created_by не заполнены) событие не эмитим — заглушка молча «доставила» бы уведомление
+    в никуда, это маскирует пробел в данных, а не сообщает о нём (см. resolve_user_id — тот же
+    принцип: честное отсутствие, не тихая имитация действия)."""
+    if not recipient or not recipient.strip():
+        return
+    get_notification_port().notify(NotificationEvent(
+        event_type=event_type, recipient=recipient.strip(),
+        subject=f"{EVENT_TITLES[event_type]}: {p.risk_title or p.metric_name or p.system_name}",
+        body=body, entity_type="proposal", entity_id=str(p.id),
+    ))
 
 
 async def list_proposals(
@@ -80,6 +106,10 @@ async def decide(db: AsyncSession, p: Proposal, approve: bool, comment: str | No
     p.decision_comment = comment
     await db.commit()
     await db.refresh(p)
+    _notify(
+        EVENT_MEASURE_APPROVED if approve else EVENT_MEASURE_REJECTED, p.created_by, p,
+        f"Решение: {username}. " + (comment.strip() if comment else "без комментария."),
+    )
     return p
 
 
@@ -142,6 +172,49 @@ async def set_execution(db: AsyncSession, p: Proposal, status: str, comment: str
     return p
 
 
+async def set_effort_hours(
+    db: AsyncSession, p: Proposal, hours: float, user_id: uuid.UUID | None,
+) -> Proposal:
+    """Трудоёмкость проставляет исполнитель вручную (В-41) — только по одобренной мере,
+    величина > 0 (оценка «ноль часов» бессмысленна и маскирует отсутствие оценки)."""
+    if p.status != STATUS_APPROVED:
+        raise ConflictError("Трудоёмкость можно указать только по одобренной мере")
+    if hours <= 0:
+        raise ValidationError("Трудоёмкость должна быть больше нуля")
+    p.effort_hours = hours
+    p.effort_hours_set_by = user_id
+    p.effort_hours_set_at = _now()
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+
+async def rewrite_for_executor(db: AsyncSession, p: Proposal, user_id: uuid.UUID | None) -> Proposal:
+    """Переписывает меру на язык исполнителя (п.16, персона EXECUTOR) — конкретные шаги вместо
+    профсуждения (rationale) и вместо запроса решения у ЛПР (expectation, п.14, другой адресат).
+    Только по одобренной мере: до решения переписывать для исполнения нечего (как и effort_hours,
+    В-41) — исполнение начинается после одобрения, не раньше."""
+    if p.status != STATUS_APPROVED:
+        raise ConflictError("Переписать для исполнителя можно только по одобренной мере")
+    if p.due_on:
+        due_note = f"до {p.due_on.strftime('%d.%m.%Y')}"
+    elif p.due_date:
+        due_note = f"до {p.due_date}"
+    else:
+        due_note = "не назначен"
+    text = generate_executor_brief(
+        title=p.risk_title or p.metric_name or p.system_name,
+        problem=p.rationale or "", ask=p.expectation or "", due_note=due_note,
+    )
+    p.executor_brief = text
+    p.executor_brief_generated_by = user_id
+    p.executor_brief_generated_at = _now()
+    await db.commit()
+    await db.refresh(p)
+    _notify(EVENT_MEASURE_EXECUTOR_BRIEF_READY, p.owner, p, text)
+    return p
+
+
 async def update_task(db: AsyncSession, p: Proposal, data: TaskUpdateIn) -> Proposal:
     patch = data.model_dump(exclude_unset=True)
     for field, value in patch.items():
@@ -163,6 +236,9 @@ async def escalate(db: AsyncSession, p: Proposal, reason: str, username: str) ->
     p.escalation_decided_by = None
     await db.commit()
     await db.refresh(p)
+    # Эскалация адресована РОЛИ (SoD v12 §5.1), не конкретному человеку — получателя по
+    # имени здесь нет и не должно быть; порт получает нейтральную роль-подпись.
+    _notify(EVENT_MEASURE_ESCALATED, "топ-менеджмент", p, reason)
     return p
 
 
@@ -177,6 +253,8 @@ async def decide_escalation(db: AsyncSession, p: Proposal, decision: str, commen
     p.escalation_decided_by = username
     await db.commit()
     await db.refresh(p)
+    _notify(EVENT_MEASURE_ESCALATION_DECIDED, p.created_by, p,
+            f"Решение: {username}. {comment.strip() if comment else ''}")
     return p
 
 

@@ -21,6 +21,7 @@ from app.modules.econ.manager_metrics_service import ManagerMetricsOut, manager_
 from app.modules.econ.measure_catalog import CatalogEntryOut, as_out, entries_for
 from app.modules.econ.weights_service import WeightsResult, compute_subchar_weights
 from app.modules.econ.schemas import (
+    BenchmarkComparisonOut,
     BpCostIn,
     BpCostOut,
     BusinessProcessCreate,
@@ -29,13 +30,17 @@ from app.modules.econ.schemas import (
     CostDashboardOut,
     EconConfigItem,
     EconConfigValueIn,
+    EnterpriseProfileIn,
+    EnterpriseProfileOut,
+    MarketBenchmarkCreate,
+    MarketBenchmarkOut,
     SupportRateIn,
     SupportRateOut,
     SupportRateUpdate,
     SystemBpCreate,
     SystemBpOut,
 )
-from app.modules.iam import get_current_user, require_permission
+from app.modules.iam import get_current_user, require_permission, resolve_user_id
 
 router = APIRouter()
 
@@ -109,6 +114,29 @@ async def set_config(
     _: dict = Depends(require_permission("econ.config.edit")),
 ):
     return await service.set_config(db, key, payload.value, payload.description)
+
+
+# ═══════════════════════ Профиль предприятия (ТЗ v19 УК-21, п.8) ═══════════════════════
+# Одна запись-синглтон — параметр подстановки для бенчмарков (п.9-10), не справочник организаций.
+
+@router.get("/enterprise-profile", response_model=EnterpriseProfileOut)
+async def get_enterprise_profile(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    return await service.get_enterprise_profile(db)
+
+
+@router.put("/enterprise-profile", response_model=EnterpriseProfileOut)
+async def update_enterprise_profile(
+    payload: EnterpriseProfileIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("econ.config.edit")),
+):
+    # resolve_user_id: под DEMO_AUTH_BYPASS current_user["id"] синтетический и не существует
+    # в users — тихо пишем NULL вместо падения на FK (см. iam/identity.py).
+    updated_by = await resolve_user_id(db, current_user.get("id"))
+    return await service.update_enterprise_profile(db, payload, updated_by=updated_by)
 
 
 # ═══════════════════════ Бизнес-процессы (E9) ═══════════════════════
@@ -210,3 +238,43 @@ async def update_rate(
 ):
     rate = await service.get_rate_or_404(db, rate_id)
     return await service.update_rate(db, rate, payload)
+
+
+# ═══════════════════════ Рыночные бенчмарки (ТЗ v19 п.9-10, В-30а) ═══════════════════════
+# Структура без числового наполнения — таблица пуста, пока источники не согласованы заказчиком.
+
+@router.get("/benchmarks", response_model=list[MarketBenchmarkOut])
+async def list_benchmarks(
+    kind: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> list:
+    return await service.list_benchmarks(db, kind=kind)
+
+
+@router.post("/benchmarks", response_model=MarketBenchmarkOut, status_code=201)
+async def create_benchmark(
+    payload: MarketBenchmarkCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("econ.ref.edit")),
+):
+    uid = await resolve_user_id(db, user.get("id"))
+    return await service.create_benchmark(db, payload, uid)
+
+
+@router.get("/business-processes/{bp_id}/benchmark", response_model=BenchmarkComparisonOut)
+async def compare_bp_benchmark(
+    bp_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    return await service.compare_business_process(db, bp_id)
+
+
+@router.get("/rates/{rate_id}/benchmark", response_model=BenchmarkComparisonOut)
+async def compare_rate_benchmark(
+    rate_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    return await service.compare_support_rate(db, rate_id)

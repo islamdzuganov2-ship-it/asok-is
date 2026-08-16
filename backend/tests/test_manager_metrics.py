@@ -14,6 +14,7 @@ from app.modules.nonconformity.models import (
     STATUS_VERIFIED,
     Nonconformity,
 )
+from app.modules.systems.models import CriticalityClass, System
 
 PAST = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
@@ -65,3 +66,44 @@ async def test_manager_metrics_skips_ownerless_and_sorts_by_load(db_session):
     assert "Петров" in owners and "Сидоров" in owners
     assert all(o.strip() for o in owners)             # пустой владелец отфильтрован
     assert res.rows[0].owner == "Петров"              # сортировка по нагрузке (2 > 1)
+
+
+async def test_weighted_load_combines_characteristic_criticality_hours(db_session):
+    """ТЗ v19 п.13 (В-41): взвешенная нагрузка — характеристика × критичность × часы, только по
+    ОТКРЫТЫМ мерам. Мера без оценки часов считается отдельным счётчиком, не тянет вес к нулю."""
+    db_session.add_all([
+        System(name="АБС Core", criticality_class=CriticalityClass.MISSION_CRITICAL),  # вес 3.0
+        # Производительность: 7+6+7=20 (quality/weights.py). weight = 20*3*10 = 600
+        Proposal(system_name="АБС Core", owner="Иванов", status="APPROVED",
+                 characteristic="Производительность", effort_hours=10),
+        # Надёжность: 3+5+6+6=20. weight = 20*3*5 = 300
+        Proposal(system_name="АБС Core", owner="Иванов", status="APPROVED",
+                 characteristic="Надёжность", effort_hours=5),
+        # Без оценки часов — не должна тихо весить 0, отдельный счётчик.
+        Proposal(system_name="АБС Core", owner="Иванов", status="APPROVED",
+                 characteristic="Надёжность"),
+    ])
+    await db_session.commit()
+
+    res = await manager_metrics(db_session)
+    row = next(r for r in res.rows if r.owner == "Иванов")
+    assert row.weighted_load == 900.0
+    assert row.hours_estimated == 15.0
+    assert row.measures_with_estimate == 2
+    assert row.measures_without_estimate == 1
+
+
+async def test_weighted_load_excludes_completed_measures(db_session):
+    """Взвешенная нагрузка — «что ещё на столе», не архив: DONE-мера не должна раздувать её."""
+    db_session.add_all([
+        System(name="CRM ОПК", criticality_class=CriticalityClass.BUSINESS_OPERATIONAL),
+        Proposal(system_name="CRM ОПК", owner="Петрова", status="APPROVED", execution="DONE",
+                 characteristic="Производительность", effort_hours=100),
+    ])
+    await db_session.commit()
+
+    res = await manager_metrics(db_session)
+    row = next(r for r in res.rows if r.owner == "Петрова")
+    assert row.weighted_load == 0.0
+    assert row.measures_with_estimate == 0
+    assert row.measures_without_estimate == 0

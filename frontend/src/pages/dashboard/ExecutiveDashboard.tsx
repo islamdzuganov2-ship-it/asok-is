@@ -16,7 +16,9 @@ import { EXECUTIVE_SCALE, HEATMAP_CHARS_FULL } from '../../data/mockScaleData';
 import { RAG, ragToken, levelLabel, BRAND, critTagStyle, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, TYPE, SPACE } from '../../theme/premium';
 import { useChartTokens } from '../../theme/useThemeTokens';
-import { numericColumn } from '../../theme/table';
+import { numericColumn, sorterFor } from '../../theme/table';
+import { parseRuDate } from '../../utils/dates';
+import { SortButton, type HeatmapSortState } from '../../components/LevelHeatmap';
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
@@ -47,7 +49,10 @@ interface LiveDashboard {
   heatmapData?: [number, number, number][];
   xAxisLabels?: string[];
   yAxisLabels?: string[];
-  problematicSystems?: { id: string; name: string; criticality: string; lowMetricsCount: number }[];
+  problematicSystems?: { id: string; name: string; criticality: string; lowMetricsCount: number; owner?: string | null; ownerUserId?: string | null }[];
+  // ТЗ v19 п.15: за какой период(ы) собран показанный балл — разные ИС нередко на разных
+  // последних периодах, молчать об этом значит не дать ответить на «за какой это срок».
+  periodsUsed?: { distinct: string[]; earliest: string | null; latest: string | null; bySystem: Record<string, string> };
 }
 
 // Бакет уровня (0..5) → представительный % для RAG-индикации.
@@ -67,6 +72,9 @@ function buildExecFromLive(live: LiveDashboard | null): ExecutiveDashboardData {
   const matrix: number[][] = sysNames.map(() => chars.map(() => 0));
   (live.heatmapData ?? []).forEach(([x, y, b]) => { if (matrix[y] && x < chars.length) matrix[y][x] = b; });
   const critMap = new Map((live.problematicSystems ?? []).map((s) => [s.name, s.criticality]));
+  // ТЗ v19 п.5 (УК-05): реальный ответственный за ИС (System.owner), не общая заглушка на
+  // все системы — раньше здесь был один и тот же захардкоженный текст для любой ИС.
+  const ownerMap = new Map((live.problematicSystems ?? []).map((s) => [s.name, s.owner]));
 
   const rows = sysNames.map((sys, y) => ({
     system: sys,
@@ -88,7 +96,7 @@ function buildExecFromLive(live: LiveDashboard | null): ExecutiveDashboardData {
       weakCharacteristic: weakChar,
       aiSummary: `Интегральная оценка качества — ${score}%. Наиболее просевшая характеристика — ${weakChar} (${weakScore <= 100 ? weakScore : '—'}%).`,
       recommendation: 'Сформировать меры по просевшим характеристикам.',
-      owner: 'Руководитель ИТ-блока (Иванов И.И.)',
+      owner: ownerMap.get(sys) || 'не назначен',
       escalateTo: 'CTO',
       actions: ['Назначить ответственного и срок', 'Зафиксировать меру в плане качества', 'Включить контроль выполнения'],
     };
@@ -124,8 +132,11 @@ const ExecutiveDashboard: React.FC = () => {
   const [allOpen, setAllOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [showAllHeatmap, setShowAllHeatmap] = useState(false);
+  const [heatSort, setHeatSort] = useState<HeatmapSortState>(null);
   // Реестр мер качества по умолчанию скрыт — раскрывается по кнопке.
   const [showRegistry, setShowRegistry] = useState(false);
+  // ТЗ v19 п.3: переход «туда» из AI-карточки мер — характеристика, по которой кликнули.
+  const [registryPreset, setRegistryPreset] = useState<string | null>(null);
   // Фокус на характеристике для карточки ИС (клик по ячейке теплокарты).
   const [activeChar, setActiveChar] = useState<string | undefined>(undefined);
   // Балл выбранной характеристики — для корректной карточки характеристики (T-56).
@@ -180,7 +191,26 @@ const ExecutiveDashboard: React.FC = () => {
     const cb = sb ? CRIT_RANK[sb.criticality] : 9;
     return (ca - cb) || ((sa?.score ?? 100) - (sb?.score ?? 100));
   });
-  const shownHeatRows = showAllHeatmap ? orderedHeatRows : orderedHeatRows.slice(0, 5);
+  // ТЗ v19 п.12: явная сортировка поверх дефолтного порядка (по критичности) — по клику на
+  // стрелку в заголовке. Без активной сортировки — прежнее поведение (orderedHeatRows как есть).
+  const sortedHeatRows = useMemo(() => {
+    if (!heatSort) return orderedHeatRows;
+    const sign = heatSort.dir === 'asc' ? 1 : -1;
+    const rows = [...orderedHeatRows];
+    if (heatSort.col === 'name') {
+      return rows.sort((a, b) => sign * a.system.localeCompare(b.system, 'ru'));
+    }
+    return rows.sort((a, b) => {
+      const va = a.cells[heatSort.col as number]?.score;
+      const vb = b.cells[heatSort.col as number]?.score;
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return sign * (va - vb);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderedHeatRows.map((r) => r.system).join('|'), heatSort]);
+  const shownHeatRows = showAllHeatmap ? sortedHeatRows : sortedHeatRows.slice(0, 5);
 
   const globalIndex = data.globalIndex;
   const idxTok = ragToken(globalIndex);
@@ -248,6 +278,16 @@ const ExecutiveDashboard: React.FC = () => {
                 {isLive ? 'LLM · live' : 'Демо'}
               </Tag>
             </Text>
+            {isLive && live?.periodsUsed && live.periodsUsed.distinct.length > 0 && (
+              <div>
+                <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
+                  Данные за период{live.periodsUsed.distinct.length > 1 ? 'ы' : ''}:{' '}
+                  {live.periodsUsed.distinct.length > 1
+                    ? `${live.periodsUsed.earliest} – ${live.periodsUsed.latest} (разные ИС на разных последних периодах)`
+                    : live.periodsUsed.latest}
+                </Text>
+              </div>
+            )}
           </Col>
           <Col>
             <Badge count={pendingCount} offset={[-6, 6]} color={RAG.medium.color}>
@@ -289,7 +329,10 @@ const ExecutiveDashboard: React.FC = () => {
       )}
 
       {/* Топ проблемных ИС — AI-аналитика по мерам (предложения LLM, не карточки) */}
-      <MeasuresAiAnalyticsCard proposals={proposals} />
+      <MeasuresAiAnalyticsCard
+        proposals={proposals}
+        onOpenCharacteristic={(c) => { setShowRegistry(true); setRegistryPreset(c); }}
+      />
 
       {/* ТОП-3 проблемных ИС */}
       <Row align="middle" justify="space-between" style={{ marginBottom: 4 }}>
@@ -356,9 +399,23 @@ const ExecutiveDashboard: React.FC = () => {
             <table style={{ borderCollapse: 'separate', borderSpacing: '0 8px', width: '100%' }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize }}>Система</th>
-                  {data.heatmap.characteristics.map((c) => (
-                    <th key={c} title={c} style={{ fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize, padding: '0 4px' }}>{abbr(c)}</th>
+                  <th style={{ textAlign: 'left', fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize }}>
+                    Система
+                    <SortButton
+                      active={heatSort?.col === 'name'} dir={heatSort?.dir}
+                      label="Сортировать по названию системы"
+                      onSort={() => setHeatSort((s) => (s?.col === 'name' ? { col: 'name', dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col: 'name', dir: 'asc' }))}
+                    />
+                  </th>
+                  {data.heatmap.characteristics.map((c, i) => (
+                    <th key={c} title={c} style={{ fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize, padding: '0 4px' }}>
+                      {abbr(c)}
+                      <SortButton
+                        active={heatSort?.col === i} dir={heatSort?.dir}
+                        label={`Сортировать по «${c}»`}
+                        onSort={() => setHeatSort((s) => (s?.col === i ? { col: i, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col: i, dir: 'desc' }))}
+                      />
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -439,14 +496,14 @@ const ExecutiveDashboard: React.FC = () => {
           type={showRegistry ? 'default' : 'primary'}
           ghost={showRegistry}
           icon={<UnorderedListOutlined />}
-          onClick={() => setShowRegistry((v) => !v)}
+          onClick={() => setShowRegistry((v) => { if (v) setRegistryPreset(null); return !v; })}
         >
           {showRegistry ? 'Скрыть реестр мер качества' : 'Показать реестр мер качества'}
           {showRegistry ? <DownOutlined style={{ marginLeft: SPACE.snug }} /> : <RightOutlined style={{ marginLeft: SPACE.snug }} />}
         </Button>
         {showRegistry && (
           <div style={{ marginTop: 12 }}>
-            <MeasuresRegistryCard proposals={proposals} onOpen={setDecisionProposal} />
+            <MeasuresRegistryCard proposals={proposals} onOpen={setDecisionProposal} presetCharacteristic={registryPreset} />
           </div>
         )}
       </div>
@@ -482,12 +539,14 @@ const ExecutiveDashboard: React.FC = () => {
             pagination={{ pageSize: 8, hideOnSinglePage: true }}
             onRow={(rec) => ({ onClick: () => { setDecisionProposal(rec); setPendingOpen(false); }, style: { cursor: 'pointer' } })}
             columns={[
-              { title: 'Мера', dataIndex: 'riskTitle', render: (v: string, r) => v || r.metricName },
-              { title: 'ИС', dataIndex: 'systemName', width: 180 },
+              { title: 'Мера', dataIndex: 'riskTitle', sorter: sorterFor((r: Proposal) => r.riskTitle || r.metricName),
+                render: (v: string, r) => v || r.metricName },
+              { title: 'ИС', dataIndex: 'systemName', width: 180, sorter: sorterFor((r: Proposal) => r.systemName) },
               numericColumn<Proposal>({ title: '%', dataIndex: 'calculatedScore', width: 70,
                 render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag>,
                 sorter: (a, b) => a.calculatedScore - b.calculatedScore }),
-              { title: 'Срок', dataIndex: 'dueDate', width: 110 },
+              { title: 'Срок', dataIndex: 'dueDate', width: 110,
+                sorter: sorterFor((r: Proposal) => parseRuDate(r.dueDate)?.getTime() ?? null) },
             ] as ColumnsType<Proposal>}
           />
         )}
@@ -510,7 +569,7 @@ const ExecutiveDashboard: React.FC = () => {
           pagination={{ pageSize: 10, hideOnSinglePage: true }}
           onRow={(rec) => ({ onClick: () => { setActive(rec); setAllOpen(false); }, style: { cursor: 'pointer' } })}
           columns={[
-            { title: 'ИС', dataIndex: 'name' },
+            { title: 'ИС', dataIndex: 'name', sorter: sorterFor((r: ExecSystemInsight) => r.name) },
             {
               title: 'Критичность', dataIndex: 'criticality', width: 180,
               sorter: (a, b) => CRIT_RANK[a.criticality] - CRIT_RANK[b.criticality],
@@ -521,7 +580,8 @@ const ExecutiveDashboard: React.FC = () => {
               sorter: (a, b) => a.score - b.score,
               render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag>,
             }),
-            { title: 'Просевшая характеристика', dataIndex: 'weakCharacteristic', width: 220 },
+            { title: 'Просевшая характеристика', dataIndex: 'weakCharacteristic', width: 220,
+              sorter: sorterFor((r: ExecSystemInsight) => r.weakCharacteristic) },
           ] as ColumnsType<ExecSystemInsight>}
         />
       </Modal>

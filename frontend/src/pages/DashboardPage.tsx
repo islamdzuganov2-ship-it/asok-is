@@ -18,7 +18,10 @@ import { ANALYTICS_SCALE } from '../data/mockScaleData';
 import LevelHeatmap, { LEVEL_COLORS, LEVEL_TAG_COLORS } from '../components/LevelHeatmap';
 import { critTagStyle, levelLabel, solidTagStyle, ragToken, RAG, BRAND, ACCENT } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
-import { numericColumn } from '../theme/table';
+import { numericColumn, sorterFor } from '../theme/table';
+
+// Ранг критичности для сортировки — не алфавитный.
+const CRIT_RANK: Record<string, number> = { 'MISSION CRITICAL': 0, 'BUSINESS CRITICAL': 1, 'BUSINESS OPERATIONAL': 2 };
 import KpiCard from '../components/KpiCard';
 
 const { Title, Text } = Typography;
@@ -244,10 +247,10 @@ const DashboardPage: React.FC = () => {
             dataSource={levelDist} rowKey="level" size="small" pagination={false}
             locale={{ emptyText: 'Нет рассчитанных метрик за период' }}
             columns={[
-              { title: 'Уровень', dataIndex: 'level',
+              { title: 'Уровень', dataIndex: 'level', sorter: sorterFor((r: any) => r.level),
                 render: (v: string) => <Tag style={solidTagStyle(LEVEL_TAG_COLORS[v])}>{v}</Tag> },
-              numericColumn({ title: 'Метрик', dataIndex: 'count', width: 90 }),
-              numericColumn({ title: 'Доля', dataIndex: 'pct', width: 90, render: (v: number) => `${v}%` }),
+              numericColumn({ title: 'Метрик', dataIndex: 'count', width: 90, sorter: sorterFor((r: any) => r.count) }),
+              numericColumn({ title: 'Доля', dataIndex: 'pct', width: 90, sorter: sorterFor((r: any) => r.pct), render: (v: number) => `${v}%` }),
             ]}
           />
         </>
@@ -265,11 +268,12 @@ const DashboardPage: React.FC = () => {
             pagination={{ pageSize: 10, hideOnSinglePage: true }}
             locale={{ emptyText: 'Нет метрик со связанными мерами' }}
             columns={[
-              { title: 'ИС', dataIndex: 'system', ellipsis: true },
-              { title: 'Характеристика', dataIndex: 'characteristic', ellipsis: true },
-              { title: 'Метрика', dataIndex: 'metric', ellipsis: true },
+              { title: 'ИС', dataIndex: 'system', ellipsis: true, sorter: sorterFor((r: any) => r.system) },
+              { title: 'Характеристика', dataIndex: 'characteristic', ellipsis: true, sorter: sorterFor((r: any) => r.characteristic) },
+              { title: 'Метрика', dataIndex: 'metric', ellipsis: true, sorter: sorterFor((r: any) => r.metric) },
               numericColumn({
                 title: 'Мер', dataIndex: 'measures', width: 70,
+                sorter: sorterFor((r: any) => r.measures),
                 render: (v: number) => <Tag style={solidTagStyle(RAG.good.strong)}>{v}</Tag>,
               }),
             ]}
@@ -290,9 +294,10 @@ const DashboardPage: React.FC = () => {
         <Table
           dataSource={rows} rowKey="id" size="small" pagination={false}
           columns={[
-            { title: 'ИС', dataIndex: 'name', ellipsis: true },
-            { title: 'Критичность', dataIndex: 'criticality', render: critTag },
+            { title: 'ИС', dataIndex: 'name', ellipsis: true, sorter: sorterFor((r: any) => r.name) },
+            { title: 'Критичность', dataIndex: 'criticality', sorter: sorterFor((r: any) => CRIT_RANK[r.criticality] ?? -1), render: critTag },
             numericColumn({ title: 'Низких метрик', dataIndex: 'lowMetricsCount', width: 130,
+              sorter: sorterFor((r: any) => r.lowMetricsCount),
               render: (v: number) => <Text type="danger" strong>{v}</Text> }),
           ]}
         />
@@ -453,9 +458,10 @@ const DashboardPage: React.FC = () => {
             size="small"
             pagination={false}
             columns={[
-              { title: 'Подхарактеристика', dataIndex: 'name' },
+              { title: 'Подхарактеристика', dataIndex: 'name', sorter: sorterFor((r: SubDetail) => r.name) },
               numericColumn({
                 title: 'Качество', dataIndex: 'score', width: 200,
+                sorter: sorterFor((r: SubDetail) => r.score),
                 render: (v: number) => {
                   const lvl = levelLabel(v < 0 ? -1 : v);
                   return (

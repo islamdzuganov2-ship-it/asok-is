@@ -45,6 +45,9 @@ class NonconformityOut(_CamelModel):
     description: str | None = None
     status: str
     owner: str
+    # ТЗ v19 УК-12: FK на пользователя рядом со строкой-снимком (owner). None — не сопоставлено
+    # (см. backend/app/scripts/match_owners_to_users.py), а не ошибка данных.
+    owner_user_id: uuid.UUID | None = None
     evaluated_ale: float | None = None
     risk_event_id: uuid.UUID | None = None
     proposal_id: uuid.UUID | None = None
@@ -54,8 +57,10 @@ class NonconformityOut(_CamelModel):
     sla_due: datetime | None = None
     review_date: datetime | None = None
     executed_by: str | None = None
+    executed_by_user_id: uuid.UUID | None = None
     executed_at: datetime | None = None
     verified_by: str | None = None
+    verified_by_user_id: uuid.UUID | None = None
     verified_at: datetime | None = None
     delta_score_confirmed: float | None = None
     created_by: str | None = None

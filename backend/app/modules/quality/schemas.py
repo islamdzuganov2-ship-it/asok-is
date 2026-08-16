@@ -1,5 +1,8 @@
 """Pydantic-схемы домена quality (каталог метрик), ТЗ v13."""
+import uuid
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.alias_generators import to_camel
 
 
 class MetricBase(BaseModel):
@@ -47,3 +50,24 @@ class MetricOut(MetricBase):
 
 
 MetricCatalogResponse = MetricOut
+
+
+# ── Веса подхарактеристик (ТЗ v19 УК-04..07) ──
+class _CamelModel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+
+
+class SubcharWeightOut(_CamelModel):
+    characteristic: str
+    subcharacteristic: str
+    weight: float
+    iso_key: str
+
+
+class WeightsOut(_CamelModel):
+    """Текущий применяемый весовой вектор — источник истины для расчёта Score (§1.0 ТЗ v19)."""
+    active_version_id: uuid.UUID | None
+    active_version_label: str | None
+    total_weight: float
+    subchar_weights: list[SubcharWeightOut]
+    criticality_weights: dict[str, float]

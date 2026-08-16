@@ -36,7 +36,7 @@ import CollapsibleCard from '../../components/CollapsibleCard';
 import KpiCard from '../../components/KpiCard';
 import { BRAND, RAG, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 import { useChartTokens } from '../../theme/useThemeTokens';
-import { numericColumn, numericText } from '../../theme/table';
+import { numericColumn, numericText, sorterFor } from '../../theme/table';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -58,6 +58,7 @@ const CATEGORY_TAG_COLOR: Record<string, string> = {
 };
 const SEVERITY_LABEL: Record<string, string> = { critical: 'критический', high: 'высокий', medium: 'средний', low: 'низкий' };
 const SEVERITY_COLOR: Record<string, string> = { critical: 'red', high: 'volcano', medium: 'gold', low: 'blue' };
+const SEVERITY_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
 const fmtDate = (s?: string | null) => (s ? dayjs(s).format('DD.MM.YYYY HH:mm') : '—');
 const mttrHours = (r: TechIncidentDto): number | null =>
@@ -136,25 +137,31 @@ const IncidentsAnalyticsPage: React.FC = () => {
     }), [analytics, chart.ink]);
 
     const columns: ColumnsType<TechIncidentDto> = [
-        { title: 'ИС', dataIndex: 'systemName', width: 160, fixed: 'left' as const },
+        { title: 'ИС', dataIndex: 'systemName', width: 160, fixed: 'left' as const,
+          sorter: sorterFor((r: TechIncidentDto) => r.systemName) },
         {
             title: 'Первопричина', dataIndex: 'category', width: 180,
+            sorter: sorterFor((r: TechIncidentDto) => CATEGORY_LABEL[r.category] ?? r.category),
             render: (c: string) => <Tag style={solidTagStyle(CATEGORY_TAG_COLOR[c])}>{CATEGORY_LABEL[c] ?? c}</Tag>,
         },
         {
             title: 'Критичность', dataIndex: 'severity', width: 120,
+            sorter: sorterFor((r: TechIncidentDto) => SEVERITY_RANK[r.severity] ?? -1),
             render: (s: string) => <Tag color={SEVERITY_COLOR[s]}>{SEVERITY_LABEL[s] ?? s}</Tag>,
         },
-        { title: 'Сбой', dataIndex: 'title', ellipsis: true },
-        { title: 'Возник', dataIndex: 'occurredAt', width: 150, render: fmtDate },
+        { title: 'Сбой', dataIndex: 'title', ellipsis: true, sorter: sorterFor((r: TechIncidentDto) => r.title) },
+        { title: 'Возник', dataIndex: 'occurredAt', width: 150, render: fmtDate,
+          sorter: sorterFor((r: TechIncidentDto) => r.occurredAt) },
         {
             title: 'Статус', key: 'status', width: 130,
+            sorter: sorterFor((r: TechIncidentDto) => (r.resolvedAt ? 1 : 0)),
             render: (_: unknown, r) => (r.resolvedAt
                 ? <Tag color="green">восстановлен</Tag>
                 : <Tag color="red">открыт</Tag>),
         },
         {
             title: 'MTTR, ч', key: 'mttr', width: 90,
+            sorter: sorterFor((r: TechIncidentDto) => mttrHours(r)),
             render: (_: unknown, r) => { const m = mttrHours(r); return m === null ? <Text type="secondary">—</Text> : <Text strong>{m}</Text>; },
         },
     ];
@@ -310,11 +317,11 @@ const IncidentsAnalyticsPage: React.FC = () => {
                                     locale={{ emptyText: 'За выбранный период сбоев не зарегистрировано' }}
                                     dataSource={analytics?.byCategory ?? []}
                                     columns={[
-                                        { title: 'Первопричина', dataIndex: 'category', render: (c: string) => <Tag style={solidTagStyle(CATEGORY_TAG_COLOR[c])}>{CATEGORY_LABEL[c] ?? c}</Tag> },
-                                        numericColumn({ title: 'Сбоев', dataIndex: 'count', width: 80 }),
-                                        numericColumn({ title: 'Доля', dataIndex: 'share', width: 90, render: (v: number) => `${v}%` }),
-                                        numericColumn({ title: 'Открыто', dataIndex: 'openCount', width: 90 }),
-                                        numericColumn({ title: 'MTTR, ч', dataIndex: 'avgMttrHours', width: 90, render: (v: number | null) => (v === null ? '—' : v) }),
+                                        { title: 'Первопричина', dataIndex: 'category', sorter: sorterFor((r: any) => CATEGORY_LABEL[r.category] ?? r.category), render: (c: string) => <Tag style={solidTagStyle(CATEGORY_TAG_COLOR[c])}>{CATEGORY_LABEL[c] ?? c}</Tag> },
+                                        numericColumn({ title: 'Сбоев', dataIndex: 'count', width: 80, sorter: sorterFor((r: any) => r.count) }),
+                                        numericColumn({ title: 'Доля', dataIndex: 'share', width: 90, sorter: sorterFor((r: any) => r.share), render: (v: number) => `${v}%` }),
+                                        numericColumn({ title: 'Открыто', dataIndex: 'openCount', width: 90, sorter: sorterFor((r: any) => r.openCount) }),
+                                        numericColumn({ title: 'MTTR, ч', dataIndex: 'avgMttrHours', width: 90, sorter: sorterFor((r: any) => r.avgMttrHours), render: (v: number | null) => (v === null ? '—' : v) }),
                                     ]}
                                 />
                                 <div style={{ marginTop: SPACE.base }}>

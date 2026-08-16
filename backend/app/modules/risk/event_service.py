@@ -8,6 +8,7 @@ RE-08: риск с числовым ARO, связи M:N (подхарактер�
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,18 +18,23 @@ from app.modules.governance import Proposal
 from app.modules.incidents import TechIncident
 from app.modules.risk.event_schemas import (
     AleResultOut,
+    HeatmapCellDetailOut,
+    HeatmapCellMeasureOut,
+    HeatmapCellRiskOut,
     MeasureLinkIn,
     RiskEventCreate,
     RiskEventUpdate,
     SubcharLinkIn,
 )
 from app.modules.risk.models import (
+    RISK_EVENT_ACTIVE,
     RISK_EVENT_ARCHIVED,
     RiskEvent,
     RiskEventIncident,
     RiskEventMeasure,
     RiskEventSubchar,
 )
+from app.modules.systems import System
 from app.shared.exceptions import ConflictError, NotFoundError
 
 
@@ -202,4 +208,69 @@ async def recompute_ale(db: AsyncSession, ev: RiskEvent) -> AleResultOut:
     return AleResultOut(
         risk_event_id=ev.id, aro=aro, incidents_counted=len(incidents), incidents_costed=len(costs),
         ale_avg=result.ale_avg, ale_p90=result.ale_p90, max_sle=result.max_sle,
+    )
+
+
+# ═══════════════════ Ячейка теплокарты: риски × меры × деньги (ТЗ v19 п.4) ═══════════════════
+
+async def cell_detail(db: AsyncSession, system_name: str, characteristic: str) -> HeatmapCellDetailOut:
+    """Риски этой ИС, привязанные к этой характеристике (через RiskEventSubchar), с их деньгами
+    (ALE) и привязанными мерами. system_name, не system_id: управленческий дашборд (источник
+    клика по ячейке) в LIVE-режиме работает именами ИС — ExecutiveDashboard.tsx строит свои данные
+    из /reports/executive-dashboard, где есть только yAxisLabels (имена), настоящий system_id туда
+    не прокидывается. Система не найдена / рисков нет → пустой список, не ошибка (карточка ИС
+    показывает «риски не заведены», это нормальное состояние на пилоте, не сбой)."""
+    system = (await db.execute(select(System).where(System.name == system_name))).scalar_one_or_none()
+    if system is None:
+        return HeatmapCellDetailOut(system_name=system_name, characteristic=characteristic, total_ale=0.0, risks=[])
+
+    rows = (await db.execute(
+        select(RiskEvent, RiskEventSubchar.subcharacteristic)
+        .join(RiskEventSubchar, RiskEventSubchar.risk_event_id == RiskEvent.id)
+        .where(
+            RiskEvent.system_id == system.id,
+            RiskEvent.status == RISK_EVENT_ACTIVE,
+            RiskEventSubchar.characteristic == characteristic,
+        )
+    )).all()
+
+    risks_by_id: dict[uuid.UUID, RiskEvent] = {}
+    subchars_by_risk: dict[uuid.UUID, set[str]] = defaultdict(set)
+    for ev, subchar in rows:
+        risks_by_id[ev.id] = ev
+        subchars_by_risk[ev.id].add(subchar)
+
+    measures_by_risk: dict[uuid.UUID, list[HeatmapCellMeasureOut]] = defaultdict(list)
+    if risks_by_id:
+        m_rows = (await db.execute(
+            select(RiskEventMeasure, Proposal)
+            .join(Proposal, Proposal.id == RiskEventMeasure.proposal_id)
+            .where(RiskEventMeasure.risk_event_id.in_(risks_by_id.keys()))
+        )).all()
+        for link, proposal in m_rows:
+            measures_by_risk[link.risk_event_id].append(HeatmapCellMeasureOut(
+                proposal_id=proposal.id,
+                title=proposal.risk_title or proposal.metric_name or "Мера",
+                status=proposal.status,
+                ale_reduction_share=float(link.ale_reduction_share) if link.ale_reduction_share is not None else None,
+                rosi=float(proposal.rosi) if proposal.rosi is not None else None,
+                verdict=proposal.verdict,
+            ))
+
+    risks_out = [
+        HeatmapCellRiskOut(
+            id=ev.id, code=ev.code, title=ev.title,
+            ale_avg=float(ev.ale_avg) if ev.ale_avg is not None else None,
+            ale_p90=float(ev.ale_p90) if ev.ale_p90 is not None else None,
+            status=ev.status,
+            subcharacteristics=sorted(subchars_by_risk[ev.id]),
+            measures=measures_by_risk.get(ev.id, []),
+        )
+        for ev in risks_by_id.values()
+    ]
+    risks_out.sort(key=lambda r: r.ale_avg or 0, reverse=True)
+    total_ale = round(sum(r.ale_avg or 0 for r in risks_out), 2)
+
+    return HeatmapCellDetailOut(
+        system_name=system.name, characteristic=characteristic, total_ale=total_ale, risks=risks_out,
     )

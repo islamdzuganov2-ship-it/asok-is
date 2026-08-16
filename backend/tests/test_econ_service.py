@@ -10,13 +10,16 @@ import uuid
 import pytest
 
 from app.modules.econ import service
+from app.modules.econ.models import ENTERPRISE_PROFILE_ID
 from app.modules.econ.schemas import (
     BpCostIn,
     BusinessProcessCreate,
     BusinessProcessUpdate,
+    EnterpriseProfileIn,
     SupportRateIn,
     SystemBpCreate,
 )
+from app.modules.iam.models import User
 from app.modules.systems.models import CriticalityClass, System
 from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
 
@@ -27,6 +30,16 @@ async def _make_system(db, name="ИС-econ-test") -> System:
     await db.commit()
     await db.refresh(sys)
     return sys
+
+
+async def _make_user(db, username="econ-test-user") -> User:
+    """FK на users.id (ТЗ v19 УК-12) — updated_by/owner_user_id требуют реальной строки,
+    случайный uuid4() ловит настоящее нарушение целостности, не тестовую заглушку."""
+    user = User(username=username, password_hash="x", role=User.ROLE_ADMIN)
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
 
 
 # ── Финпараметры ──
@@ -124,3 +137,51 @@ async def test_resolve_support_rate_prefers_specific_then_global(db_session):
 async def test_create_rate_rejects_bad_line(db_session):
     with pytest.raises(ValidationError):
         await service.create_rate(db_session, SupportRateIn(line="L9", rate_per_hour=100))
+
+
+# ── Профиль предприятия (ТЗ v19 УК-21, Р-4: одна запись, не справочник организаций) ──
+
+async def test_enterprise_profile_get_or_create_returns_singleton(db_session):
+    p1 = await service.get_enterprise_profile(db_session)
+    assert p1.id == ENTERPRISE_PROFILE_ID
+    # Повторный вызов не создаёт вторую строку — тот же id, поля по-прежнему пустые.
+    p2 = await service.get_enterprise_profile(db_session)
+    assert p2.id == p1.id
+
+
+async def test_update_enterprise_profile_writes_fields_and_updated_by(db_session):
+    user = await _make_user(db_session)
+    updated = await service.update_enterprise_profile(
+        db_session,
+        EnterpriseProfileIn(name="АСОК Заказчик", size_class="MEDIUM", headcount=250,
+                            industry="Финансы", region="РФ"),
+        updated_by=user.id,
+    )
+    assert updated.id == ENTERPRISE_PROFILE_ID
+    assert updated.name == "АСОК Заказчик"
+    assert updated.size_class == "MEDIUM"
+    assert updated.headcount == 250
+    assert updated.updated_by == user.id
+
+    # Повторное чтение — та же единственная строка с сохранёнными полями.
+    again = await service.get_enterprise_profile(db_session)
+    assert again.name == "АСОК Заказчик" and again.headcount == 250
+
+
+async def test_update_enterprise_profile_rejects_unknown_size_class(db_session):
+    with pytest.raises(ValidationError):
+        await service.update_enterprise_profile(
+            db_session, EnterpriseProfileIn(size_class="GIGANTIC"), updated_by=None,
+        )
+
+
+async def test_update_enterprise_profile_partial_update_keeps_other_fields(db_session):
+    await service.update_enterprise_profile(
+        db_session, EnterpriseProfileIn(name="Исходное имя", headcount=100), updated_by=None,
+    )
+    updated = await service.update_enterprise_profile(
+        db_session, EnterpriseProfileIn(headcount=150), updated_by=None,
+    )
+    # exclude_unset=True: headcount обновился, name — нет (не передавался во втором вызове).
+    assert updated.headcount == 150
+    assert updated.name == "Исходное имя"

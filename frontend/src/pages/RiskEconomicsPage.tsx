@@ -7,14 +7,16 @@
  * ввода, не от автовыгрузки ITSM). Расчёты (C_ТС, ALE, ROSI) считает бэкенд; здесь — ввод и подача.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography } from 'antd';
+import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography } from 'antd';
 import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined, ReloadOutlined, InboxOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import KpiCard from '../components/KpiCard';
 import { premiumCard, accentDot, accentColorOf, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
-import { numericColumn, numericText } from '../theme/table';
+import { numericColumn, numericText, sorterFor } from '../theme/table';
 import { BRAND, RAG } from '../theme/ragPalette';
+import { OwnerLink } from '../components/OwnerLink';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -34,6 +36,12 @@ interface BusinessProcess {
   id: string; code: string; name: string; kind: string; owner?: string | null; isActive: boolean;
 }
 interface BpCost { id: string; businessProcessId: string; method: string; costPerMinBase?: number | null }
+// ТЗ v19 п.9-10, В-30а: структура рыночных бенчмарков — source/observedOn обязательны на бэкенде
+// (пустая строка/отсутствие даты отклоняются валидацией), таблица пуста, пока источники не согласованы.
+interface MarketBenchmark {
+  id: string; kind: string; dimension: string; companySizeClass?: string | null;
+  value: number; unit: string; source: string; observedOn: string; note?: string | null;
+}
 interface Nonconformity {
   id: string; code?: string | null; systemName: string; characteristic: string;
   subcharacteristic: string; level: string; status: string; owner: string;
@@ -43,6 +51,9 @@ interface Nonconformity {
 interface ManagerMetricRow {
   owner: string; openCount: number; overdueCount: number; completedCount: number;
   avgAgeDays: number | null; deltaAleManaged: number; acceptShare: number; compensatingShare: number;
+  // ТЗ v19 п.13 (В-41): взвешенная нагрузка по открытым мерам — экран загрузки/балансировки.
+  weightedLoad: number; hoursEstimated: number;
+  measuresWithEstimate: number; measuresWithoutEstimate: number;
 }
 interface ManagerMetrics { mode: string; note: string; generatedAt: string; rows: ManagerMetricRow[] }
 interface FunnelStage { status: string; count: number }
@@ -80,6 +91,10 @@ const NC_LEVEL: Record<string, { label: string; color: string }> = {
   MAJOR: { label: 'Существенное', color: 'orange' },
   CRITICAL: { label: 'Критическое', color: 'red' },
 };
+// Порядок значимости для сортировки «Уровня» — не алфавитный (MINOR < MAJOR < CRITICAL).
+const NC_LEVEL_RANK: Record<string, number> = Object.fromEntries(
+  Object.keys(NC_LEVEL).map((k, i) => [k, i]),
+);
 
 function authHeaders(): Record<string, string> {
   const t = localStorage.getItem('token');
@@ -148,16 +163,16 @@ const DashboardTab: React.FC = () => {
   }, []);
 
   const topCols: ColumnsType<TopRisk> = [
-    { title: 'Код', dataIndex: 'code', width: 130 },
+    { title: 'Код', dataIndex: 'code', width: 130, sorter: sorterFor((r: TopRisk) => r.code) },
     {
-      title: 'Риск', dataIndex: 'title',
+      title: 'Риск', dataIndex: 'title', sorter: sorterFor((r: TopRisk) => r.title),
       render: (t: string, r: TopRisk) => (
         <Space size={4}>{r.regulatory && <Tag color="volcano">рег.</Tag>}<Text strong>{t}</Text></Space>
       ),
     },
-    { title: 'ИС', dataIndex: 'system', width: 140, render: (s?: string) => s || '—' },
-    { title: 'Владелец', dataIndex: 'owner', width: 160, render: (o?: string) => o || '—' },
-    numericColumn({ title: 'ALE, ₽/год', dataIndex: 'aleAvg', width: 150, render: (v: number) => fmtMoney(v) }),
+    { title: 'ИС', dataIndex: 'system', width: 140, sorter: sorterFor((r: TopRisk) => r.system), render: (s?: string) => s || '—' },
+    { title: 'Владелец', dataIndex: 'owner', width: 160, sorter: sorterFor((r: TopRisk) => r.owner), render: (o?: string) => <OwnerLink owner={o} fallback="—" /> },
+    numericColumn({ title: 'ALE, ₽/год', dataIndex: 'aleAvg', width: 150, sorter: sorterFor((r: TopRisk) => r.aleAvg), render: (v: number) => fmtMoney(v) }),
   ];
 
   // Пивот тепловой карты: ИС (строки) × подхарактеристика (столбцы).
@@ -294,15 +309,15 @@ const RiskEventsTab: React.FC = () => {
   };
 
   const columns: ColumnsType<RiskEvent> = [
-    { title: 'Код', dataIndex: 'code', width: 130 },
-    { title: 'Название', dataIndex: 'title', width: 220, render: (t: string) => <Text strong>{t}</Text> },
-    { title: 'Владелец', dataIndex: 'owner', width: 150, render: (o?: string) => o || '—' },
-    numericColumn({ title: 'ARO', dataIndex: 'aro', width: 90, render: (v: number) => fmtNum(v) }),
-    numericColumn({ title: 'ALE средний', dataIndex: 'aleAvg', width: 140, render: (v: number) => fmtMoney(v) }),
-    numericColumn({ title: 'ALE P90', dataIndex: 'aleP90', width: 140, render: (v: number) => fmtMoney(v) }),
-    numericColumn({ title: 'MaxSLE', dataIndex: 'maxSle', width: 140, render: (v: number) => fmtMoney(v) }),
+    { title: 'Код', dataIndex: 'code', width: 130, sorter: sorterFor((r: RiskEvent) => r.code) },
+    { title: 'Название', dataIndex: 'title', width: 220, sorter: sorterFor((r: RiskEvent) => r.title), render: (t: string) => <Text strong>{t}</Text> },
+    { title: 'Владелец', dataIndex: 'owner', width: 150, sorter: sorterFor((r: RiskEvent) => r.owner), render: (o?: string) => <OwnerLink owner={o} fallback="—" /> },
+    numericColumn({ title: 'ARO', dataIndex: 'aro', width: 90, sorter: sorterFor((r: RiskEvent) => r.aro), render: (v: number) => fmtNum(v) }),
+    numericColumn({ title: 'ALE средний', dataIndex: 'aleAvg', width: 140, sorter: sorterFor((r: RiskEvent) => r.aleAvg), render: (v: number) => fmtMoney(v) }),
+    numericColumn({ title: 'ALE P90', dataIndex: 'aleP90', width: 140, sorter: sorterFor((r: RiskEvent) => r.aleP90), render: (v: number) => fmtMoney(v) }),
+    numericColumn({ title: 'MaxSLE', dataIndex: 'maxSle', width: 140, sorter: sorterFor((r: RiskEvent) => r.maxSle), render: (v: number) => fmtMoney(v) }),
     {
-      title: 'Статус', dataIndex: 'status', width: 120,
+      title: 'Статус', dataIndex: 'status', width: 120, sorter: sorterFor((r: RiskEvent) => r.status),
       render: (s: string) => {
         const m = RISK_STATUS[s] ?? { label: s, color: 'default' };
         return <Tag color={m.color}>{m.label}</Tag>;
@@ -394,26 +409,45 @@ const BP_KINDS = [
   { value: 'BACKOFFICE', label: 'Бэк-офис' },
   { value: 'BACKGROUND', label: 'Фоновый/интеграционный' },
 ];
+// ТЗ v19 п.9-10: рыночные бенчмарки — два измеримых показателя, разрез («dimension») зависит
+// от выбранного показателя (типы БП для C_мин, типы исполнителя для ставки).
+const BENCHMARK_KINDS = [
+  { value: 'BP_COST_PER_MIN', label: 'C_мин бизнес-процесса (₽/мин)' },
+  { value: 'SUPPORT_RATE_PER_HOUR', label: 'Ставка сопровождения (₽/час)' },
+];
+const BENCHMARK_KIND_LABEL: Record<string, string> = Object.fromEntries(BENCHMARK_KINDS.map((k) => [k.value, k.label]));
+const BENCHMARK_DIMENSIONS: Record<string, { value: string; label: string }[]> = {
+  BP_COST_PER_MIN: BP_KINDS,
+  SUPPORT_RATE_PER_HOUR: [{ value: 'INTERNAL', label: 'Внутренний' }, { value: 'VENDOR', label: 'Вендор' }],
+};
+const COMPANY_SIZE_CLASSES = [
+  { value: 'MICRO', label: 'Микро' }, { value: 'SMALL', label: 'Малое' },
+  { value: 'MEDIUM', label: 'Среднее' }, { value: 'LARGE', label: 'Крупное' },
+];
 
 const ReferencesTab: React.FC = () => {
   const [rates, setRates] = useState<SupportRate[]>([]);
   const [bps, setBps] = useState<BusinessProcess[]>([]);
   const [costs, setCosts] = useState<Record<string, number | null>>({});
+  const [benchmarks, setBenchmarks] = useState<MarketBenchmark[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rateOpen, setRateOpen] = useState(false);
   const [bpOpen, setBpOpen] = useState(false);
+  const [benchmarkOpen, setBenchmarkOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rateForm] = Form.useForm();
   const [bpForm] = Form.useForm();
+  const [benchmarkForm] = Form.useForm();
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [r, b] = await Promise.all([
+      const [r, b, bench] = await Promise.all([
         api<SupportRate[]>('/econ/rates'), api<BusinessProcess[]>('/econ/business-processes'),
+        api<MarketBenchmark[]>('/econ/benchmarks'),
       ]);
-      setRates(r); setBps(b);
+      setRates(r); setBps(b); setBenchmarks(bench);
       const costEntries = await Promise.all(
         b.map(async (bp) => {
           try { const c = await api<BpCost | null>(`/econ/business-processes/${bp.id}/cost`); return [bp.id, c?.costPerMinBase ?? null] as const; }
@@ -452,33 +486,63 @@ const ReferencesTab: React.FC = () => {
     finally { setSaving(false); }
   };
 
+  const createBenchmark = async () => {
+    try {
+      const v = await benchmarkForm.validateFields();
+      setSaving(true);
+      await api('/econ/benchmarks', {
+        method: 'POST',
+        body: JSON.stringify({ ...v, observedOn: v.observedOn.format('YYYY-MM-DD') }),
+      });
+      message.success('Бенчмарк добавлен'); setBenchmarkOpen(false); benchmarkForm.resetFields(); await load();
+    } catch (e: any) { if (e?.errorFields) return; message.error(`Ошибка: ${e.message}`); }
+    finally { setSaving(false); }
+  };
+
   const rateCols: ColumnsType<SupportRate> = [
-    { title: 'Линия', dataIndex: 'line', width: 80 },
+    { title: 'Линия', dataIndex: 'line', width: 80, sorter: sorterFor((r: SupportRate) => r.line) },
     {
       title: 'Исполнитель', dataIndex: 'executorType', width: 130,
+      sorter: sorterFor((r: SupportRate) => r.executorType),
       render: (t: string) => <Tag color={t === 'VENDOR' ? 'volcano' : 'blue'}>{t === 'VENDOR' ? 'Вендор' : 'Внутренний'}</Tag>,
     },
-    { title: 'Вендор', dataIndex: 'vendor', width: 150, render: (v?: string) => v || '—' },
-    numericColumn({ title: '₽/час', dataIndex: 'ratePerHour', width: 120, render: (v: number) => fmtMoney(v) }),
-    numericColumn({ title: 'K веч/ночь', dataIndex: 'kEvening', width: 110, render: (v: number) => fmtNum(v) }),
-    numericColumn({ title: 'K выходные', dataIndex: 'kWeekend', width: 110, render: (v: number) => fmtNum(v) }),
+    { title: 'Вендор', dataIndex: 'vendor', width: 150, sorter: sorterFor((r: SupportRate) => r.vendor), render: (v?: string) => v || '—' },
+    numericColumn({ title: '₽/час', dataIndex: 'ratePerHour', width: 120, sorter: sorterFor((r: SupportRate) => r.ratePerHour), render: (v: number) => fmtMoney(v) }),
+    numericColumn({ title: 'K веч/ночь', dataIndex: 'kEvening', width: 110, sorter: sorterFor((r: SupportRate) => r.kEvening), render: (v: number) => fmtNum(v) }),
+    numericColumn({ title: 'K выходные', dataIndex: 'kWeekend', width: 110, sorter: sorterFor((r: SupportRate) => r.kWeekend), render: (v: number) => fmtNum(v) }),
     {
       title: 'Область', dataIndex: 'systemId', width: 120,
+      sorter: sorterFor((r: SupportRate) => r.systemId),
       render: (s?: string | null) => <Tag>{s ? 'Для ИС' : 'Глобальная'}</Tag>,
     },
   ];
 
   const bpCols: ColumnsType<BusinessProcess> = [
-    { title: 'Код', dataIndex: 'code', width: 120 },
-    { title: 'Название', dataIndex: 'name', width: 220, render: (t: string) => <Text strong>{t}</Text> },
+    { title: 'Код', dataIndex: 'code', width: 120, sorter: sorterFor((r: BusinessProcess) => r.code) },
+    { title: 'Название', dataIndex: 'name', width: 220, sorter: sorterFor((r: BusinessProcess) => r.name), render: (t: string) => <Text strong>{t}</Text> },
     {
-      title: 'Тип', dataIndex: 'kind', width: 200,
+      title: 'Тип', dataIndex: 'kind', width: 200, sorter: sorterFor((r: BusinessProcess) => r.kind),
       render: (k: string) => BP_KINDS.find((x) => x.value === k)?.label ?? k,
     },
     numericColumn({
       title: 'C_мин, ₽', key: 'cost', width: 130,
+      sorter: sorterFor((bp: BusinessProcess) => costs[bp.id]),
       render: (_: unknown, bp: BusinessProcess) => fmtMoney(costs[bp.id]),
     }),
+  ];
+
+  const benchmarkCols: ColumnsType<MarketBenchmark> = [
+    { title: 'Показатель', dataIndex: 'kind', width: 190, sorter: sorterFor((r: MarketBenchmark) => r.kind),
+      render: (k: string) => BENCHMARK_KIND_LABEL[k] ?? k },
+    { title: 'Разрез', dataIndex: 'dimension', width: 140, sorter: sorterFor((r: MarketBenchmark) => r.dimension) },
+    { title: 'Размер компании', dataIndex: 'companySizeClass', width: 140,
+      sorter: sorterFor((r: MarketBenchmark) => r.companySizeClass),
+      render: (v?: string | null) => v || <Text type="secondary">любой</Text> },
+    numericColumn({ title: 'Значение', dataIndex: 'value', width: 120,
+      sorter: sorterFor((r: MarketBenchmark) => r.value),
+      render: (v: number, r: MarketBenchmark) => `${fmtNum(v)} ${r.unit}` }),
+    { title: 'Источник', dataIndex: 'source', sorter: sorterFor((r: MarketBenchmark) => r.source) },
+    { title: 'На дату', dataIndex: 'observedOn', width: 110, sorter: sorterFor((r: MarketBenchmark) => r.observedOn) },
   ];
 
   return (
@@ -508,6 +572,19 @@ const ReferencesTab: React.FC = () => {
           columns={bpCols} dataSource={bps} rowKey="id" loading={loading} size="small"
           scroll={{ x: 700 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
           locale={{ emptyText: 'БП нет. Стоимость минуты — атрибут процесса: фронтальные считаются транзакционно, бэк-офис ресурсно.' }}
+        />
+      </Card>
+
+      <Card
+        {...premiumCard('terracotta')}
+        title="Рыночные бенчмарки"
+        extra={<Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setBenchmarkOpen(true)}>Добавить</Button>}
+        styles={{ body: { padding: 0 } }}
+      >
+        <Table<MarketBenchmark>
+          columns={benchmarkCols} dataSource={benchmarks} rowKey="id" loading={loading} size="small"
+          scroll={{ x: 780 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
+          locale={{ emptyText: 'Бенчмарков нет: источники для рыночных цифр заказчиком пока не согласованы (В-30а). Занести можно в любой момент — источник и дата обязательны.' }}
         />
       </Card>
 
@@ -559,6 +636,45 @@ const ReferencesTab: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+      <Modal title="Новый рыночный бенчмарк" open={benchmarkOpen} onOk={createBenchmark} confirmLoading={saving}
+        onCancel={() => setBenchmarkOpen(false)} okText="Сохранить" cancelText="Отмена">
+        <Form form={benchmarkForm} layout="vertical" initialValues={{ kind: 'BP_COST_PER_MIN' }}
+          onValuesChange={(changed) => { if (changed.kind) benchmarkForm.setFieldValue('dimension', undefined); }}>
+          <Alert type="info" showIcon style={{ marginBottom: 12 }}
+            message="Источник и дата обязательны — без них рыночная цифра неотличима от выдуманной." />
+          <Form.Item name="kind" label="Показатель" rules={[{ required: true }]}>
+            <Select options={BENCHMARK_KINDS} />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.kind !== cur.kind}>
+            {({ getFieldValue }) => (
+              <Form.Item name="dimension" label="Разрез" rules={[{ required: true }]}>
+                <Select options={BENCHMARK_DIMENSIONS[getFieldValue('kind') ?? 'BP_COST_PER_MIN']} />
+              </Form.Item>
+            )}
+          </Form.Item>
+          <Form.Item name="companySizeClass" label="Размер компании (для ставок — п.10; необязательно)">
+            <Select allowClear options={COMPANY_SIZE_CLASSES} placeholder="Любой размер" />
+          </Form.Item>
+          <Space style={{ width: '100%' }} size="middle">
+            <Form.Item name="value" label="Значение" rules={[{ required: true }]} style={{ flex: 1, minWidth: 140 }}>
+              <InputNumber style={{ width: '100%' }} min={0} step={10} />
+            </Form.Item>
+            <Form.Item name="unit" label="Единица" rules={[{ required: true }]} style={{ flex: 1, minWidth: 140 }}>
+              <Input placeholder="₽/мин или ₽/час" />
+            </Form.Item>
+          </Space>
+          <Form.Item name="source" label="Источник" rules={[{ required: true, message: 'Источник обязателен' }]}>
+            <Input.TextArea rows={2} placeholder="Название/ссылка на открытый источник" />
+          </Form.Item>
+          <Form.Item name="observedOn" label="Актуально на дату" rules={[{ required: true, message: 'Дата обязательна' }]}>
+            <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" defaultPickerValue={dayjs()} />
+          </Form.Item>
+          <Form.Item name="note" label="Примечание (необязательно)">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Space>
   );
 };
@@ -596,19 +712,21 @@ const ClosureTab: React.FC = () => {
   };
 
   const columns: ColumnsType<Nonconformity> = [
-    { title: 'Система', dataIndex: 'systemName', width: 160, render: (t: string) => <Text strong>{t}</Text> },
-    { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 190 },
+    { title: 'Система', dataIndex: 'systemName', width: 160, sorter: sorterFor((r: Nonconformity) => r.systemName), render: (t: string) => <Text strong>{t}</Text> },
+    { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 190, sorter: sorterFor((r: Nonconformity) => r.subcharacteristic) },
     {
       title: 'Уровень', dataIndex: 'level', width: 150,
+      sorter: sorterFor((r: Nonconformity) => NC_LEVEL_RANK[r.level] ?? -1),
       render: (l: string) => {
         const m = NC_LEVEL[l] ?? { label: l, color: 'default' };
         return <Tag color={m.color}>{m.label}</Tag>;
       },
     },
-    { title: 'Владелец', dataIndex: 'owner', width: 140 },
-    numericColumn({ title: 'ALE, ₽', dataIndex: 'evaluatedAle', width: 140, render: (v: number) => fmtMoney(v) }),
+    { title: 'Владелец', dataIndex: 'owner', width: 140, sorter: sorterFor((r: Nonconformity) => r.owner),
+      render: (v: string) => <OwnerLink owner={v} /> },
+    numericColumn({ title: 'ALE, ₽', dataIndex: 'evaluatedAle', width: 140, sorter: sorterFor((r: Nonconformity) => r.evaluatedAle), render: (v: number) => fmtMoney(v) }),
     {
-      title: 'Статус', dataIndex: 'status', width: 160,
+      title: 'Статус', dataIndex: 'status', width: 160, sorter: sorterFor((r: Nonconformity) => r.status),
       render: (s: string) => {
         const m = NC_STATUS[s] ?? { label: s, color: 'default' };
         return <Tag color={m.color}>{m.label}</Tag>;
@@ -705,33 +823,41 @@ const ManagersTab: React.FC = () => {
     open: rows.reduce((s, r) => s + r.openCount, 0),
     overdue: rows.reduce((s, r) => s + r.overdueCount, 0),
     delta: rows.reduce((s, r) => s + r.deltaAleManaged, 0),
+    // ТЗ v19 п.13 (В-41): сколько мер вообще без оценки часов — видно ДО таблицы, чтобы не
+    // спутать «мало нагрузки» с «нагрузку никто не оценил» (не ноль молча).
+    withoutEstimate: rows.reduce((s, r) => s + r.measuresWithoutEstimate, 0),
   }), [rows]);
 
   const columns: ColumnsType<ManagerMetricRow> = [
-    { title: 'Владелец', dataIndex: 'owner', width: 200, render: (o: string) => <Text strong>{o}</Text> },
-    numericColumn({ title: 'Нагрузка', dataIndex: 'openCount', width: 110 }),
+    { title: 'Владелец', dataIndex: 'owner', width: 200, sorter: sorterFor((r: ManagerMetricRow) => r.owner), render: (o: string) => <Text strong>{o}</Text> },
+    numericColumn({ title: 'Нагрузка', dataIndex: 'openCount', width: 110, sorter: sorterFor((r: ManagerMetricRow) => r.openCount) }),
     numericColumn({
       title: 'Просрочено', dataIndex: 'overdueCount', width: 120,
+      sorter: sorterFor((r: ManagerMetricRow) => r.overdueCount),
       render: (v: number) => (
         <Text style={{ color: v > 0 ? RAG.bad.strong : BRAND.inkSoft }}>{v}</Text>
       ),
     }),
     numericColumn({
       title: 'Выполнено', dataIndex: 'completedCount', width: 120,
+      sorter: sorterFor((r: ManagerMetricRow) => r.completedCount),
       render: (v: number) => (
         <Text style={{ color: v > 0 ? RAG.good.strong : BRAND.inkSoft }}>{v}</Text>
       ),
     }),
     numericColumn({
       title: 'Средний возраст, дн', dataIndex: 'avgAgeDays', width: 170,
+      sorter: sorterFor((r: ManagerMetricRow) => r.avgAgeDays),
       render: (v: number | null) => fmtNum(v, 1),
     }),
     numericColumn({
       title: 'Δ ALE под управлением', dataIndex: 'deltaAleManaged', width: 200,
+      sorter: sorterFor((r: ManagerMetricRow) => r.deltaAleManaged),
       render: (v: number) => fmtMoney(v),
     }),
     numericColumn({
       title: 'Доля «принять», %', dataIndex: 'acceptShare', width: 160,
+      sorter: sorterFor((r: ManagerMetricRow) => r.acceptShare),
       // Высокая доля «принять» — сигнал: проблемы прячут вместо решения (§7.1).
       render: (v: number) => (
         <Text style={{ color: v >= 50 ? RAG.medium.strong : BRAND.inkSoft }}>{fmtNum(v, 1)}</Text>
@@ -739,9 +865,29 @@ const ManagersTab: React.FC = () => {
     }),
     numericColumn({
       title: 'Доля компенсирующих, %', dataIndex: 'compensatingShare', width: 200,
+      sorter: sorterFor((r: ManagerMetricRow) => r.compensatingShare),
       // Много компенсирующих — лечение симптомов вместо причин (§7.1).
       render: (v: number) => (
         <Text style={{ color: v >= 50 ? RAG.medium.strong : BRAND.inkSoft }}>{fmtNum(v, 1)}</Text>
+      ),
+    }),
+    numericColumn({
+      title: 'Взвеш. нагрузка', dataIndex: 'weightedLoad', width: 150,
+      sorter: sorterFor((r: ManagerMetricRow) => r.weightedLoad),
+      // ТЗ v19 п.13: характеристика × критичность ИС × часы — «5 сложных» не равны «15 лёгким».
+      render: (v: number) => fmtNum(v, 0),
+    }),
+    numericColumn({
+      title: 'Часы (оценено)', dataIndex: 'hoursEstimated', width: 140,
+      sorter: sorterFor((r: ManagerMetricRow) => r.hoursEstimated),
+      render: (v: number) => `${fmtNum(v, 1)} ч`,
+    }),
+    numericColumn({
+      title: 'Мер без оценки часов', dataIndex: 'measuresWithoutEstimate', width: 180,
+      sorter: sorterFor((r: ManagerMetricRow) => r.measuresWithoutEstimate),
+      // Отдельный счётчик (В-41): не ноль молча — иначе неоценённая нагрузка выглядит «свободной».
+      render: (v: number) => (
+        <Text style={{ color: v > 0 ? RAG.medium.strong : BRAND.inkSoft }}>{v}</Text>
       ),
     }),
   ];
@@ -755,6 +901,9 @@ const ManagersTab: React.FC = () => {
           color={totals.overdue > 0 ? RAG.bad.strong : undefined} />
         <KpiCard title="Δ ALE под управлением" value={fmtMln(totals.delta)} hint="₽/год"
           loading={loading} />
+        <KpiCard title="Мер без оценки часов" value={totals.withoutEstimate} loading={loading}
+          color={totals.withoutEstimate > 0 ? RAG.medium.strong : undefined}
+          hint="не входят во взвешенную нагрузку" />
       </Space>
 
       <Alert type="info" showIcon
@@ -766,7 +915,7 @@ const ManagersTab: React.FC = () => {
       <Card {...premiumCard('slate')} styles={{ body: { padding: 0 } }}>
         <Table<ManagerMetricRow>
           columns={columns} dataSource={rows} rowKey="owner" loading={loading} size="small"
-          scroll={{ x: 1280 }} pagination={{ pageSize: 15, hideOnSinglePage: true }}
+          scroll={{ x: 1750 }} pagination={{ pageSize: 15, hideOnSinglePage: true }}
           locale={{ emptyText: 'Нет данных: метрики появятся, когда у несоответствий и мер будут указаны владельцы.' }}
         />
       </Card>

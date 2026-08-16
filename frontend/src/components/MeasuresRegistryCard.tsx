@@ -9,12 +9,13 @@
  * • Карточки «Срок ≤ 2 дней» и «Просрочено» — быстрый фокус на горящих мерах.
  * Клик по мере открывает окно решения (с комментарием) у родителя.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, List, Input, Select, Space, Tag, Button, Typography, Empty, Row, Col } from 'antd';
 import { AuditOutlined, RightOutlined, ClockCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import type { Proposal, ProposalStatus } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle, ACCENT } from '../theme/ragPalette';
 import { premiumCard, accentDot, TYPE } from '../theme/premium';
+import { OwnerLink } from './OwnerLink';
 
 const STATUS_TAG: Record<ProposalStatus, { color: string; label: string }> = {
   PENDING_APPROVAL: { color: 'gold', label: 'Ожидает решения' },
@@ -37,18 +38,34 @@ function parseDue(d?: string): number | null {
 interface Props {
   proposals: Proposal[];
   onOpen: (p: Proposal) => void;
+  /** ТЗ v19 п.3: переход «туда» из AI-карточки мер (MeasuresAiAnalyticsCard) — клик по
+   * характеристике задаёт этот фильтр здесь. Меняется на каждый клик (в т.ч. повторный по
+   * той же строке) — родитель прокидывает новое значение и сам решает, когда сбросить. */
+  presetCharacteristic?: string | null;
 }
 
-export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => {
+export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen, presetCharacteristic }) => {
   const [q, setQ] = useState('');
   const [system, setSystem] = useState<string | undefined>();
   const [status, setStatus] = useState<ProposalStatus | undefined>();
   const [exec, setExec] = useState<'DONE' | 'NOT_DONE' | 'AWAIT' | undefined>();
   const [due, setDue] = useState<string | undefined>();
+  const [characteristic, setCharacteristic] = useState<string | undefined>();
   const [quick, setQuick] = useState<'none' | 'soon' | 'overdue'>('none');
   const [showAll, setShowAll] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Применяем внешний preset и прокручиваем карточку в видимую область — «переход туда»
+  // из MeasuresAiAnalyticsCard без смены маршрута (это одна и та же страница дашборда).
+  useEffect(() => {
+    if (!presetCharacteristic) return;
+    setCharacteristic(presetCharacteristic);
+    setShowAll(true); // иначе фильтр может «спрятаться» за обрезкой топ-3
+    rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [presetCharacteristic]);
 
   const systems = useMemo(() => [...new Set(proposals.map((p) => p.systemName))].sort(), [proposals]);
+  const characteristics = useMemo(() => [...new Set(proposals.map((p) => p.characteristic).filter(Boolean))].sort() as string[], [proposals]);
   const dueDates = useMemo(() => [...new Set(proposals.map((p) => p.dueDate).filter(Boolean))] as string[], [proposals]);
 
   const isSoon = (p: Proposal) => {
@@ -67,6 +84,7 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
     const list = proposals.filter((p) => {
       if (ql && !`${p.riskTitle || ''} ${p.metricName} ${p.systemName}`.toLowerCase().includes(ql)) return false;
       if (system && p.systemName !== system) return false;
+      if (characteristic && p.characteristic !== characteristic) return false;
       if (status && p.status !== status) return false;
       if (exec === 'DONE' && p.execution !== 'DONE') return false;
       if (exec === 'NOT_DONE' && p.execution !== 'NOT_DONE') return false;
@@ -81,7 +99,7 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
       if (a.calculatedScore !== b.calculatedScore) return a.calculatedScore - b.calculatedScore; // критичнее = ниже %
       return (parseDue(a.dueDate) ?? Infinity) - (parseDue(b.dueDate) ?? Infinity);             // ближе срок
     });
-  }, [proposals, q, system, status, exec, due, quick]);
+  }, [proposals, q, system, characteristic, status, exec, due, quick]);
 
   const visible = showAll ? filtered : filtered.slice(0, 3);
 
@@ -105,6 +123,7 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
     );
 
   return (
+    <div ref={rootRef}>
     <Card
       {...premiumCard('ink', { marginTop: 16 })}
       title={
@@ -127,6 +146,8 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
         <Input.Search allowClear placeholder="Поиск: название / метрика / ИС" style={{ width: 240 }} onChange={(e) => setQ(e.target.value)} />
         <Select allowClear placeholder="Система" style={{ width: 200 }} value={system} onChange={setSystem}
           options={systems.map((s) => ({ value: s, label: s }))} showSearch optionFilterProp="label" />
+        <Select allowClear placeholder="Характеристика" style={{ width: 200 }} value={characteristic} onChange={setCharacteristic}
+          options={characteristics.map((c) => ({ value: c, label: c }))} showSearch optionFilterProp="label" />
         <Select allowClear placeholder="Статус" style={{ width: 170 }} value={status} onChange={setStatus}
           options={(Object.keys(STATUS_TAG) as ProposalStatus[]).map((s) => ({ value: s, label: STATUS_TAG[s].label }))} />
         <Select allowClear placeholder="Выполнение" style={{ width: 180 }} value={exec} onChange={setExec}
@@ -138,6 +159,19 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
         <Select allowClear placeholder="Срок решения" style={{ width: 160 }} value={due} onChange={setDue}
           options={dueDates.sort((a, b) => (parseDue(a) ?? 0) - (parseDue(b) ?? 0)).map((d) => ({ value: d, label: d }))} />
       </Space>
+
+      {characteristic && (
+        <Space style={{ marginBottom: 12 }}>
+          <Tag
+            closable
+            onClose={() => setCharacteristic(undefined)}
+            color={ACCENT.slate.color}
+            style={solidTagStyle(ACCENT.slate.color)}
+          >
+            Переход из AI-аналитики: «{characteristic}»
+          </Tag>
+        </Space>
+      )}
 
       {filtered.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Мер по заданным условиям нет" />
@@ -172,6 +206,7 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
                       <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
                         {p.systemName} · {p.characteristic}{p.dueDate ? ` · срок: ${p.dueDate}` : ''}
                         {p.decidedBy ? ` · решение: ${p.decidedBy}` : ''}
+                        {p.owner ? <> · ответственный: <OwnerLink owner={p.owner} /></> : null}
                       </Text>
                     }
                   />
@@ -189,6 +224,7 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen }) => 
         </>
       )}
     </Card>
+    </div>
   );
 };
 

@@ -63,6 +63,21 @@ async def test_execution_requires_approved_and_comment(db_session):
     assert p.execution == "DONE" and p.executed_by == "manager"
 
 
+async def test_effort_hours_requires_approved_and_positive(db_session):
+    """ТЗ v19 п.13 (В-41): часы проставляет исполнитель только по одобренной мере, значение > 0."""
+    p = await service.create(db_session, _new(), "manager")
+    with pytest.raises(ConflictError):
+        await service.set_effort_hours(db_session, p, 8.0, None)
+    p = await service.decide(db_session, p, approve=True, comment=None, username="admin")
+    with pytest.raises(ValidationError):
+        await service.set_effort_hours(db_session, p, 0, None)
+    with pytest.raises(ValidationError):
+        await service.set_effort_hours(db_session, p, -3, None)
+    p = await service.set_effort_hours(db_session, p, 6.5, None)
+    assert float(p.effort_hours) == 6.5
+    assert p.effort_hours_set_at is not None
+
+
 async def test_edit_writes_history(db_session):
     p = await service.create(db_session, _new(), "manager")
     p = await service.edit(db_session, p, EditIn(rationale="Уточнённое обоснование", owner="Иванов И.И."), "admin")

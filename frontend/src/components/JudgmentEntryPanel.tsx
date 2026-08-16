@@ -27,7 +27,7 @@ import { CHARACTERISTICS } from '../constants/qualityModel';
 import { groupJudgmentsByPeriod, pendingJudgmentKey, withoutJudged } from '../constants/assessmentWorkflow';
 import { ragToken } from '../theme/ragPalette';
 import { SPACE, TYPE } from '../theme/premium';
-import { numericColumn } from '../theme/table';
+import { numericColumn, sorterFor } from '../theme/table';
 
 const { Title, Text } = Typography;
 
@@ -89,10 +89,13 @@ const JudgmentEntryPanel: React.FC = () => {
   };
 
   const columns: ColumnsType<PendingJudgment> = [
-    { title: 'Информационная система', dataIndex: 'system_name', width: 200, ellipsis: true },
-    { title: 'Период', dataIndex: 'period', width: 92 },
-    { title: 'Характеристика', dataIndex: 'characteristic', width: 190, ellipsis: true },
-    { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 200, ellipsis: true },
+    { title: 'Информационная система', dataIndex: 'system_name', width: 200, ellipsis: true,
+      sorter: sorterFor((r: PendingJudgment) => r.system_name) },
+    { title: 'Период', dataIndex: 'period', width: 92, sorter: sorterFor((r: PendingJudgment) => r.period) },
+    { title: 'Характеристика', dataIndex: 'characteristic', width: 190, ellipsis: true,
+      sorter: sorterFor((r: PendingJudgment) => r.characteristic) },
+    { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 200, ellipsis: true,
+      sorter: sorterFor((r: PendingJudgment) => r.subcharacteristic) },
     numericColumn({
       title: 'Балл', dataIndex: 'score_pct', width: 110,
       sorter: (a: PendingJudgment, b: PendingJudgment) => a.score_pct - b.score_pct,

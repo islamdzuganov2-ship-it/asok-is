@@ -42,6 +42,17 @@ export interface Proposal {
   executionComment?: string;
   executedBy?: string;
   executedAt?: string;
+  // ТЗ v19 п.13 (В-41): трудоёмкость в часах — проставляет исполнитель вручную. undefined ≠ 0 —
+  // «нет оценки» отличается от «оценена в 0 часов» (см. AssigneeTasksPage, ManagersTab).
+  effortHours?: number;
+  effortHoursSetBy?: string;
+  effortHoursSetAt?: string;
+  // ТЗ v19 п.16: мера, переписанная на язык исполнителя (персона EXECUTOR) — появляется в
+  // «Плане задач» (внутренний Гант) и на «Моих задачах» после того, как менеджер по качеству
+  // нажмёт «Переписать для исполнителя».
+  executorBrief?: string;
+  executorBriefGeneratedBy?: string;
+  executorBriefGeneratedAt?: string;
   /** Демо-мера (засеяна для презентации). В режиме LLM такие меры скрываются. */
   isDemo?: boolean;
   /** История правок меры (аудит): кто, когда, какое поле, старое → новое значение. */
@@ -57,6 +68,19 @@ export interface Proposal {
   // на перенос срока с обоснованием. Всё это «падает» менеджеру по качеству — он решает.
   clarifications?: Clarification[];
   dueChangeRequest?: DueChangeRequest;
+  // ТЗ v19 п.7/11: экономический слой меры (BL-007 RE-11/12) — уже считает бэкенд
+  // (governance/schemas.py ProposalOut), но фронт эти поля не объявлял и не показывал.
+  measureType?: 'ELIMINATING' | 'COMPENSATING';
+  capex?: number;
+  opexPerYear?: number;
+  implementationMonths?: number;
+  expectedDeltaScore?: number;
+  deltaAleCash?: number;
+  deltaAleDeferred?: number;
+  deltaAleCapacity?: number;
+  rosi?: number;
+  recommendedVerdict?: 'ELIMINATE' | 'COMPENSATE' | 'ACCEPT';
+  verdict?: 'ELIMINATE' | 'COMPENSATE' | 'ACCEPT';
 }
 
 /** Уточнение исполнителя по метрике/поручению (видит менеджер по качеству). */
@@ -249,6 +273,28 @@ export const setExecution = createAsyncThunk<Proposal | null, ExecArg, { state: 
   },
 );
 
+/** Исполнитель проставляет трудоёмкость меры в часах вручную (п.13, В-41). */
+export const setEffortHours = createAsyncThunk<Proposal | null, { id: string; effortHours: number }, { state: RootState }>(
+  'governance/effort',
+  async ({ id, effortHours }, { getState }) => {
+    if (isLive(getState())) return await govApi(`/proposals/${id}/effort`, 'PATCH', { effortHours });
+    const p = getState().governance.proposals.find((x) => x.id === id);
+    if (!p || p.status !== 'APPROVED') return null;
+    return { ...p, effortHours, effortHoursSetAt: new Date().toISOString() };
+  },
+);
+
+/** Менеджер по качеству запускает переписывание меры на язык исполнителя (п.16). */
+export const rewriteForExecutor = createAsyncThunk<Proposal | null, { id: string }, { state: RootState }>(
+  'governance/rewrite-for-executor',
+  async ({ id }, { getState }) => {
+    if (isLive(getState())) return await govApi(`/proposals/${id}/rewrite-for-executor`, 'POST');
+    const p = getState().governance.proposals.find((x) => x.id === id);
+    if (!p || p.status !== 'APPROVED') return null;
+    return { ...p, executorBrief: `Что сделать: ${p.expectation || p.rationale}. Срок: ${p.dueDate ? `до ${p.dueDate}` : 'не назначен'}.`, executorBriefGeneratedAt: new Date().toISOString() };
+  },
+);
+
 type TaskArg = { id: string; suzLink?: string; topComment?: string; escalated?: boolean; owner?: string; ownerRole?: string; dueDate?: string };
 
 export const updateTask = createAsyncThunk<Proposal | null, TaskArg, { state: RootState }>(
@@ -378,8 +424,8 @@ const governanceSlice = createSlice({
       });
     // Мутации возвращают обновлённую меру (или null, если действие не применилось в mock).
     for (const thunk of [approveProposal, rejectProposal, updateProposalMeta, editProposal,
-      setExecution, updateTask, escalateTask, decideEscalation, resolveEscalation,
-      addClarification, requestDueChange, decideDueChange]) {
+      setExecution, setEffortHours, rewriteForExecutor, updateTask, escalateTask, decideEscalation,
+      resolveEscalation, addClarification, requestDueChange, decideDueChange]) {
       builder.addCase(thunk.fulfilled, (state, action: PayloadAction<Proposal | null>) => {
         if (action.payload) {
           upsert(state, action.payload);

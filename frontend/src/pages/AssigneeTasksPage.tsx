@@ -11,19 +11,20 @@
  * топ-менеджмента (маршруты в App.tsx), но действия по мерам — только просмотр.
  */
 import React, { useMemo, useState } from 'react';
-import { Alert, Button, Col, DatePicker, Empty, Input, Modal, Row, Space, Statistic, Table, Tag, Timeline, Typography } from 'antd';
+import { Alert, Button, Col, DatePicker, Empty, Input, InputNumber, Modal, Row, Space, Statistic, Table, Tag, Timeline, Typography } from 'antd';
 import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
-import { CommentOutlined, FieldTimeOutlined, ScheduleOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CommentOutlined, FieldTimeOutlined, FileTextOutlined, ScheduleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { useAppDispatch } from '../store/hooks';
 import {
-  selectProposalsForAssignee, addClarification, requestDueChange, type Proposal,
+  selectProposalsForAssignee, addClarification, requestDueChange, setEffortHours, type Proposal,
 } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, SPACE } from '../theme/premium';
+import { sorterFor } from '../theme/table';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -33,6 +34,17 @@ const parseRu = (d?: string): Date | null => {
   return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
 };
 const TODAY = new Date(2026, 5, 26).getTime();
+
+// Приоритет для сортировки по статусу — просроченное впереди, выполненное в хвосте (наглядно
+// для исполнителя: что горит сильнее всего). statusTag использует тот же порядок условий.
+const statusRank = (p: Proposal): number => {
+  if (p.execution === 'DONE') return 4;
+  if (p.execution === 'NOT_DONE') return 3;
+  const d = parseRu(p.dueDate);
+  if (d && d.getTime() < TODAY) return 0;
+  if (p.status === 'APPROVED') return 2;
+  return 1;
+};
 
 const statusTag = (p: Proposal) => {
   if (p.execution === 'DONE') return <Tag color="green">выполнено</Tag>;
@@ -52,6 +64,8 @@ const AssigneeTasksPage: React.FC = () => {
   const [clarify, setClarify] = useState('');
   const [newDue, setNewDue] = useState<dayjs.Dayjs | null>(null);
   const [justif, setJustif] = useState('');
+  const [hours, setHours] = useState<number | null>(null);
+  const [savingHours, setSavingHours] = useState(false);
 
   const stats = useMemo(() => {
     const done = tasks.filter((t) => t.execution === 'DONE').length;
@@ -59,7 +73,22 @@ const AssigneeTasksPage: React.FC = () => {
     return { total: tasks.length, done, overdue, eff: tasks.length ? Math.round((done / tasks.length) * 100) : 0 };
   }, [tasks]);
 
-  const open = (p: Proposal) => { setSel(p); setClarify(''); setNewDue(p.dueDate ? dayjs(parseRu(p.dueDate)) : null); setJustif(''); };
+  const open = (p: Proposal) => { setSel(p); setClarify(''); setNewDue(p.dueDate ? dayjs(parseRu(p.dueDate)) : null); setJustif(''); setHours(p.effortHours ?? null); };
+
+  const submitHours = async () => {
+    if (!sel) return;
+    if (hours === null || hours <= 0) { message.error('Укажите трудоёмкость в часах — больше нуля'); return; }
+    setSavingHours(true);
+    try {
+      const updated = await dispatch(setEffortHours({ id: sel.id, effortHours: hours })).unwrap();
+      message.success('Трудоёмкость сохранена');
+      if (updated) setSel(updated);
+    } catch {
+      message.error('Не удалось сохранить трудоёмкость');
+    } finally {
+      setSavingHours(false);
+    }
+  };
 
   const submitClarify = () => {
     if (!sel || !clarify.trim()) { message.error('Введите текст уточнения'); return; }
@@ -80,15 +109,19 @@ const AssigneeTasksPage: React.FC = () => {
   };
 
   const columns: ColumnsType<Proposal> = [
-    { title: 'Поручение', dataIndex: 'riskTitle', render: (v: string, r) => (
+    { title: 'Поручение', dataIndex: 'riskTitle', sorter: sorterFor((r: Proposal) => r.riskTitle || r.metricName),
+      render: (v: string, r) => (
       <div>
         <Text strong style={{ color: BRAND.ink }}>{v || r.metricName}</Text>
         <div style={{ fontSize: 12, color: BRAND.inkSoft }}>{r.systemName} · {r.characteristic}</div>
       </div>
     ) },
     { title: 'Балл', dataIndex: 'calculatedScore', width: 76, align: 'center',
+      sorter: sorterFor((r: Proposal) => r.calculatedScore),
       render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> },
-    { title: 'Срок', dataIndex: 'dueDate', width: 116, render: (v: string, r) => (
+    { title: 'Срок', dataIndex: 'dueDate', width: 116,
+      sorter: sorterFor((r: Proposal) => parseRu(r.dueDate)?.getTime() ?? null),
+      render: (v: string, r) => (
       <Space direction="vertical" size={0}>
         <Text>{v || '—'}</Text>
         {r.dueChangeRequest?.status === 'PENDING' && <Tag color="gold" style={{ marginInlineEnd: 0 }}>перенос на рассмотрении</Tag>}
@@ -96,7 +129,11 @@ const AssigneeTasksPage: React.FC = () => {
         {r.dueChangeRequest?.status === 'DECLINED' && <Tag color="red" style={{ marginInlineEnd: 0 }}>перенос отклонён</Tag>}
       </Space>
     ) },
-    { title: 'Статус', key: 'status', width: 130, render: (_: unknown, r) => statusTag(r) },
+    { title: 'Статус', key: 'status', width: 130, sorter: sorterFor((r: Proposal) => statusRank(r)),
+      render: (_: unknown, r) => statusTag(r) },
+    { title: 'Часы', dataIndex: 'effortHours', width: 84, align: 'center',
+      sorter: sorterFor((r: Proposal) => r.effortHours),
+      render: (v: number | undefined) => (v ? <Text>{v} ч</Text> : <Text type="secondary">без оценки</Text>) },
     { title: 'Уточнения', key: 'clar', width: 96, align: 'center',
       render: (_: unknown, r) => (r.clarifications?.length ? <Tag icon={<CommentOutlined />}>{r.clarifications.length}</Tag> : <Text type="secondary">—</Text>) },
   ];
@@ -135,9 +172,38 @@ const AssigneeTasksPage: React.FC = () => {
               <Tag>{sel.characteristic}</Tag>
               {statusTag(sel)}
             </Space>
+            {/* ТЗ v19 п.16: переписано менеджером по качеству на язык исполнителя — конкретные
+                шаги вместо профсуждения ниже. Показываем первым, обоснование — деталь под ним. */}
+            {sel.executorBrief && (
+              <div style={{ background: BRAND.surfaceSoft, borderRadius: 8, padding: 12 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}><FileTextOutlined /> Что сделать</Text>
+                <Paragraph style={{ marginBottom: 0, marginTop: 4 }}>{sel.executorBrief}</Paragraph>
+              </div>
+            )}
             <div><Text type="secondary">Метрика: </Text><Text>{sel.metricName}</Text></div>
             <div><Text type="secondary">Обоснование меры</Text><Paragraph style={{ marginBottom: 0 }}>{sel.rationale}</Paragraph></div>
             <div><Text type="secondary">Текущий срок: </Text><Text strong>{sel.dueDate || '—'}</Text></div>
+
+            {/* Трудоёмкость в часах (ТЗ v19 п.13, В-41) — проставляет исполнитель вручную,
+                видна в нагрузке/балансировке у менеджера по качеству (RiskEconomicsPage). */}
+            {sel.status === 'APPROVED' && (
+              <div>
+                <Text type="secondary"><ClockCircleOutlined /> Трудоёмкость (часы, ваша оценка)</Text>
+                <Space style={{ marginTop: 8 }}>
+                  <InputNumber<number> min={0.5} step={0.5} value={hours}
+                    onChange={(v) => setHours(typeof v === 'number' ? v : null)}
+                    placeholder="Например, 8 ч" style={{ width: 140 }} />
+                  <Button type="primary" loading={savingHours} onClick={submitHours}>
+                    {sel.effortHours ? 'Обновить' : 'Сохранить'}
+                  </Button>
+                </Space>
+                {sel.effortHoursSetAt && (
+                  <div style={{ fontSize: 11, color: BRAND.inkSoft, marginTop: 4 }}>
+                    Оценено: {dayjs(sel.effortHoursSetAt).format('DD.MM.YYYY HH:mm')}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Ранее внесённые уточнения */}
             {(sel.clarifications?.length ?? 0) > 0 && (

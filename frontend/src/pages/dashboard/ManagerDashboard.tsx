@@ -28,7 +28,7 @@ import { MANAGER_SCALE_SYSTEMS as MANAGER_MOCK_SYSTEMS } from '../../data/mockSc
 import { RAG, ragToken, levelLabel, BRAND, solidTagStyle } from '../../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE, SPACE, PREMIUM } from '../../theme/premium';
 import { useChartTokens } from '../../theme/useThemeTokens';
-import { numericColumn } from '../../theme/table';
+import { numericColumn, sorterFor } from '../../theme/table';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import MeasureDevelopmentPanel from '../../components/MeasureDevelopmentPanel';
@@ -215,7 +215,8 @@ const ManagerDashboard: React.FC = () => {
   const hideChar = () => { setCharKey(undefined); setSubName(undefined); };
 
   const columns = [
-    { title: 'Метрика (подхарактеристика)', dataIndex: 'name', key: 'name', width: '46%' },
+    { title: 'Метрика (подхарактеристика)', dataIndex: 'name', key: 'name', width: '46%',
+      sorter: sorterFor((r: ManagerMetric) => r.name) },
     numericColumn<ManagerMetric>({
       title: 'Расчётный %', dataIndex: 'score', key: 'score', width: '20%',
       render: (v: number) => <Text strong style={{ color: scoreTok(v).strong }}>{v < 0 ? 'н/д' : `${v}%`}</Text>,

@@ -13,7 +13,7 @@ SoD (ролевая модель v12 §5.1) обеспечивается в ро
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -67,7 +67,17 @@ class Proposal(Base, TimestampMixin):
     # --- Ответственный / срок ---
     owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
     owner_role: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    due_date: Mapped[str | None] = mapped_column(String(32), nullable=True)  # ISO-дата (как на фронте)
+    # ТЗ v19 УК-12: FK на users.id — строковый `owner` остаётся снимком отображаемого имени
+    # (не удаляется, не становится обязательным полем прежде FK: часть строк ещё не сопоставлена,
+    # см. backend/app/scripts/match_owners_to_users.py). Кросс-доменная ссылка — ForeignKey по
+    # имени таблицы, без ORM relationship (правило модульного монолита, ARCHITECTURE.md).
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True,
+    )
+    due_date: Mapped[str | None] = mapped_column(String(32), nullable=True)  # legacy: ДД.ММ.ГГГГ, см. due_on
+    # ТЗ v19 УК-36: даты как даты. due_date (строка) остаётся для обратной совместимости API,
+    # due_on — источник истины для сортировки/сравнения/горизонтов (пункт 15).
+    due_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # --- Решение топ-менеджмента (SoD) ---
     status: Mapped[str] = mapped_column(String(32), default=STATUS_PENDING, nullable=False, index=True)
@@ -79,7 +89,29 @@ class Proposal(Base, TimestampMixin):
     execution: Mapped[str | None] = mapped_column(String(16), nullable=True)  # DONE/NOT_DONE
     execution_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     executed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    executed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True,
+    )
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # ТЗ v19 УК-13/16: трудоёмкость в часах — проставляет исполнитель вручную при переводе
+    # меры «в работу» (решение по В-41, docs/ТЗ_19). Отсутствие значения ≠ 0 — карточка мер
+    # без оценки считается отдельно ("без оценки часов"), а не как нулевая нагрузка.
+    effort_hours: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    effort_hours_set_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
+    )
+    effort_hours_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # ТЗ v19 УК-16 (п.16): переписывание меры на язык исполнителя (персона EXECUTOR) —
+    # конкретные шаги вместо профсуждения (rationale) и вместо просьбы к ЛПР (expectation, п.14).
+    # Запускает менеджер по качеству кнопкой «Переписать для исполнителя»; появляется на
+    # карточке задачи в «Плане задач» (внутренний Гант) и на «Моих задачах» исполнителя.
+    executor_brief: Mapped[str | None] = mapped_column(Text, nullable=True)
+    executor_brief_generated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
+    )
+    executor_brief_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # --- План задач / эскалация ---
     suz_link: Mapped[str | None] = mapped_column(String(512), nullable=True)

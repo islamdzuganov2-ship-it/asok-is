@@ -16,6 +16,10 @@ class SystemResponse(BaseModel):
     # CLASSIC → контур ISO 25010; AI → контур ГОСТ Р 59898-2021 (BL-001).
     system_kind: str = "CLASSIC"
     is_active: bool
+    # ТЗ v19 УК-12/УК-14: раньше принимался в SystemCreate, но нигде не отдавался обратно —
+    # карточка ИС не могла показать ответственного. owner_user_id — FK, None пока не сопоставлено.
+    owner: Optional[str] = None
+    owner_user_id: Optional[UUID] = None
 
 
 class SystemsListResponse(BaseModel):

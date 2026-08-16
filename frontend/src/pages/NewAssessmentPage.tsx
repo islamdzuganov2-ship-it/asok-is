@@ -34,7 +34,7 @@ import {
 import { subArtifacts, subDescription } from '../constants/subDescriptions';
 import ProfessionalJudgmentsPanel from '../components/ProfessionalJudgmentsPanel';
 import { premiumCard, accentDot, accentColorOf, GOLD, SPACE, TYPE } from '../theme/premium';
-import { numericColumn } from '../theme/table';
+import { numericColumn, sorterFor } from '../theme/table';
 import { BRAND } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
@@ -48,6 +48,10 @@ const LEVEL_COLOR: Record<string, string> = {
     'Низкий уровень': 'red',
     'Невозможно измерить': 'default',
 };
+// Порядок значимости уровня для сортировки — от лучшего к худшему, не алфавитный.
+const LEVEL_RANK: Record<string, number> = Object.fromEntries(
+    Object.keys(LEVEL_COLOR).map((k, i) => [k, i]),
+);
 
 const pairKey = (characteristic: string, subcharacteristic: string) =>
     `${characteristic}|||${subcharacteristic}`;
@@ -246,11 +250,12 @@ export const NewAssessmentPage: React.FC = () => {
     };
 
     const overviewColumns: ColumnsType<PeriodSummary> = [
-        { title: 'Период', dataIndex: 'period', width: 130 },
+        { title: 'Период', dataIndex: 'period', width: 130, sorter: sorterFor((r: PeriodSummary) => r.period) },
         {
             // ui-audit-ignore UI-02 — в колонке полоса Progress, а не число: она занимает ширину
             // колонки, выравнивание вправо неприменимо.
             title: 'Заполнено', key: 'filled', width: 200,
+            sorter: sorterFor((r: PeriodSummary) => r.filled / (r.total || 1)),
             render: (_: unknown, rec) => (
                 <Progress
                     percent={Math.round((rec.filled / rec.total) * 100)}
@@ -262,6 +267,7 @@ export const NewAssessmentPage: React.FC = () => {
         },
         {
             title: 'Статус', key: 'status', width: 160,
+            sorter: sorterFor((r: PeriodSummary) => (r.complete ? 2 : r.filled > 0 ? 1 : 0)),
             render: (_: unknown, rec) => (
                 rec.complete
                     ? <Tag color="green">Завершена</Tag>
@@ -285,16 +291,18 @@ export const NewAssessmentPage: React.FC = () => {
     ];
 
     const resultColumns: ColumnsType<ResultRow> = [
-        { title: 'Характеристика', dataIndex: 'characteristic', width: 220 },
-        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 230 },
-        numericColumn({ title: 'A', dataIndex: 'val_a', width: 70, render: (v: number | null) => (v ?? '—') }),
-        numericColumn({ title: 'B', dataIndex: 'val_b', width: 70, render: (v: number | null) => (v ?? '—') }),
+        { title: 'Характеристика', dataIndex: 'characteristic', width: 220, sorter: sorterFor((r: ResultRow) => r.characteristic) },
+        { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', width: 230, sorter: sorterFor((r: ResultRow) => r.subcharacteristic) },
+        numericColumn({ title: 'A', dataIndex: 'val_a', width: 70, sorter: sorterFor((r: ResultRow) => r.val_a), render: (v: number | null) => (v ?? '—') }),
+        numericColumn({ title: 'B', dataIndex: 'val_b', width: 70, sorter: sorterFor((r: ResultRow) => r.val_b), render: (v: number | null) => (v ?? '—') }),
         numericColumn({
             title: 'X', dataIndex: 'x', width: 80,
+            sorter: sorterFor((r: ResultRow) => r.x),
             render: (x: number | null) => (x != null ? <Text strong>{x.toFixed(2)}</Text> : <Text type="secondary">—</Text>),
         }),
         {
             title: 'Уровень', dataIndex: 'level', width: 180,
+            sorter: sorterFor((r: ResultRow) => LEVEL_RANK[r.level ?? ''] ?? -1),
             render: (level: string | null) => (
                 level
                     ? <Tag color={LEVEL_COLOR[level] ?? 'default'}>{level}</Tag>
@@ -303,6 +311,7 @@ export const NewAssessmentPage: React.FC = () => {
         },
         {
             title: 'Комментарий', dataIndex: 'comment',
+            sorter: sorterFor((r: ResultRow) => r.comment),
             render: (c: string) => (c ? <Text style={{ fontSize: TYPE.caption.fontSize }}>{c}</Text> : <Text type="secondary">—</Text>),
         },
     ];

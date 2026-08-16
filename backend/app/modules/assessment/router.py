@@ -19,14 +19,19 @@ from app.modules.iam import get_current_user, require_permission
 from app.modules.quality import (
     ABBR,
     CHARACTERISTICS,
+    DEFAULT_CRITICALITY_WEIGHTS,
     QUALITY_MODEL,
     QUALITY_PAIR_KEYS,
+    SUBCHAR_WEIGHTS,
     TOTAL_SUBS,
     FormulaType,
     MetricCatalog,
+    SubcharScore,
     calculate_metric,
     canonical_characteristic,
     map_to_level,
+    portfolio_score,
+    weighted_system_score,
 )
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue, ProfessionalJudgment
 from app.modules.assessment.schemas import (
@@ -72,6 +77,7 @@ def _empty_dashboard() -> dict:
         "totalMetrics": 0,
         "characteristics": [],
         "systemDetails": [],
+        "periodsUsed": {"distinct": [], "earliest": None, "latest": None, "bySystem": {}},
     }
 
 
@@ -140,8 +146,16 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     # (сиды пишут периоды одной транзакцией) и не по строке («Q4-2025» > «Q2-2026») — DEF-13.
     rows = sorted(rows, key=lambda r: period_sort_key(r[1].period), reverse=True)
     latest_period_per_system: dict[str, str] = {}
+    # ТЗ v19 п.15: «эффекты в разрезе сроков, чётко отражать рамки времени» — дашборд молча
+    # показывал «последний период на каждую ИС» без указания, какой это период. Разные ИС часто
+    # на РАЗНЫХ последних периодах (одна прислала данные за Q2-2026, другая ещё на Q4-2025) —
+    # не сказать этого явно значит выдать цифру, для которой пользователь не может задать
+    # «за какой период», что напрямую нарушает §6 ТЗ («не показываем число без ответа на почему»).
+    period_label_by_system: dict[str, str] = {}
     for _, period, system, _ in rows:
         latest_period_per_system.setdefault(str(system.id), str(period.id))
+        if latest_period_per_system[str(system.id)] == str(period.id):
+            period_label_by_system[system.name] = period.period
     latest_rows = [
         (value, system, metric)
         for value, period, system, metric in rows
@@ -152,8 +166,10 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     # Имена характеристик нормализуются к модели 25010 (DEF-02): дашборд = 8 характеристик, как в моках.
     tree: dict[str, dict[str, dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
     crit_by_name: dict[str, str] = {}
+    # ТЗ v19 п.5 (УК-05): ответственный за ИС — по имени системы (как crit_by_name), а не
+    # общая заглушка на все системы (см. reporting/router.py get_executive_dashboard).
+    owner_by_name: dict[str, tuple] = {}
     level_counts: dict[str, int] = defaultdict(int)
-    measured_x: list[float] = []
     for value, system, metric in latest_rows:
         canon = canonical_characteristic(metric.characteristic)
         if canon is None:
@@ -162,26 +178,44 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
             system.criticality_class.value if hasattr(system.criticality_class, "value")
             else str(system.criticality_class)
         )
+        owner_by_name[system.name] = (system.owner, system.owner_user_id)
         if value.unmeasurable or value.calculated_x is None:
             tree[system.name][canon][metric.subcharacteristic] = -1.0
             level_counts["Невозможно измерить"] += 1
         else:
             x = float(value.calculated_x)
-            measured_x.append(x)
             tree[system.name][canon][metric.subcharacteristic] = round(x * 100)
             level_counts[value.quality_level or map_to_level(x)] += 1
 
     if not tree:
         return _empty_dashboard()
 
-    # Метаданные по каждой ИС: баллы характеристик, итоговый балл, число «низких» метрик.
+    # Метаданные по каждой ИС: баллы характеристик, итоговый ВЗВЕШЕННЫЙ балл (ТЗ v19 УК-06/07),
+    # число «низких» метрик. char_scores — по-прежнему плоское среднее ВНУТРИ характеристики
+    # (для теплокарты/системных карточек, где сравниваются сами характеристики между собой);
+    # sys_meta[name]["score"] — взвешенный балл ИС, а не среднее средних (было: среднее по
+    # char_scores, то есть двойное усреднение — сначала внутри характеристики, потом между
+    # характеристиками, что искажает вклад характеристик с разным числом подхарактеристик).
     sys_meta: dict[str, dict] = {}
     for name, chars in tree.items():
         char_scores = {c: _avg_measured(list(subs.values())) for c, subs in chars.items()}
-        meas_chars = [s for s in char_scores.values() if s >= 0]
+
+        subchar_scores = [
+            SubcharScore(
+                characteristic=char_title, subcharacteristic=sub,
+                weight=SUBCHAR_WEIGHTS[(char_title, sub)],
+                x=(None if tree[name].get(char_title, {}).get(sub, -1) < 0
+                   else tree[name][char_title][sub]),
+            )
+            for char_title, subs_def in QUALITY_MODEL
+            for sub, _formula in subs_def
+        ]
+        breakdown = weighted_system_score(subchar_scores)
+
         sys_meta[name] = {
             "char_scores": char_scores,
-            "score": round(sum(meas_chars) / len(meas_chars)) if meas_chars else 0,
+            "score": round(breakdown.score) if breakdown.score is not None else 0,
+            "score_breakdown": breakdown,
             "low": sum(1 for subs in chars.values() for v in subs.values() if 0 <= v < 41),
         }
 
@@ -190,7 +224,10 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     sys_index = {name: i for i, name in enumerate(ordered)}
     char_index = {c: i for i, c in enumerate(CHARACTERISTICS)}
 
-    # systemDetails: по каждой ИС — характеристики и подхарактеристики в каноническом порядке.
+    # systemDetails: по каждой ИС — характеристики и подхарактеристики в каноническом порядке,
+    # плюс scoreBreakdown (ТЗ v19 УК-01..03) — вклад КАЖДОЙ измеренной подхарактеристики в баллах
+    # итоговой шкалы этой ИС (Σ вкладов == score), покрытие измеримостью. Раскрывает «почему
+    # именно такая цифра» на уровне отдельной системы, не только портфеля в целом.
     system_details = [
         {
             "name": name,
@@ -206,6 +243,12 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
                 }
                 for char_title, subs_def in QUALITY_MODEL
             ],
+            "scoreBreakdown": {
+                "coverage": sys_meta[name]["score_breakdown"].coverage,
+                "weightApplied": sys_meta[name]["score_breakdown"].weight_applied,
+                "weightTotal": sys_meta[name]["score_breakdown"].weight_total,
+                "contributions": sys_meta[name]["score_breakdown"].contributions,
+            },
         }
         for name in ordered
     ]
@@ -236,6 +279,8 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
             "name": name,
             "criticality": crit_by_name.get(name, "BUSINESS OPERATIONAL"),
             "lowMetricsCount": sys_meta[name]["low"],
+            "owner": owner_by_name.get(name, (None, None))[0],
+            "ownerUserId": str(owner_by_name[name][1]) if owner_by_name.get(name, (None, None))[1] else None,
         }
         for name in ordered
         if sys_meta[name]["low"] > 0
@@ -243,8 +288,34 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
 
     total_metrics = sum(len(subs) for chars in tree.values() for subs in chars.values())
 
+    # Портфельная свёртка (ТЗ v19 УК-07, Р-6): Балл_портфеля = Σ(вес_критичности×Балл_ИС) / Σ.
+    # Заменяет старое плоское среднее ПО ВСЕМ ОТДЕЛЬНЫМ метрикам (measured_x) — то не различало
+    # ни вес подхарактеристики, ни критичность ИС: система с 40 заполненными метриками весила
+    # в 4 раза больше системы с 10, просто потому что дала больше строк, а не потому что важнее.
+    portfolio_system_scores = {
+        name: (meta["score_breakdown"].score if meta["score_breakdown"].score is not None else None)
+        for name, meta in sys_meta.items()
+    }
+    portfolio = portfolio_score(portfolio_system_scores, crit_by_name, DEFAULT_CRITICALITY_WEIGHTS)
+    # Контракт со фронтом — 0..1 (как и раньше: DashboardPage.tsx делает *100 сам).
+    global_health_score = round(portfolio.score / 100, 4) if portfolio.score is not None else 0.0
+
+    distinct_periods = sorted(set(period_label_by_system.values()), key=period_sort_key)
+    periods_used = {
+        "distinct": distinct_periods,
+        "earliest": distinct_periods[0] if distinct_periods else None,
+        "latest": distinct_periods[-1] if distinct_periods else None,
+        "bySystem": period_label_by_system,
+    }
+
     return {
-        "globalHealthScore": round(sum(measured_x) / len(measured_x), 4) if measured_x else 0.0,
+        "globalHealthScore": global_health_score,
+        # ТЗ v19 УК-01..03: объяснимая цифра — из чего сложился portfolio-балл (какая ИС сколько
+        # баллов внесла) и, по каждой ИС в systemDetails, из чего сложился её собственный балл.
+        "scoreBreakdown": {
+            "criticalityWeightApplied": portfolio.criticality_weight_applied,
+            "systemContributions": portfolio.system_contributions,
+        },
         "levelCounts": dict(level_counts),
         "heatmapData": heatmap_data,
         "xAxisLabels": list(CHARACTERISTICS),
@@ -253,6 +324,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
         "totalMetrics": total_metrics,
         "characteristics": characteristics_out,
         "systemDetails": system_details,
+        "periodsUsed": periods_used,
     }
 
 

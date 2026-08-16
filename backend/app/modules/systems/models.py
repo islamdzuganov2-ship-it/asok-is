@@ -4,7 +4,7 @@ ORM-модель реестра ИС — домен systems (ТЗ v13).
 import enum
 import uuid
 
-from sqlalchemy import Boolean, Column, Enum as SQLEnum, String
+from sqlalchemy import Boolean, Column, Enum as SQLEnum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.infrastructure.database import Base
@@ -34,6 +34,9 @@ class System(Base, TimestampMixin):
     # Тип системы: CLASSIC → контур ISO 25010; AI → контур ГОСТ Р 59898-2021 (BL-001).
     system_kind = Column(String(10), nullable=False, default="CLASSIC", server_default="CLASSIC")
     owner = Column(String(255), nullable=True)
+    # ТЗ v19 УК-12/УК-14: FK на users.id — «связь с руководителем» на карточке ИС.
+    # Строковый `owner` остаётся снимком имени, пока не сопоставлен (см. scripts/match_owners_to_users.py).
+    owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
     # Вендор ИС (BL-007, RE-01) — для разреза дашборда стоимости и пересмотра контрактов (§2.4).
     vendor = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)

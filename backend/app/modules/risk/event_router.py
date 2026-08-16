@@ -17,6 +17,7 @@ from app.modules.iam import get_current_user, require_permission
 from app.modules.risk import event_service as service
 from app.modules.risk.event_schemas import (
     AleResultOut,
+    HeatmapCellDetailOut,
     IncidentLinkIn,
     IncidentLinkOut,
     MeasureLinkIn,
@@ -51,6 +52,19 @@ async def create_event(
     user: dict = Depends(require_permission("risk.register.edit")),
 ):
     return await service.create_event(db, payload, user.get("username"))
+
+
+# ТЗ v19 п.4: связь ячейки теплокарты (ИС × характеристика) с рисками/мерами/деньгами. Путь
+# ДО /{event_id} — иначе FastAPI попытается разобрать «by-cell» как UUID события (порядок
+# регистрации маршрутов имеет значение для литеральных путей против path-параметров).
+@router.get("/by-cell", response_model=HeatmapCellDetailOut)
+async def get_cell_detail(
+    system_name: str,
+    characteristic: str,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    return await service.cell_detail(db, system_name, characteristic)
 
 
 @router.get("/{event_id}", response_model=RiskEventOut)

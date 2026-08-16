@@ -76,3 +76,48 @@ class DataWarehouseSink(Protocol):
     """ВЫГРУЗКА рассчитанного анализа/дашбордов/заключений АСОК ИС обратно в хранилище."""
 
     def write_analytics(self, dataset: str, rows: Sequence[dict[str, Any]]) -> int: ...
+
+
+# ─── Уведомления (ТЗ v19 п.6): доставка вовне — канал НЕ выбран заказчиком ────────
+# Решение сессии (docs/ТЗ_19 §4): SMTP/мессенджер не определены — строим порт и заглушку,
+# домены эмитят события ЭТОГО контракта уже сейчас (см. shared/notification_events.py — каталог
+# типов), реальный канал подключается адаптером без изменений в доменах.
+@dataclass(frozen=True)
+class NotificationEvent:
+    """Одно событие, о котором нужно оповестить получателя — не привязано к каналу доставки."""
+    event_type: str    # см. shared.notification_events — каталог типов, не строка на месте
+    recipient: str      # ФИО/логин получателя (адрес почты пока не у всех пользователей есть)
+    subject: str
+    body: str
+    entity_type: str    # "proposal" | "nonconformity" — на что ссылается событие
+    entity_id: str
+
+
+@runtime_checkable
+class NotificationPort(Protocol):
+    """Доставка одного события получателю. Канал (email/мессенджер/ITSM) решает адаптер."""
+
+    def notify(self, event: NotificationEvent) -> bool: ...
+
+
+# ─── Синхронизация задач (ТЗ v19 п.6): интеграция с внешним таск-трекером — НЕ сейчас ──
+# Решение сессии (docs/ТЗ_19 §4): не интегрировать сейчас — внутренний Гант (TaskPlanDashboard.tsx
+# поверх governance.Proposal) уже закрывает планирование задач. Контракт готов заранее, чтобы
+# подключение внешнего трекера (Jira/СUЗ и т.п.) не требовало правок в доменах.
+@dataclass(frozen=True)
+class ExternalTask:
+    external_id: str
+    title: str
+    status: str
+    assignee: str | None = None
+    due_date: str | None = None
+
+
+@runtime_checkable
+class TaskSyncPort(Protocol):
+    """Двусторонняя синхронизация мер/поручений с внешним таск-трекером."""
+
+    def push_task(self, entity_type: str, entity_id: str, title: str,
+                  assignee: str | None, due_date: str | None) -> str: ...  # → внешний ID
+
+    def fetch_status(self, external_id: str) -> ExternalTask | None: ...

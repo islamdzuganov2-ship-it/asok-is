@@ -19,16 +19,18 @@ import { Typography, Tag, Space, Input, Button, Modal, Alert, Tooltip, Empty, Se
 import { message } from '../../theme/appMessage';
 import {
   LinkOutlined, WarningOutlined, CheckOutlined, CloseOutlined, RiseOutlined, StopOutlined,
-  ScheduleOutlined, DatabaseOutlined, DownOutlined, UnorderedListOutlined,
+  ScheduleOutlined, DatabaseOutlined, DownOutlined, UnorderedListOutlined, FileTextOutlined,
 } from '@ant-design/icons';
 import { useSelector, shallowEqual } from 'react-redux';
 import { useAppDispatch } from '../../store/hooks';
 import { RootState } from '../../store';
 import {
-  selectVisibleProposals, updateTask, setExecution, escalateTask, decideEscalation, resolveEscalation, type Proposal,
+  selectVisibleProposals, updateTask, setExecution, escalateTask, decideEscalation, resolveEscalation,
+  rewriteForExecutor, type Proposal,
 } from '../../store/slices/governanceSlice';
 import { BRAND, RAG, ACCENT } from '../../theme/ragPalette';
 import { pageContainer, pageTitle, GOLD, accentDot, SPACE, TYPE } from '../../theme/premium';
+import { sorterFor } from '../../theme/table';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import TaskBubbleTimeline from '../../components/TaskBubbleTimeline';
 import EmployeeEffectivenessCard from '../../components/EmployeeEffectivenessCard';
@@ -81,6 +83,7 @@ const TaskPlanDashboard: React.FC = () => {
   const [due, setDue] = useState('');
   const [filter, setFilter] = useState<string>('Активные');
   const [sysFilter, setSysFilter] = useState<string>(ALL_SYS);
+  const [rewriting, setRewriting] = useState(false);
   // Все сворачиваемые блоки изначально свёрнуты (по требованию).
   const [listOpen, setListOpen] = useState(false);
 
@@ -176,6 +179,20 @@ const TaskPlanDashboard: React.FC = () => {
     setSel(null);
   };
   const resolve = () => { if (!sel) return; dispatch(resolveEscalation({ id: sel.id })); message.success('Эскалация отработана'); setSel(null); };
+  const doRewrite = async () => {
+    if (!sel) return;
+    if (sel.status !== 'APPROVED') { message.info('Переписать для исполнителя можно только по одобренной мере'); return; }
+    setRewriting(true);
+    try {
+      const updated = await dispatch(rewriteForExecutor({ id: sel.id })).unwrap();
+      message.success('Мера переписана на язык исполнителя');
+      if (updated) setSel(updated);
+    } catch {
+      message.error('Не удалось переписать меру');
+    } finally {
+      setRewriting(false);
+    }
+  };
   const markExec = (status: 'DONE' | 'NOT_DONE') => {
     if (!sel) return;
     if (sel.status !== 'APPROVED') { message.info('Отметка о выполнении доступна для одобренных мер'); return; }
@@ -202,6 +219,7 @@ const TaskPlanDashboard: React.FC = () => {
   const listColumns = [
     {
       title: 'Тема задачи', key: 'title',
+      sorter: sorterFor((r: { p: Proposal }) => r.p.riskTitle || r.p.metricName),
       render: (_: unknown, r: { p: Proposal }) => {
         const h = healthOf(r.p);
         return (
@@ -213,7 +231,8 @@ const TaskPlanDashboard: React.FC = () => {
         );
       },
     },
-    { title: 'Ответственный', key: 'owner', render: (_: unknown, r: { p: Proposal }) => (r.p.owner ? <Text>{r.p.owner}</Text> : <Text type="secondary">не назначен</Text>) },
+    { title: 'Ответственный', key: 'owner', sorter: sorterFor((r: { p: Proposal }) => r.p.owner),
+      render: (_: unknown, r: { p: Proposal }) => (r.p.owner ? <Text>{r.p.owner}</Text> : <Text type="secondary">не назначен</Text>) },
     {
       title: 'Срок исполнения', key: 'due', width: 160,
       sorter: (a: { p: Proposal }, b: { p: Proposal }) => (parseRu(a.p.dueDate)?.getTime() ?? Infinity) - (parseRu(b.p.dueDate)?.getTime() ?? Infinity),
@@ -404,6 +423,12 @@ const TaskPlanDashboard: React.FC = () => {
               {sel.execution === 'DONE' && <Tag color="green">выполнено</Tag>}
               {sel.escalated && <Tag color="purple">эскалирована</Tag>}
             </Space>
+            {sel.executorBrief && (
+              <div style={{ background: '#F5F6F8', borderRadius: 8, padding: 12, borderInlineStart: `3px solid ${GOLD.base}` }}>
+                <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}><FileTextOutlined /> Для исполнителя</Text>
+                <Paragraph style={{ marginBottom: 0, marginTop: 4 }}>{sel.executorBrief}</Paragraph>
+              </div>
+            )}
             <div><Text type="secondary">Фактура / обоснование</Text><Paragraph style={{ marginBottom: 0 }}>{sel.rationale}</Paragraph></div>
 
             {sel.escalated && (
@@ -438,6 +463,11 @@ const TaskPlanDashboard: React.FC = () => {
                   <Button type="primary" onClick={saveManage}>Сохранить</Button>
                   <Button icon={<CheckOutlined />} onClick={() => markExec('DONE')}>Выполнено</Button>
                   <Button danger icon={<CloseOutlined />} onClick={() => markExec('NOT_DONE')}>Не выполнено</Button>
+                  {sel.status === 'APPROVED' && (
+                    <Button icon={<FileTextOutlined />} loading={rewriting} onClick={doRewrite}>
+                      {sel.executorBrief ? 'Переписать заново' : 'Переписать для исполнителя'}
+                    </Button>
+                  )}
                 </Space>
 
                 {/* Эскалация (инициирует только QM) / отработка после решения */}
