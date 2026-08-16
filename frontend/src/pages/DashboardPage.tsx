@@ -19,6 +19,7 @@ import LevelHeatmap, { LEVEL_COLORS, LEVEL_TAG_COLORS } from '../components/Leve
 import { critTagStyle, levelLabel, solidTagStyle, ragToken, RAG, BRAND, ACCENT } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
 import { numericColumn, sorterFor } from '../theme/table';
+import { useCharacteristicWeights } from '../hooks/useCharacteristicWeights';
 
 // Ранг критичности для сортировки — не алфавитный.
 const CRIT_RANK: Record<string, number> = { 'MISSION CRITICAL': 0, 'BUSINESS CRITICAL': 1, 'BUSINESS OPERATIONAL': 2 };
@@ -80,6 +81,11 @@ const DashboardPage: React.FC = () => {
   const [isMock, setIsMock] = useState(false);
   const [detail, setDetail] = useState<DetailKey | null>(null);
   const [charDetail, setCharDetail] = useState<CharModal | null>(null);
+  // ТЗ v20 п.7.1: клик по цифре «Низких метрик» у КОНКРЕТНОЙ ИС — карточка именно с её
+  // просевшими метриками, а не общий список ещё раз (это и была жалоба: «тот же список,
+  // просто расширенный»).
+  const [sysLowDetail, setSysLowDetail] = useState<{ system: string; rows: { characteristic: string; subcharacteristic: string; score: number }[] } | null>(null);
+  const { weights: charWeights } = useCharacteristicWeights();
   const donutRef = useRef<HTMLDivElement>(null);
   const donutChart = useRef<echarts.ECharts | null>(null);
   const navigate = useNavigate();
@@ -209,6 +215,33 @@ const DashboardPage: React.FC = () => {
     });
     return { count: rows.length, rows };
   }, [data, proposals]);
+
+  // ТЗ v20 п.7: «Проблемные ИС» ранжируются по ВЕСУ просевших характеристик (та же формула, что
+  // и подпись под спидометром в ExecutiveDashboard: impact = (100 − балл) × вес характеристики),
+  // а не по голому числу низких метрик — заказчик отдельно указал, что счёт «по количеству»
+  // не то, что просили («сортировка по количеству, а не по весам характеристик»).
+  const systemsWithSeverity = useMemo(() => {
+    const detailsByName = new Map((data?.systemDetails ?? []).map((s) => [s.name, s]));
+    return (data?.problematicSystems ?? []).map((sys) => {
+      const sd = detailsByName.get(sys.name);
+      const severity = (sd?.chars ?? []).reduce(
+        (sum, c) => sum + (c.score >= 0 ? (100 - c.score) * (charWeights[c.title] ?? 0) : 0), 0,
+      );
+      return { ...sys, severity: Math.round(severity) };
+    }).sort((a, b) => b.severity - a.severity);
+  }, [data, charWeights]);
+
+  // Просевшие (score 0..20 — «Низкий уровень», см. theme/ragPalette.levelLabel) подхарактеристики
+  // конкретной ИС, отсортированные по весу характеристики — самое весомое первым.
+  const openSystemLowDetail = (sysName: string) => {
+    const sd = (data?.systemDetails ?? []).find((s) => s.name === sysName);
+    const rows = (sd?.chars ?? []).flatMap((c) => c.subs
+      .filter((s) => s.score >= 0 && s.score < 21)
+      .map((s) => ({ characteristic: c.title, subcharacteristic: s.name, score: s.score, weight: charWeights[c.title] ?? 0 })))
+      .sort((a, b) => b.weight - a.weight)
+      .map(({ characteristic, subcharacteristic, score }) => ({ characteristic, subcharacteristic, score }));
+    setSysLowDetail({ system: sysName, rows });
+  };
 
   if (error) {
     return <Alert type="error" showIcon message="Ошибка загрузки дашборда"
@@ -363,15 +396,18 @@ const DashboardPage: React.FC = () => {
           >
             {loading ? <Skeleton active /> : (
               <Table
-                dataSource={data?.problematicSystems ?? []} rowKey="id" size="small" pagination={false}
+                dataSource={systemsWithSeverity} rowKey="id" size="small" pagination={false}
                 locale={{ emptyText: 'Нет проблемных систем' }}
-                onRow={() => ({ onClick: () => setDetail('low'), style: { cursor: 'pointer' } })}
+                onRow={(r) => ({ onClick: () => openSystemLowDetail(r.name), style: { cursor: 'pointer' } })}
                 columns={[
                   { title: 'ИС', dataIndex: 'name', ellipsis: true, sorter: sorterFor((r: any) => r.name) },
                   { title: 'Критичность', dataIndex: 'criticality',
                     sorter: sorterFor((r: any) => CRIT_RANK[r.criticality] ?? -1), render: critTag },
-                  numericColumn({ title: 'Низких метрик', dataIndex: 'lowMetricsCount', width: 130,
+                  numericColumn({ title: 'Низких метрик', dataIndex: 'lowMetricsCount', width: 110,
                     sorter: sorterFor((r: any) => r.lowMetricsCount),
+                    render: (v: number) => <Text type="secondary">{v}</Text> }),
+                  numericColumn({ title: 'Вес просадки', dataIndex: 'severity', width: 120,
+                    sorter: sorterFor((r: any) => r.severity), defaultSortOrder: 'descend',
                     render: (v: number) => <Text type="danger" strong>{v}</Text> }),
                 ]}
               />
@@ -476,6 +512,36 @@ const DashboardPage: React.FC = () => {
               }),
             ]}
           />
+        )}
+      </Modal>
+
+      {/* ТЗ v20 п.7.1: просевшие метрики КОНКРЕТНОЙ ИС (клик по цифре «Низких метрик» в строке) —
+          не общий список систем ещё раз, а именно то, что просело у этой ИС, по весу характеристики. */}
+      <Modal
+        open={!!sysLowDetail}
+        onCancel={() => setSysLowDetail(null)}
+        footer={null}
+        width={600}
+        title={sysLowDetail ? `${sysLowDetail.system} — низкие метрики (${sysLowDetail.rows.length})` : ''}
+      >
+        {sysLowDetail && (
+          sysLowDetail.rows.length === 0 ? (
+            <Text type="secondary">Нет метрик уровня «Низкий уровень» по этой ИС.</Text>
+          ) : (
+            <Table
+              dataSource={sysLowDetail.rows} rowKey={(r) => `${r.characteristic}|${r.subcharacteristic}`}
+              size="small" pagination={false}
+              columns={[
+                { title: 'Характеристика', dataIndex: 'characteristic', ellipsis: true,
+                  sorter: sorterFor((r: any) => r.characteristic) },
+                { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', ellipsis: true,
+                  sorter: sorterFor((r: any) => r.subcharacteristic) },
+                numericColumn({ title: 'Балл', dataIndex: 'score', width: 100,
+                  sorter: sorterFor((r: any) => r.score),
+                  render: (v: number) => <Tag style={solidTagStyle(RAG.bad.strong)}>{v}%</Tag> }),
+              ]}
+            />
+          )
         )}
       </Modal>
     </div>
