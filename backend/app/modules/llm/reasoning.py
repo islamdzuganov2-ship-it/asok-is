@@ -647,15 +647,21 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
     ))
 
     # Э4 — Контроль достоверности: уже применён к каждому проходу (_llm_pass); фиксируем итог.
+    # Формулировки — деловым языком (см. style_guide.py): читатель этого раздела — не всегда
+    # инженер, а слово «этапы E1/E2Q» и «grounding»/«fallback» ему ничего не говорят.
     rejected = [s.code for s in trace.stages if s.fell_back]
-    gate_note = ("Вердикт вынесен детерминированным движком правил (см. факты входа); LLM его "
-                 "ОБЪЯСНЯЕТ, а не переопределяет. " if inp.rules_block.strip() else "")
+    rejected_titles = [_STAGE_TITLES[c] for c in rejected]
+    gate_note = ("Вывод по этому пункту предопределён правилами методики контроля качества "
+                 "(см. факты входа); интеллектуальный анализ поясняет причины, но не меняет "
+                 "вердикт. " if inp.rules_block.strip() else "")
     trace.stages.append(StageResult(
         "E4", _STAGE_TITLES["E4"],
         (gate_note
-         + "Grounding-контроль пройден: числа этапов — только из входных данных. "
-         + (f"Этапы на детерминированном fallback: {', '.join(rejected)}." if rejected
-            else "Все этапы приняты от LLM.")),
+         + "Проверка цифр пройдена: во всех разделах нет значений, которых не было во входных "
+           "данных. "
+         + (f"По формальным правилам методики заполнены (данных недостаточно для содержательного "
+            f"анализа): {', '.join(rejected_titles)}." if rejected
+            else "Все разделы содержательно раскрыты анализом.")),
     ))
 
     # Э5+Э7 — синтез мер и заключение (LLM-проход 3, секции МЕРЫ/ЗАКЛЮЧЕНИЕ).
@@ -702,8 +708,11 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
         used_llm=bool(measures), fell_back=not measures,
     ))
 
-    # Э6 — Саморефлексия (детерминированно: полнота данных + fallback-этапы).
+    # Э6 — Саморефлексия (детерминированно: полнота данных + разделы без содержательного анализа).
+    # Та же дисциплина языка, что в Э4: без «детерминированно», «LLM-вывод отбракован», кодов
+    # этапов — только то, чего не хватило и что это значит для доверия к выводу.
     fell_back_now = [s.code for s in trace.stages if s.fell_back]
+    fell_back_titles = [_STAGE_TITLES[c] for c in fell_back_now]
     trace.confidence = _confidence(inp, absent, len(fell_back_now))
     # Матрица доверия пересчитывается по ОКОНЧАТЕЛЬНОМУ составу откатов: до синтеза этап E5
     # ещё не был известен, а именно он часто и уходит в откат.
@@ -711,10 +720,11 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
     hansei = (
         (f"Не переданы: {', '.join(absent)} — выводы по этим аспектам ограничены. " if absent else
          "Все источники входных данных переданы. ")
-        + (f"Этапы {', '.join(fell_back_now)} сформированы детерминированно (LLM-вывод недоступен/отбракован). "
-           if fell_back_now else "Все этапы приняты от LLM. ")
+        + (f"По формальным правилам методики (без содержательного анализа — не хватило данных) "
+           f"заполнены разделы: {', '.join(fell_back_titles)}. "
+           if fell_back_now else "Все разделы содержательно раскрыты анализом. ")
         + f"Уверенность: {trace.confidence}. "
-        + f"Глубина разбора причин: {trace.why_depth} ступ. "
+        + f"Глубина разбора первопричины: {trace.why_depth} из {pers.why_depth} возможных шагов «почему». "
         + f"Доверие к выводу: {trust_d.level} — {trust_d.policy}."
     )
     trace.stages.append(StageResult("E6", _STAGE_TITLES["E6"], hansei))
@@ -725,7 +735,7 @@ def run_reasoning(inp: ReasoningInput, use_llm: bool = True,
     applied = ", ".join(lens.title for lens in trace.lenses)
     risks_out = "; ".join(_first_lines(inp.risks_block, 3)) or _ABSENT
     fired = _first_lines(inp.rules_block, 4)
-    explanation = ("Сработавшие правила движка: " + "; ".join(fired)
+    explanation = ("Основание разбора — сработавшие правила контроля качества: " + "; ".join(fired)
                    if fired else f"Рассмотренные аспекты: {applied}.")
     conclusion = (
         f"Объяснение: {explanation}\n"
