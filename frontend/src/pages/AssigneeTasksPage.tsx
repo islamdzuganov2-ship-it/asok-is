@@ -16,6 +16,7 @@ import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import { ClockCircleOutlined, CommentOutlined, FieldTimeOutlined, FileTextOutlined, ScheduleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { useAppDispatch } from '../store/hooks';
@@ -57,7 +58,9 @@ const statusTag = (p: Proposal) => {
 
 const AssigneeTasksPage: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const fullName = useSelector((s: RootState) => s.auth.fullName) || '';
+  const permissions = useSelector((s: RootState) => s.auth.permissions);
   const tasks = useSelector(selectProposalsForAssignee(fullName));
 
   const [sel, setSel] = useState<Proposal | null>(null);
@@ -140,8 +143,17 @@ const AssigneeTasksPage: React.FC = () => {
 
   return (
     <div style={pageContainer}>
-      <Title level={4} style={pageTitle}><span style={accentDot(GOLD.base)} />Мои задачи</Title>
-      <Text type="secondary">Поручения, назначенные на вас ({fullName}). Уточнения и предложения по срокам направляются менеджеру по качеству.</Text>
+      <Row align="middle" justify="space-between" wrap gutter={[12, 8]}>
+        <Col>
+          <Title level={4} style={pageTitle}><span style={accentDot(GOLD.base)} />Мои задачи</Title>
+          <Text type="secondary">Поручения, назначенные на вас ({fullName}). Уточнения и предложения по срокам направляются менеджеру по качеству.</Text>
+        </Col>
+        {permissions.includes('view.dashboard.taskplan') && (
+          <Col>
+            <Button onClick={() => navigate('/dashboard/taskplan')}>Открыть в плане задач →</Button>
+          </Col>
+        )}
+      </Row>
 
       <Row gutter={[16, 16]} style={{ margin: '16px 0' }}>
         <Col xs={12} md={6}><div {...premiumCard()}><Statistic title="Всего поручений" value={stats.total} /></div></Col>

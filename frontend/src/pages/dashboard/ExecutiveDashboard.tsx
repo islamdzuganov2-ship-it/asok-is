@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Col, Row, Typography, Tag, Progress, Badge, Space, Button, Spin, Alert, Modal, Table } from 'antd';
-import { RobotOutlined, FireOutlined, AppstoreOutlined, FundOutlined, UnorderedListOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
+import { RobotOutlined, FireOutlined, AppstoreOutlined, FundOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import ReactECharts from 'echarts-for-react';
 import { useSelector, shallowEqual } from 'react-redux';
@@ -22,6 +22,7 @@ import { SortButton, type HeatmapSortState } from '../../components/LevelHeatmap
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import { MeasuresRegistryCard } from '../../components/MeasuresRegistryCard';
+import CollapsibleCard from '../../components/CollapsibleCard';
 import MeasuresAiAnalyticsCard from '../../components/MeasuresAiAnalyticsCard';
 import { TechDebtCard } from '../../components/TechDebtCard';
 import EmployeeEffectivenessCard from '../../components/EmployeeEffectivenessCard';
@@ -490,23 +491,16 @@ const ExecutiveDashboard: React.FC = () => {
       {/* Эффективность сотрудников (ТЗ v17, req 7) — под техдолгом и теплокартой */}
       <EmployeeEffectivenessCard proposals={proposals} style={{ marginTop: 16 }} />
 
-      {/* Реестр мер качества — по умолчанию СКРЫТ, раскрывается по кнопке */}
-      <div style={{ marginTop: 16 }}>
-        <Button
-          type={showRegistry ? 'default' : 'primary'}
-          ghost={showRegistry}
-          icon={<UnorderedListOutlined />}
-          onClick={() => setShowRegistry((v) => { if (v) setRegistryPreset(null); return !v; })}
-        >
-          {showRegistry ? 'Скрыть реестр мер качества' : 'Показать реестр мер качества'}
-          {showRegistry ? <DownOutlined style={{ marginLeft: SPACE.snug }} /> : <RightOutlined style={{ marginLeft: SPACE.snug }} />}
-        </Button>
-        {showRegistry && (
-          <div style={{ marginTop: 12 }}>
-            <MeasuresRegistryCard proposals={proposals} onOpen={setDecisionProposal} presetCharacteristic={registryPreset} />
-          </div>
-        )}
-      </div>
+      {/* Реестр мер качества — по умолчанию СВЁРНУТ, раскрывается по клику на шапку */}
+      <CollapsibleCard
+        accent="gold"
+        style={{ marginTop: 16 }}
+        title={<><UnorderedListOutlined /> Реестр мер качества</>}
+        open={showRegistry}
+        onToggle={(next) => { setShowRegistry(next); if (!next) setRegistryPreset(null); }}
+      >
+        <MeasuresRegistryCard proposals={proposals} onOpen={setDecisionProposal} presetCharacteristic={registryPreset} />
+      </CollapsibleCard>
 
       <ActionInsightModal
         open={!!active}
