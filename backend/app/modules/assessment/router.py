@@ -166,6 +166,9 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     # Имена характеристик нормализуются к модели 25010 (DEF-02): дашборд = 8 характеристик, как в моках.
     tree: dict[str, dict[str, dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
     crit_by_name: dict[str, str] = {}
+    # ТЗ v19 п.5 (УК-05): ответственный за ИС — по имени системы (как crit_by_name), а не
+    # общая заглушка на все системы (см. reporting/router.py get_executive_dashboard).
+    owner_by_name: dict[str, tuple] = {}
     level_counts: dict[str, int] = defaultdict(int)
     for value, system, metric in latest_rows:
         canon = canonical_characteristic(metric.characteristic)
@@ -175,6 +178,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
             system.criticality_class.value if hasattr(system.criticality_class, "value")
             else str(system.criticality_class)
         )
+        owner_by_name[system.name] = (system.owner, system.owner_user_id)
         if value.unmeasurable or value.calculated_x is None:
             tree[system.name][canon][metric.subcharacteristic] = -1.0
             level_counts["Невозможно измерить"] += 1
@@ -275,6 +279,8 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
             "name": name,
             "criticality": crit_by_name.get(name, "BUSINESS OPERATIONAL"),
             "lowMetricsCount": sys_meta[name]["low"],
+            "owner": owner_by_name.get(name, (None, None))[0],
+            "ownerUserId": str(owner_by_name[name][1]) if owner_by_name.get(name, (None, None))[1] else None,
         }
         for name in ordered
         if sys_meta[name]["low"] > 0

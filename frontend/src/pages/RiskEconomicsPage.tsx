@@ -15,6 +15,7 @@ import KpiCard from '../components/KpiCard';
 import { premiumCard, accentDot, accentColorOf, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
 import { numericColumn, numericText, sorterFor } from '../theme/table';
 import { BRAND, RAG } from '../theme/ragPalette';
+import { OwnerLink } from '../components/OwnerLink';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -163,7 +164,7 @@ const DashboardTab: React.FC = () => {
       ),
     },
     { title: 'ИС', dataIndex: 'system', width: 140, sorter: sorterFor((r: TopRisk) => r.system), render: (s?: string) => s || '—' },
-    { title: 'Владелец', dataIndex: 'owner', width: 160, sorter: sorterFor((r: TopRisk) => r.owner), render: (o?: string) => o || '—' },
+    { title: 'Владелец', dataIndex: 'owner', width: 160, sorter: sorterFor((r: TopRisk) => r.owner), render: (o?: string) => <OwnerLink owner={o} fallback="—" /> },
     numericColumn({ title: 'ALE, ₽/год', dataIndex: 'aleAvg', width: 150, sorter: sorterFor((r: TopRisk) => r.aleAvg), render: (v: number) => fmtMoney(v) }),
   ];
 
@@ -303,7 +304,7 @@ const RiskEventsTab: React.FC = () => {
   const columns: ColumnsType<RiskEvent> = [
     { title: 'Код', dataIndex: 'code', width: 130, sorter: sorterFor((r: RiskEvent) => r.code) },
     { title: 'Название', dataIndex: 'title', width: 220, sorter: sorterFor((r: RiskEvent) => r.title), render: (t: string) => <Text strong>{t}</Text> },
-    { title: 'Владелец', dataIndex: 'owner', width: 150, sorter: sorterFor((r: RiskEvent) => r.owner), render: (o?: string) => o || '—' },
+    { title: 'Владелец', dataIndex: 'owner', width: 150, sorter: sorterFor((r: RiskEvent) => r.owner), render: (o?: string) => <OwnerLink owner={o} fallback="—" /> },
     numericColumn({ title: 'ARO', dataIndex: 'aro', width: 90, sorter: sorterFor((r: RiskEvent) => r.aro), render: (v: number) => fmtNum(v) }),
     numericColumn({ title: 'ALE средний', dataIndex: 'aleAvg', width: 140, sorter: sorterFor((r: RiskEvent) => r.aleAvg), render: (v: number) => fmtMoney(v) }),
     numericColumn({ title: 'ALE P90', dataIndex: 'aleP90', width: 140, sorter: sorterFor((r: RiskEvent) => r.aleP90), render: (v: number) => fmtMoney(v) }),
@@ -616,7 +617,8 @@ const ClosureTab: React.FC = () => {
         return <Tag color={m.color}>{m.label}</Tag>;
       },
     },
-    { title: 'Владелец', dataIndex: 'owner', width: 140, sorter: sorterFor((r: Nonconformity) => r.owner) },
+    { title: 'Владелец', dataIndex: 'owner', width: 140, sorter: sorterFor((r: Nonconformity) => r.owner),
+      render: (v: string) => <OwnerLink owner={v} /> },
     numericColumn({ title: 'ALE, ₽', dataIndex: 'evaluatedAle', width: 140, sorter: sorterFor((r: Nonconformity) => r.evaluatedAle), render: (v: number) => fmtMoney(v) }),
     {
       title: 'Статус', dataIndex: 'status', width: 160, sorter: sorterFor((r: Nonconformity) => r.status),

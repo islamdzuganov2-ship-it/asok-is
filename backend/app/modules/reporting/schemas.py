@@ -54,6 +54,10 @@ class ProblematicSystemOut(BaseModel):
     name: str
     criticality: str
     lowMetricsCount: int
+    # ТЗ v19 п.5 (УК-05): ответственный за ИС — реальные System.owner/owner_user_id, а не
+    # одна и та же заглушка для всех систем (была на фронте, см. ExecutiveDashboard.tsx).
+    owner: Optional[str] = None
+    ownerUserId: Optional[UUID] = None
 
 
 class PeriodsUsedOut(BaseModel):

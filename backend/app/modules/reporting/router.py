@@ -460,6 +460,8 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
             if hasattr(system.criticality_class, "value")
             else str(system.criticality_class),
             lowMetricsCount=count,
+            owner=system.owner,
+            ownerUserId=system.owner_user_id,
         )
         for system_id, count in sorted(low_counts.items(), key=lambda item: item[1], reverse=True)
         if (system := systems_by_id.get(system_id)) is not None

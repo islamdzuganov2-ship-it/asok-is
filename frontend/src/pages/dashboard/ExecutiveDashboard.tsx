@@ -49,7 +49,7 @@ interface LiveDashboard {
   heatmapData?: [number, number, number][];
   xAxisLabels?: string[];
   yAxisLabels?: string[];
-  problematicSystems?: { id: string; name: string; criticality: string; lowMetricsCount: number }[];
+  problematicSystems?: { id: string; name: string; criticality: string; lowMetricsCount: number; owner?: string | null; ownerUserId?: string | null }[];
   // ТЗ v19 п.15: за какой период(ы) собран показанный балл — разные ИС нередко на разных
   // последних периодах, молчать об этом значит не дать ответить на «за какой это срок».
   periodsUsed?: { distinct: string[]; earliest: string | null; latest: string | null; bySystem: Record<string, string> };
@@ -72,6 +72,9 @@ function buildExecFromLive(live: LiveDashboard | null): ExecutiveDashboardData {
   const matrix: number[][] = sysNames.map(() => chars.map(() => 0));
   (live.heatmapData ?? []).forEach(([x, y, b]) => { if (matrix[y] && x < chars.length) matrix[y][x] = b; });
   const critMap = new Map((live.problematicSystems ?? []).map((s) => [s.name, s.criticality]));
+  // ТЗ v19 п.5 (УК-05): реальный ответственный за ИС (System.owner), не общая заглушка на
+  // все системы — раньше здесь был один и тот же захардкоженный текст для любой ИС.
+  const ownerMap = new Map((live.problematicSystems ?? []).map((s) => [s.name, s.owner]));
 
   const rows = sysNames.map((sys, y) => ({
     system: sys,
@@ -93,7 +96,7 @@ function buildExecFromLive(live: LiveDashboard | null): ExecutiveDashboardData {
       weakCharacteristic: weakChar,
       aiSummary: `Интегральная оценка качества — ${score}%. Наиболее просевшая характеристика — ${weakChar} (${weakScore <= 100 ? weakScore : '—'}%).`,
       recommendation: 'Сформировать меры по просевшим характеристикам.',
-      owner: 'Руководитель ИТ-блока (Иванов И.И.)',
+      owner: ownerMap.get(sys) || 'не назначен',
       escalateTo: 'CTO',
       actions: ['Назначить ответственного и срок', 'Зафиксировать меру в плане качества', 'Включить контроль выполнения'],
     };

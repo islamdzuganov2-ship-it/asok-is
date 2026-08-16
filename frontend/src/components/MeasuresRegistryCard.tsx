@@ -15,6 +15,7 @@ import { AuditOutlined, RightOutlined, ClockCircleOutlined, WarningOutlined } fr
 import type { Proposal, ProposalStatus } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle, ACCENT } from '../theme/ragPalette';
 import { premiumCard, accentDot, TYPE } from '../theme/premium';
+import { OwnerLink } from './OwnerLink';
 
 const STATUS_TAG: Record<ProposalStatus, { color: string; label: string }> = {
   PENDING_APPROVAL: { color: 'gold', label: 'Ожидает решения' },
@@ -205,6 +206,7 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen, prese
                       <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
                         {p.systemName} · {p.characteristic}{p.dueDate ? ` · срок: ${p.dueDate}` : ''}
                         {p.decidedBy ? ` · решение: ${p.decidedBy}` : ''}
+                        {p.owner ? <> · ответственный: <OwnerLink owner={p.owner} /></> : null}
                       </Text>
                     }
                   />

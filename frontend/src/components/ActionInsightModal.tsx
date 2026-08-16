@@ -19,6 +19,7 @@ import { SPACE, TYPE } from '../theme/premium';
 import { guidanceFor } from '../constants/characteristicGuidance';
 import type { ExecSystemInsight } from '../data/mockDashboards';
 import { MeasureDecisionModal } from './MeasureDecisionModal';
+import { OwnerLink } from './OwnerLink';
 import { fmtMoney } from '../utils/money';
 
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -132,7 +133,7 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
 
       <Space size={32} style={{ display: 'flex', flexWrap: 'wrap' }}>
         <Block icon={<UserOutlined />} title="Кто отвечает">
-          <Text>{system.owner}</Text>
+          <OwnerLink owner={system.owner} />
         </Block>
         <Block icon={<RiseOutlined />} title="С кого спрашивать">
           <Text>{system.escalateTo}</Text>

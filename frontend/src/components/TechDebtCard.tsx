@@ -14,6 +14,7 @@ import { BRAND, RAG, ragToken, solidTagStyle, ACCENT } from '../theme/ragPalette
 import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
 import { numericColumn, sorterFor } from '../theme/table';
 import { parseRuDate } from '../utils/dates';
+import { OwnerLink } from './OwnerLink';
 
 const { Text } = Typography;
 const TODAY = new Date(2026, 5, 26).getTime();
@@ -86,6 +87,8 @@ export const TechDebtCard: React.FC<Props> = ({ proposals, onOpenMeasure }) => {
       render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> }),
     { title: 'Срок', dataIndex: 'dueDate', width: 104,
       sorter: sorterFor((r: Proposal) => parseRuDate(r.dueDate)?.getTime() ?? null) },
+    { title: 'Ответственный', dataIndex: 'owner', width: 160, sorter: sorterFor((r: Proposal) => r.owner),
+      render: (v?: string) => <OwnerLink owner={v} /> },
   ];
 
   const barText: React.CSSProperties = { fontSize: TYPE.caption.fontSize, color: BRAND.inkSoft };
