@@ -333,6 +333,7 @@ const ExecutiveDashboard: React.FC = () => {
       <MeasuresAiAnalyticsCard
         proposals={proposals}
         onOpenCharacteristic={(c) => { setShowRegistry(true); setRegistryPreset(c); }}
+        onOpenInTaskPlan={(c) => navigate(`/dashboard/taskplan?characteristic=${encodeURIComponent(c)}`)}
       />
 
       {/* ТОП-3 проблемных ИС */}
