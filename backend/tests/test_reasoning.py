@@ -10,7 +10,7 @@
 import pytest
 
 import app.modules.llm.service as llm
-from app.modules.llm import reasoning
+from app.modules.llm import reasoning, style_guide
 from app.modules.llm.reasoning import ReasoningInput, generate_reasoned_conclusion, run_reasoning
 
 JUDGMENTS = (
@@ -78,7 +78,8 @@ def test_hallucinated_pct_triggers_andon_fallback(monkeypatch):
     joined = " ".join(s.content for s in trace.stages) + trace.conclusion
     assert "99%" not in joined
     assert trace.stage("E1").fell_back and trace.stage("E2").fell_back
-    assert "E1" in trace.stage("E4").content  # контроль достоверности фиксирует отбраковку в трассе
+    # контроль достоверности фиксирует отбраковку в трассе — деловым языком, не кодом этапа
+    assert "Постановка проблемы" in trace.stage("E4").content
 
 
 def test_grounded_llm_output_is_kept(monkeypatch):
@@ -360,3 +361,40 @@ def test_no_methodology_jargon_in_user_facing_output():
     blob = "\n".join(surfaces)
     for term in _FORBIDDEN_TERMS:
         assert term not in blob, f"жаргон методологии просочился в вывод: {term}"
+
+
+# ─── Критерий 6: нет инженерного жаргона (grounding/fallback/трасса/коды этапов) ──────
+# 2026-08-16: реальный вывод конвейера показывал ЛПР «Grounding-контроль пройден»,
+# «Этапы на детерминированном fallback: E1, E2, E2Q, E3», «LLM-вывод недоступен/отбракован» —
+# слова эксплуатационной кухни вместо делового языка (см. style_guide.py). Проверяем именно
+# на «худшем» сценарии — без данных и без модели, когда почти все этапы уходят в формальные
+# правила методики: это тот самый случай, где жаргон раньше просачивался сильнее всего.
+
+def test_no_engineering_jargon_when_pipeline_is_fully_deterministic():
+    trace = run_reasoning(
+        ReasoningInput(system_name="ИТ-ландшафт банка", period_label="текущий период",
+                       rules_block="- [Критический уровень качества] интегральное качество "
+                                   "0% ниже порога 41%", severity="high"),
+        use_llm=False,
+    )
+    surfaces = [trace.conclusion, *(s.title for s in trace.stages),
+                *(s.content for s in trace.stages)]
+    blob = "\n".join(surfaces)
+    leaked = style_guide.contains_jargon(blob)
+    assert not leaked, f"инженерный жаргон просочился в вывод: {leaked}"
+
+
+def test_no_engineering_jargon_across_all_personas():
+    for code in ("TOP_MANAGER", "QUALITY_MANAGER", "RISK_MANAGER", "ANALYST", "AUDITOR", "EXECUTOR"):
+        trace = run_reasoning(_inp(), use_llm=False, persona=code)
+        leaked = style_guide.contains_jargon(trace.conclusion)
+        assert not leaked, f"персона {code}: инженерный жаргон в заключении: {leaked}"
+
+
+def test_style_rule_is_present_in_every_persona_prompt():
+    # BASE_HONESTY — единственное место с правилами честности (personas.py); правило 7
+    # (запрет инженерного жаргона) обязано попасть в промпт КАЖДОЙ персоны через него.
+    from app.modules.llm import personas
+    for pers in personas.PERSONAS.values():
+        assert style_guide.STYLE_RULE_BLOCK in pers.system_prompt, (
+            f"персона {pers.code}: в системном промпте нет правила делового языка")
