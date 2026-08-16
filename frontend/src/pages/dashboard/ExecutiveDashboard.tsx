@@ -28,6 +28,7 @@ import { TechDebtCard } from '../../components/TechDebtCard';
 import EmployeeEffectivenessCard from '../../components/EmployeeEffectivenessCard';
 import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 import { QUALITY_MODEL } from '../../constants/qualityModel';
+import { useCharacteristicWeights } from '../../hooks/useCharacteristicWeights';
 
 // Точное сопоставление меры с ячейкой теплокарты (по полному названию характеристики).
 const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
@@ -36,8 +37,9 @@ const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace
 const ABBR_BY_TITLE: Record<string, string> = Object.fromEntries(QUALITY_MODEL.map((c) => [c.title, c.abbr]));
 const abbr = (c: string) => ABBR_BY_TITLE[c] ?? c;
 
-// Ранг критичности: чем меньше — тем критичнее (для отбора топ-3 систем).
-const CRIT_RANK: Record<string, number> = {
+// Только для явной сортировки столбца «Критичность» по клику в модалке «Все системы» (не для
+// дефолтного ранжирования — см. ТЗ v20 п.2, buildExecFromLive).
+const CRITICALITY_ORDER: Record<string, number> = {
   'MISSION CRITICAL': 0, 'BUSINESS CRITICAL': 1, 'BUSINESS OPERATIONAL': 2,
 };
 
@@ -60,7 +62,10 @@ interface LiveDashboard {
 const BUCKET_SCORE = [-1, 10, 30, 50, 70, 90];
 
 // Сборка структуры управленческого дашборда из реального ответа API (LLM-режим).
-function buildExecFromLive(live: LiveDashboard | null): ExecutiveDashboardData {
+// ТЗ v20 п.2: балл ИС и ранжирование «Топ проблемных ИС» — по весам ГОСТ 25010 характеристики
+// (charWeights, из GET /quality/weights), не по плоскому среднему бакетов — иначе просевшая, но
+// маловесная характеристика тянула бы балл вниз наравне с весомой.
+function buildExecFromLive(live: LiveDashboard | null, charWeights: Record<string, number>): ExecutiveDashboardData {
   const empty: ExecutiveDashboardData = {
     globalIndex: live ? Math.round(live.globalHealthScore) : 0,
     systems: [], heatmap: { characteristics: [], rows: [] },
@@ -83,8 +88,13 @@ function buildExecFromLive(live: LiveDashboard | null): ExecutiveDashboardData {
   }));
 
   const systems: ExecSystemInsight[] = sysNames.map((sys, y) => {
-    const scores = chars.map((_, x) => BUCKET_SCORE[matrix[y][x]] ?? -1).filter((s) => s >= 0);
-    const score = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    const measured = chars
+      .map((c, x) => ({ x, s: BUCKET_SCORE[matrix[y][x]] ?? -1, w: charWeights[c] ?? 0 }))
+      .filter((m) => m.s >= 0);
+    const weightApplied = measured.reduce((a, m) => a + m.w, 0);
+    const score = weightApplied > 0
+      ? Math.round(measured.reduce((a, m) => a + m.w * m.s, 0) / weightApplied)
+      : (measured.length ? Math.round(measured.reduce((a, m) => a + m.s, 0) / measured.length) : 0);
     let weakIdx = 0, weakScore = 101;
     chars.forEach((_, x) => {
       const s = BUCKET_SCORE[matrix[y][x]] ?? -1;
@@ -127,6 +137,7 @@ const ExecutiveDashboard: React.FC = () => {
   const isLive = dataMode === 'live';
   const [active, setActive] = useState<ExecSystemInsight | null>(null);
   const proposals = useSelector(selectVisibleProposals, shallowEqual);
+  const { weights: charWeights } = useCharacteristicWeights();
   const pendingProposals = proposals.filter((p) => p.status === 'PENDING_APPROVAL');
   const pendingCount = pendingProposals.length;
   const [decisionProposal, setDecisionProposal] = useState<Proposal | null>(null);
@@ -166,8 +177,8 @@ const ExecutiveDashboard: React.FC = () => {
 
   // Демо → моки; LLM → построено из реального API (или пусто, без подмешивания моков).
   const data: ExecutiveDashboardData = useMemo(
-    () => (isLive ? buildExecFromLive(live) : EXECUTIVE_SCALE),
-    [isLive, live],
+    () => (isLive ? buildExecFromLive(live, charWeights) : EXECUTIVE_SCALE),
+    [isLive, live, charWeights],
   );
   // Полные названия характеристик для сопоставления мер с ячейками (по режиму).
   const heatCharsFull = isLive ? data.heatmap.characteristics : HEATMAP_CHARS_FULL;
@@ -179,18 +190,17 @@ const ExecutiveDashboard: React.FC = () => {
       && norm(p.systemName) === norm(sys)
       && norm(p.characteristic) === norm(fullChar));
 
-  // Топ-3 проблемных ИС по критичности (самые высокие), затем по баллу.
+  // ТЗ v20 п.2: топ-3 проблемных ИС — по баллу качества, взвешенному по весам ГОСТ 25010
+  // (data.systems[].score, см. buildExecFromLive), не по статичному полю «класс критичности».
   const topCards = [...data.systems]
-    .sort((a, b) => (CRIT_RANK[a.criticality] - CRIT_RANK[b.criticality]) || (a.score - b.score))
+    .sort((a, b) => a.score - b.score)
     .slice(0, 3);
 
-  // Строки теплокарты: по критичности → по баллу (худшие). По умолчанию топ-5, остальное под кнопкой.
+  // Строки теплокарты: худшие по взвешенному баллу — первые. По умолчанию топ-5, остальное под кнопкой.
   const orderedHeatRows = [...data.heatmap.rows].sort((a, b) => {
     const sa = data.systems.find((s) => s.name === a.system);
     const sb = data.systems.find((s) => s.name === b.system);
-    const ca = sa ? CRIT_RANK[sa.criticality] : 9;
-    const cb = sb ? CRIT_RANK[sb.criticality] : 9;
-    return (ca - cb) || ((sa?.score ?? 100) - (sb?.score ?? 100));
+    return (sa?.score ?? 100) - (sb?.score ?? 100);
   });
   // ТЗ v19 п.12: явная сортировка поверх дефолтного порядка (по критичности) — по клику на
   // стрелку в заголовке. Без активной сортировки — прежнее поведение (orderedHeatRows как есть).
@@ -341,7 +351,7 @@ const ExecutiveDashboard: React.FC = () => {
         <Col>
           <Title level={5} style={{ color: BRAND.ink, margin: 0 }}>
             <FireOutlined style={{ color: RAG.medium.color }} /> Топ проблемных ИС — требуют внимания
-            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, marginLeft: 8 }}>(по критичности · всего систем: {data.systems.length})</Text>
+            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, marginLeft: 8 }}>(по баллу качества, взвешенному по ГОСТ 25010 · всего систем: {data.systems.length})</Text>
           </Title>
         </Col>
         <Col>
@@ -547,7 +557,7 @@ const ExecutiveDashboard: React.FC = () => {
         )}
       </Modal>
 
-      {/* Все системы (по критичности) — раскрытие списка */}
+      {/* Все системы (по взвешенному баллу качества) — раскрытие списка */}
       <Modal
         open={allOpen}
         onCancel={() => setAllOpen(false)}
@@ -556,9 +566,7 @@ const ExecutiveDashboard: React.FC = () => {
         title={`Все системы — оценка качества (${data.systems.length})`}
       >
         <Table<ExecSystemInsight>
-          dataSource={[...data.systems].sort(
-            (a, b) => (CRIT_RANK[a.criticality] - CRIT_RANK[b.criticality]) || (a.score - b.score),
-          )}
+          dataSource={[...data.systems].sort((a, b) => a.score - b.score)}
           rowKey="id"
           size="small"
           pagination={{ pageSize: 10, hideOnSinglePage: true }}
@@ -567,7 +575,7 @@ const ExecutiveDashboard: React.FC = () => {
             { title: 'ИС', dataIndex: 'name', sorter: sorterFor((r: ExecSystemInsight) => r.name) },
             {
               title: 'Критичность', dataIndex: 'criticality', width: 180,
-              sorter: (a, b) => CRIT_RANK[a.criticality] - CRIT_RANK[b.criticality],
+              sorter: (a, b) => (CRITICALITY_ORDER[a.criticality] ?? 9) - (CRITICALITY_ORDER[b.criticality] ?? 9),
               render: (v: string) => <Tag style={critTagStyle(v)}>{v}</Tag>,
             },
             numericColumn<ExecSystemInsight>({

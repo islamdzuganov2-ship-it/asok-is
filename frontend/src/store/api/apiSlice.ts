@@ -53,6 +53,21 @@ export interface SystemsListResponse {
     limit: number;
 }
 
+export interface SubcharWeightOut {
+    characteristic: string;
+    subcharacteristic: string;
+    weight: number;
+    isoKey: string;
+}
+
+export interface QualityWeightsOut {
+    activeVersionId: string | null;
+    activeVersionLabel: string | null;
+    totalWeight: number;
+    subcharWeights: SubcharWeightOut[];
+    criticalityWeights: Record<string, number>;
+}
+
 export interface PeriodCreateDto {
     system_id: string;
     period: string;
@@ -650,6 +665,12 @@ export const apiSlice = createApi({
             query: (systemId) => `/reports/system-dynamics?system_id=${systemId}`,
             providesTags: ['Dashboard'],
         }),
+        // ТЗ v20 — веса подхарактеристик ГОСТ 25010, источник для взвешенных карточек
+        // (критичность ИС, эффективность сотрудников, подпись под спидометром, «Динамика»).
+        getQualityWeights: builder.query<QualityWeightsOut, void>({
+            query: () => '/quality/weights',
+            providesTags: ['Metrics'],
+        }),
         // ─── RBAC / администрирование (BL-008) ───
         getMyPermissions: builder.query<MyPermissions, void>({
             query: () => '/iam/me/permissions',
@@ -744,6 +765,7 @@ export const {
     useResolveIncidentMutation,
     useGetTriggeredRisksQuery,
     useGetSystemDynamicsQuery,
+    useGetQualityWeightsQuery,
     useGetMyPermissionsQuery,
     useLazyGetMyPermissionsQuery,
     useGetUsersQuery,
