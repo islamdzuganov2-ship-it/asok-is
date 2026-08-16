@@ -21,10 +21,22 @@ import {
   approveProposal, rejectProposal, setExecution, updateProposalMeta, editProposal,
   type EditableProposalFields, type Proposal, type ProposalStatus,
 } from '../store/slices/governanceSlice';
-import { ragToken, solidTagStyle } from '../theme/ragPalette';
+import { DollarOutlined } from '@ant-design/icons';
+import { ragToken, solidTagStyle, RAG, ACCENT } from '../theme/ragPalette';
 import { SPACE, TYPE } from '../theme/premium';
+import { fmtMoney, fmtNum } from '../utils/money';
 
 const { Text, Paragraph } = Typography;
+
+const MEASURE_TYPE_LABEL: Record<string, string> = {
+  ELIMINATING: 'Устраняющая (снимает первопричину)',
+  COMPENSATING: 'Компенсирующая (снижает ущерб/вероятность)',
+};
+const VERDICT_LABEL: Record<string, { label: string; color: string }> = {
+  ELIMINATE: { label: 'Устранить', color: 'green' },
+  COMPENSATE: { label: 'Компенсировать', color: 'gold' },
+  ACCEPT: { label: 'Принять риск', color: 'default' },
+};
 
 const STATUS_TAG: Record<ProposalStatus, { color: string; label: string }> = {
   PENDING_APPROVAL: { color: 'gold', label: 'Ожидает решения' },
@@ -100,6 +112,15 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
   const tok = ragToken(p.calculatedScore);
   const history = p.history ?? [];
 
+  // ТЗ v19 п.7/11: экономика меры — ΔALE суммарно, окупаемость (простая, номинальная — НЕ
+  // подменяет дисконтированный ROSI с бэкенда, это отдельная, более понятная топ-менеджменту
+  // оценка «через сколько лет отобьётся CAPEX при текущем годовом эффекте минус OPEX»).
+  const hasEconomics = p.capex != null || p.opexPerYear != null || p.rosi != null
+    || p.deltaAleCash != null || p.deltaAleDeferred != null || p.deltaAleCapacity != null;
+  const totalDeltaAle = (p.deltaAleCash ?? 0) + (p.deltaAleDeferred ?? 0) + (p.deltaAleCapacity ?? 0);
+  const netAnnualBenefit = (p.deltaAleCash ?? 0) - (p.opexPerYear ?? 0);
+  const paybackYears = p.capex && netAnnualBenefit > 0 ? p.capex / netAnnualBenefit : null;
+
   const decide = (action: typeof approveProposal | typeof rejectProposal) => {
     if (isPending && canEditMeta) {
       dispatch(updateProposalMeta({
@@ -173,6 +194,60 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
         <Tag>{p.characteristic}</Tag>
         <Tag style={solidTagStyle(tok.strong)}>{p.calculatedScore}%</Tag>
       </Space>
+
+      {hasEconomics && (
+        <div style={{ background: '#F5F6F8', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
+            <DollarOutlined /> Экономика меры
+          </Text>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 4 }}>
+            {p.capex != null && (
+              <div>
+                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>CAPEX</Text>
+                <Text strong>{fmtMoney(p.capex)}</Text>
+              </div>
+            )}
+            {p.opexPerYear != null && (
+              <div>
+                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>OPEX/год</Text>
+                <Text strong>{fmtMoney(p.opexPerYear)}</Text>
+              </div>
+            )}
+            {(p.deltaAleCash != null || p.deltaAleDeferred != null || p.deltaAleCapacity != null) && (
+              <div>
+                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>ΔALE/год (снижение риска)</Text>
+                <Text strong style={{ color: RAG.good.strong }}>{fmtMoney(totalDeltaAle)}</Text>
+              </div>
+            )}
+            {p.rosi != null && (
+              <div>
+                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>ROSI</Text>
+                <Text strong style={{ color: p.rosi >= 0 ? RAG.good.strong : RAG.bad.strong }}>{fmtNum(p.rosi, 2)}</Text>
+              </div>
+            )}
+            {paybackYears != null && (
+              <div>
+                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>Окупаемость</Text>
+                <Text strong>{fmtNum(paybackYears, 1)} лет</Text>
+              </div>
+            )}
+          </div>
+          {(p.deltaAleCash != null || p.deltaAleDeferred != null || p.deltaAleCapacity != null) && (
+            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, display: 'block', marginTop: 6 }}>
+              из них: касса {fmtMoney(p.deltaAleCash)} · отложенная {fmtMoney(p.deltaAleDeferred)} · высвобожденная мощность {fmtMoney(p.deltaAleCapacity)}
+            </Text>
+          )}
+          <Space wrap style={{ marginTop: 8 }}>
+            {p.measureType && <Tag color={ACCENT.slate.color}>{MEASURE_TYPE_LABEL[p.measureType] ?? p.measureType}</Tag>}
+            {p.verdict && VERDICT_LABEL[p.verdict] && (
+              <Tag color={VERDICT_LABEL[p.verdict].color}>Вердикт: {VERDICT_LABEL[p.verdict].label}</Tag>
+            )}
+            {!p.verdict && p.recommendedVerdict && VERDICT_LABEL[p.recommendedVerdict] && (
+              <Tag>Рекомендовано: {VERDICT_LABEL[p.recommendedVerdict].label}</Tag>
+            )}
+          </Space>
+        </div>
+      )}
 
       {editing ? (
         <>

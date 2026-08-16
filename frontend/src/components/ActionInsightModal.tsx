@@ -19,6 +19,7 @@ import { SPACE, TYPE } from '../theme/premium';
 import { guidanceFor } from '../constants/characteristicGuidance';
 import type { ExecSystemInsight } from '../data/mockDashboards';
 import { MeasureDecisionModal } from './MeasureDecisionModal';
+import { fmtMoney } from '../utils/money';
 
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
@@ -32,8 +33,6 @@ interface CellRisk {
   status: string; subcharacteristics: string[]; measures: CellMeasure[];
 }
 interface CellDetail { systemName: string; characteristic: string; totalAle: number; risks: CellRisk[] }
-
-const fmtMoney = (v: number) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
 
 const { Title, Text, Paragraph } = Typography;
 

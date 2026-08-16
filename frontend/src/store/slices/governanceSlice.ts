@@ -57,6 +57,19 @@ export interface Proposal {
   // на перенос срока с обоснованием. Всё это «падает» менеджеру по качеству — он решает.
   clarifications?: Clarification[];
   dueChangeRequest?: DueChangeRequest;
+  // ТЗ v19 п.7/11: экономический слой меры (BL-007 RE-11/12) — уже считает бэкенд
+  // (governance/schemas.py ProposalOut), но фронт эти поля не объявлял и не показывал.
+  measureType?: 'ELIMINATING' | 'COMPENSATING';
+  capex?: number;
+  opexPerYear?: number;
+  implementationMonths?: number;
+  expectedDeltaScore?: number;
+  deltaAleCash?: number;
+  deltaAleDeferred?: number;
+  deltaAleCapacity?: number;
+  rosi?: number;
+  recommendedVerdict?: 'ELIMINATE' | 'COMPENSATE' | 'ACCEPT';
+  verdict?: 'ELIMINATE' | 'COMPENSATE' | 'ACCEPT';
 }
 
 /** Уточнение исполнителя по метрике/поручению (видит менеджер по качеству). */
