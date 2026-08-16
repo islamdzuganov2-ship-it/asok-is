@@ -228,6 +228,24 @@ const ExecutiveDashboard: React.FC = () => {
   // ECharts рисует на canvas и не понимает var() — берём конкретные цвета активной темы.
   const chart = useChartTokens();
 
+  // ТЗ v20 п.5: под спидометром — в двух словах, какая характеристика просела заметнее всего
+  // с учётом её веса (не просто самая низкая, а та, чья просадка весомее всего тянет индекс вниз).
+  const gaugeCaption = useMemo(() => {
+    if (!heatCharsFull.length || !data.heatmap.rows.length) return null;
+    let worst: { char: string; avg: number; impact: number } | null = null;
+    heatCharsFull.forEach((c, i) => {
+      const scores = data.heatmap.rows
+        .map((r) => r.cells[i]?.score)
+        .filter((s): s is number => s != null && s >= 0);
+      if (!scores.length) return;
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const impact = (100 - avg) * (charWeights[c] ?? 0);
+      if (!worst || impact > worst.impact) worst = { char: c, avg, impact };
+    });
+    if (!worst || worst.avg >= 80) return 'Существенных просадок нет.';
+    return `Просадка: страдает «${worst.char}» (${Math.round(worst.avg)}%).`;
+  }, [heatCharsFull, data.heatmap.rows, charWeights]);
+
   const gaugeOption = useMemo(
     () => ({
       series: [
@@ -306,8 +324,15 @@ const ExecutiveDashboard: React.FC = () => {
             </Badge>
           </Col>
           <Col>
-            <div style={{ width: 200, height: 130, flex: '0 0 auto' }}>
-              <ReactECharts option={gaugeOption} style={{ height: '100%', width: '100%' }} />
+            <div style={{ width: 200, flex: '0 0 auto' }}>
+              <div style={{ height: 130 }}>
+                <ReactECharts option={gaugeOption} style={{ height: '100%', width: '100%' }} />
+              </div>
+              {gaugeCaption && (
+                <Text type="secondary" style={{ display: 'block', textAlign: 'center', fontSize: TYPE.caption.fontSize, marginTop: -8 }}>
+                  {gaugeCaption}
+                </Text>
+              )}
             </div>
           </Col>
         </Row>
