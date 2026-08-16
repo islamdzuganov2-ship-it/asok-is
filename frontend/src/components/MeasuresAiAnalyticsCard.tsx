@@ -7,7 +7,7 @@
  */
 import React, { useMemo, useState } from 'react';
 import { Card, Button, Table, Tag, Typography, Alert, Spin, Space, Collapse } from 'antd';
-import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { RobotOutlined, ThunderboltOutlined, ScheduleOutlined } from '@ant-design/icons';
 import { ragToken, solidTagStyle, ACCENT } from '../theme/ragPalette';
 import { premiumCard, accentDot, SPACE, TYPE } from '../theme/premium';
 import { numericColumn, sorterFor } from '../theme/table';
@@ -40,9 +40,11 @@ interface MeasuresAiAnalyticsCardProps {
   proposals: Proposal[];
   /** ТЗ v19 п.3: клик по строке — переход к мерам этой характеристики (в реестре ниже). */
   onOpenCharacteristic?: (characteristic: string) => void;
+  /** ТЗ v20 п.1: отдельный переход в «План задач», отфильтрованный по этой характеристике. */
+  onOpenInTaskPlan?: (characteristic: string) => void;
 }
 
-const MeasuresAiAnalyticsCard: React.FC<MeasuresAiAnalyticsCardProps> = ({ proposals, onOpenCharacteristic }) => {
+const MeasuresAiAnalyticsCard: React.FC<MeasuresAiAnalyticsCardProps> = ({ proposals, onOpenCharacteristic, onOpenInTaskPlan }) => {
   const [data, setData] = useState<AnalyticsResp | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -132,6 +134,18 @@ const MeasuresAiAnalyticsCard: React.FC<MeasuresAiAnalyticsCardProps> = ({ propo
               numericColumn({ title: 'Ср. балл', dataIndex: 'avg_score', width: 100,
                 sorter: sorterFor((r: AggItem) => r.avg_score),
                 render: (v: number | null) => v == null ? '—' : <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> }),
+              ...(onOpenInTaskPlan ? [{
+                title: '', key: 'taskplan', width: 150,
+                render: (_: unknown, rec: AggItem) => (
+                  <Button
+                    size="small"
+                    icon={<ScheduleOutlined />}
+                    onClick={(e: React.MouseEvent) => { e.stopPropagation(); onOpenInTaskPlan(rec.characteristic); }}
+                  >
+                    В план задач
+                  </Button>
+                ),
+              }] : []),
             ]}
           />
           {loading && (

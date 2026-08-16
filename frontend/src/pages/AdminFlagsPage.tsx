@@ -1,9 +1,10 @@
 import React from 'react';
-import { Typography, Card, Switch, Row, Col, Space, Button } from 'antd';
-import { HolderOutlined } from '@ant-design/icons';
+import { Typography, Card, Switch, Row, Col, Space, Button, Tooltip, Tag } from 'antd';
+import { HolderOutlined, PushpinOutlined } from '@ant-design/icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { setSectionVisible, setNavOrder, resetPersonalization, NAV_SECTIONS } from '../store/slices/uiSlice';
+import { useGetMandatorySectionsQuery } from '../store/api/apiSlice';
 import { accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE } from '../theme/premium';
 import { RAG, BRAND } from '../theme/ragPalette';
 import ThemeSettingsCard from '../components/ThemeSettingsCard';
@@ -19,6 +20,10 @@ const AdminFlagsPage: React.FC = () => {
   const ui = useSelector((s: RootState) => s.ui);
   const permissions = useSelector((s: RootState) => s.auth.permissions);
   const [dragged, setDragged] = React.useState<string | null>(null);
+  // ТЗ v20 п.10: разделы, зафиксированные супер-администратором как обязательные для всех —
+  // тумблер недоступен, сервер — источник истины по обязательности.
+  const { data: mandatorySections } = useGetMandatorySectionsQuery();
+  const mandatorySet = React.useMemo(() => new Set(mandatorySections?.permissions ?? []), [mandatorySections]);
 
   // Показываем ТОЛЬКО разделы, доступные роли по матрице прав: тумблер на недоступный
   // раздел вводил бы в заблуждение (ДЕФ-12 — ровно этим и был плох прежний экран).
@@ -80,7 +85,8 @@ const AdminFlagsPage: React.FC = () => {
                 style={{ borderColor: PREMIUM.border, borderRadius: PREMIUM.radius, boxShadow: PREMIUM.shadow.card }}
               >
                 {rows.map((sec) => {
-                  const on = !ui.hiddenSections[sec.perm];
+                  const mandatory = mandatorySet.has(sec.perm);
+                  const on = mandatory || !ui.hiddenSections[sec.perm];
                   return (
                     <div
                       key={sec.perm}
@@ -102,9 +108,15 @@ const AdminFlagsPage: React.FC = () => {
                     >
                       <HolderOutlined style={{ color: RAG.muted.strong }} />
                       <Text style={{ flex: 1 }} type={on ? undefined : 'secondary'}>{sec.label}</Text>
+                      {mandatory && (
+                        <Tooltip title="Обязателен — закреплён администратором, скрыть нельзя">
+                          <Tag icon={<PushpinOutlined />} style={{ marginInlineEnd: 0 }}>обязателен</Tag>
+                        </Tooltip>
+                      )}
                       <Switch
                         size="small"
                         checked={on}
+                        disabled={mandatory}
                         onChange={(v) => dispatch(setSectionVisible({ perm: sec.perm, visible: v }))}
                       />
                     </div>

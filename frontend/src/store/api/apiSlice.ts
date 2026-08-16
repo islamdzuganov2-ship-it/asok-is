@@ -53,6 +53,21 @@ export interface SystemsListResponse {
     limit: number;
 }
 
+export interface SubcharWeightOut {
+    characteristic: string;
+    subcharacteristic: string;
+    weight: number;
+    isoKey: string;
+}
+
+export interface QualityWeightsOut {
+    activeVersionId: string | null;
+    activeVersionLabel: string | null;
+    totalWeight: number;
+    subcharWeights: SubcharWeightOut[];
+    criticalityWeights: Record<string, number>;
+}
+
 export interface PeriodCreateDto {
     system_id: string;
     period: string;
@@ -325,6 +340,7 @@ export interface UserUpdateDto { full_name?: string; role?: string; is_active?: 
 export interface PermissionDef { key: string; group: string; label: string; description: string }
 export interface PermissionCatalog { groups: string[]; permissions: PermissionDef[]; roles: string[] }
 export type PermissionMatrix = Record<string, string[]>;
+export interface MandatorySectionsOut { permissions: string[] }
 
 // Персональные настройки виджетов дашбордов (BL-008, Фаза 4).
 export interface WidgetPref { id: string; enabled: boolean; order: number }
@@ -650,6 +666,12 @@ export const apiSlice = createApi({
             query: (systemId) => `/reports/system-dynamics?system_id=${systemId}`,
             providesTags: ['Dashboard'],
         }),
+        // ТЗ v20 — веса подхарактеристик ГОСТ 25010, источник для взвешенных карточек
+        // (критичность ИС, эффективность сотрудников, подпись под спидометром, «Динамика»).
+        getQualityWeights: builder.query<QualityWeightsOut, void>({
+            query: () => '/quality/weights',
+            providesTags: ['Metrics'],
+        }),
         // ─── RBAC / администрирование (BL-008) ───
         getMyPermissions: builder.query<MyPermissions, void>({
             query: () => '/iam/me/permissions',
@@ -685,6 +707,15 @@ export const apiSlice = createApi({
         setRolePermissions: builder.mutation<PermissionMatrix, { role: string; permissions: string[] }>({
             query: ({ role, permissions }) => ({ url: `/iam/permissions/matrix/${role}`, method: 'PUT', body: { permissions } }),
             invalidatesTags: ['Permissions', 'MyPermissions'],
+        }),
+        // ТЗ v20 п.10 — разделы, обязательные для всех пользователей (фиксирует SUPER_ADMIN).
+        getMandatorySections: builder.query<MandatorySectionsOut, void>({
+            query: () => '/iam/mandatory-sections',
+            providesTags: ['Permissions'],
+        }),
+        setMandatorySections: builder.mutation<MandatorySectionsOut, { permissions: string[] }>({
+            query: (body) => ({ url: '/iam/mandatory-sections', method: 'PUT', body }),
+            invalidatesTags: ['Permissions'],
         }),
         getMyPreferences: builder.query<PreferencesResponse, void>({
             query: () => '/iam/me/preferences',
@@ -744,6 +775,7 @@ export const {
     useResolveIncidentMutation,
     useGetTriggeredRisksQuery,
     useGetSystemDynamicsQuery,
+    useGetQualityWeightsQuery,
     useGetMyPermissionsQuery,
     useLazyGetMyPermissionsQuery,
     useGetUsersQuery,
@@ -754,6 +786,8 @@ export const {
     useGetPermissionCatalogQuery,
     useGetPermissionMatrixQuery,
     useSetRolePermissionsMutation,
+    useGetMandatorySectionsQuery,
+    useSetMandatorySectionsMutation,
     useGetMyPreferencesQuery,
     usePutMyPreferencesMutation,
     useGetLlmQualityQuery,

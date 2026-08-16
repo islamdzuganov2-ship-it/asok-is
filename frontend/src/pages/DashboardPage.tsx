@@ -365,10 +365,13 @@ const DashboardPage: React.FC = () => {
               <Table
                 dataSource={data?.problematicSystems ?? []} rowKey="id" size="small" pagination={false}
                 locale={{ emptyText: 'Нет проблемных систем' }}
+                onRow={() => ({ onClick: () => setDetail('low'), style: { cursor: 'pointer' } })}
                 columns={[
-                  { title: 'ИС', dataIndex: 'name', ellipsis: true },
-                  { title: 'Критичность', dataIndex: 'criticality', render: critTag },
+                  { title: 'ИС', dataIndex: 'name', ellipsis: true, sorter: sorterFor((r: any) => r.name) },
+                  { title: 'Критичность', dataIndex: 'criticality',
+                    sorter: sorterFor((r: any) => CRIT_RANK[r.criticality] ?? -1), render: critTag },
                   numericColumn({ title: 'Низких метрик', dataIndex: 'lowMetricsCount', width: 130,
+                    sorter: sorterFor((r: any) => r.lowMetricsCount),
                     render: (v: number) => <Text type="danger" strong>{v}</Text> }),
                 ]}
               />

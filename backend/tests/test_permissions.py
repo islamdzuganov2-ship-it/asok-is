@@ -284,3 +284,64 @@ def test_risk_base_not_default_for_top_management():
     # Тем, кто ведёт риски предметно, доступ остаётся.
     for role in ("QUALITY_MANAGER", "RISK_MANAGER", "AUDITOR", "TEST_ANALYST"):
         assert "view.risks" in DEFAULT_ROLE_PERMISSIONS[role], role
+
+
+# ═══════════════ Обязательные разделы (ТЗ v20 п.10) ═══════════════
+
+async def test_mandatory_sections_default_empty(db_session):
+    await ps.seed_rbac_defaults(db_session)
+    assert await ps.get_mandatory_sections(db_session) == []
+
+
+async def test_mandatory_sections_set_filters_unknown_keys(db_session):
+    saved = await ps.set_mandatory_sections(
+        db_session, ["view.dashboard.manager", "bogus.key"])
+    assert saved == ["view.dashboard.manager"]
+    assert await ps.get_mandatory_sections(db_session) == ["view.dashboard.manager"]
+
+
+async def test_mandatory_sections_set_replaces_full_set(db_session):
+    await ps.set_mandatory_sections(db_session, ["view.dashboard.manager"])
+    saved = await ps.set_mandatory_sections(db_session, ["view.dashboard.taskplan"])
+    assert saved == ["view.dashboard.taskplan"]
+    assert await ps.get_mandatory_sections(db_session) == ["view.dashboard.taskplan"]
+
+
+async def test_mandatory_sections_get_open_to_any_authenticated(aclient, db_session):
+    await ps.seed_rbac_defaults(db_session)
+    await ps.set_mandatory_sections(db_session, ["view.dashboard.manager"])
+    token = await _login(aclient, "analyst", "Analyst123!")
+    r = await aclient.get(f"{API}/iam/mandatory-sections", headers=_auth(token))
+    assert r.status_code == 200
+    assert r.json()["permissions"] == ["view.dashboard.manager"]
+
+
+async def test_mandatory_sections_put_requires_superadmin(aclient, db_session):
+    await ps.seed_rbac_defaults(db_session)
+    token = await _login(aclient, "analyst", "Analyst123!")
+    r = await aclient.put(f"{API}/iam/mandatory-sections", headers=_auth(token),
+                          json={"permissions": ["view.dashboard.manager"]})
+    assert r.status_code == 403
+
+
+async def test_mandatory_sections_admin_role_also_denied(aclient, db_session):
+    # ADMIN — широкий встроенный доступ, но не управление доступом (та же граница, что у
+    # admin.permissions.manage) — admin.mandatory_sections.manage тоже PROTECTED_SUPERADMIN.
+    await ps.seed_rbac_defaults(db_session)
+    su = _auth(await _login(aclient, "superadmin", "Super123!"))
+    created = await aclient.post(f"{API}/iam/users", headers=su,
+                                 json={"username": "admin2", "password": "Admin2123!", "role": "ADMIN"})
+    assert created.status_code == 201, created.text
+    token = await _login(aclient, "admin2", "Admin2123!")
+    r = await aclient.put(f"{API}/iam/mandatory-sections", headers=_auth(token),
+                          json={"permissions": ["view.dashboard.manager"]})
+    assert r.status_code == 403
+
+
+async def test_mandatory_sections_put_by_superadmin_succeeds(aclient, db_session):
+    await ps.seed_rbac_defaults(db_session)
+    su = _auth(await _login(aclient, "superadmin", "Super123!"))
+    r = await aclient.put(f"{API}/iam/mandatory-sections", headers=su,
+                          json={"permissions": ["view.dashboard.manager", "view.dashboard.taskplan"]})
+    assert r.status_code == 200
+    assert set(r.json()["permissions"]) == {"view.dashboard.manager", "view.dashboard.taskplan"}

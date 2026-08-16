@@ -14,13 +14,14 @@
  *   • решение принимает ТОЛЬКО топ-менеджмент — «указание игнорировать» или «запросить доп. меры»;
  *   • после решения задачу отрабатывает менеджер по качеству.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Typography, Tag, Space, Input, Button, Modal, Alert, Tooltip, Empty, Segmented, Select, Table } from 'antd';
 import { message } from '../../theme/appMessage';
 import {
   LinkOutlined, WarningOutlined, CheckOutlined, CloseOutlined, RiseOutlined, StopOutlined,
-  ScheduleOutlined, DatabaseOutlined, DownOutlined, UnorderedListOutlined, FileTextOutlined,
+  ScheduleOutlined, DatabaseOutlined, DownOutlined, UnorderedListOutlined, FileTextOutlined, FlagOutlined,
 } from '@ant-design/icons';
+import { useSearchParams } from 'react-router-dom';
 import { useSelector, shallowEqual } from 'react-redux';
 import { useAppDispatch } from '../../store/hooks';
 import { RootState } from '../../store';
@@ -41,6 +42,7 @@ const DAY = 86400000;
 const LABEL_W = 300;
 const RISK_DAYS = 14; // «зона риска» — до срока осталось ≤ 14 дней
 const ALL_SYS = '__ALL__';
+const ALL_CHAR = '__ALL__';
 const parseRu = (d?: string): Date | null => {
   if (!d) return null;
   const m = /(\d{2})\.(\d{2})\.(\d{4})/.exec(d);
@@ -83,6 +85,19 @@ const TaskPlanDashboard: React.FC = () => {
   const [due, setDue] = useState('');
   const [filter, setFilter] = useState<string>('Активные');
   const [sysFilter, setSysFilter] = useState<string>(ALL_SYS);
+  const [charFilter, setCharFilter] = useState<string>(ALL_CHAR);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // ТЗ v20 п.1: переход из «AI-аналитики по мерам» с ?characteristic=… — сразу фильтруем План
+  // задач по этой характеристике; параметр одноразовый, дальше фильтр — обычный Select-стейт.
+  useEffect(() => {
+    const c = searchParams.get('characteristic');
+    if (c) {
+      setCharFilter(c);
+      setSearchParams((sp) => { sp.delete('characteristic'); return sp; }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [rewriting, setRewriting] = useState(false);
   // Все сворачиваемые блоки изначально свёрнуты (по требованию).
   const [listOpen, setListOpen] = useState(false);
@@ -112,14 +127,20 @@ const TaskPlanDashboard: React.FC = () => {
     () => [...new Set(proposals.filter((p) => p.status !== 'REJECTED').map((p) => p.systemName))].sort(),
     [proposals],
   );
+  // Список характеристик для фильтра (ТЗ v20 п.1).
+  const characteristics = useMemo(
+    () => [...new Set(proposals.filter((p) => p.status !== 'REJECTED').map((p) => p.characteristic))].sort(),
+    [proposals],
+  );
 
-  // База: не отклонённые задачи выбранной системы, отсортированные по сроку.
+  // База: не отклонённые задачи выбранной системы/характеристики, отсортированные по сроку.
   const baseTasks = useMemo(
     () => proposals.filter((p) => p.status !== 'REJECTED')
       .filter((p) => sysFilter === ALL_SYS || p.systemName === sysFilter)
+      .filter((p) => charFilter === ALL_CHAR || p.characteristic === charFilter)
       .map((p) => ({ p, kind: kindOf(p) }))
       .sort((a, b) => (parseRu(a.p.dueDate)?.getTime() ?? Infinity) - (parseRu(b.p.dueDate)?.getTime() ?? Infinity)),
-    [proposals, sysFilter],
+    [proposals, sysFilter, charFilter],
   );
   const counts = useMemo(() => {
     const c: Record<string, number> = { Все: baseTasks.length, Активные: 0, Просрочено: 0, Эскалация: 0, Выполнено: 0 };
@@ -264,6 +285,15 @@ const TaskPlanDashboard: React.FC = () => {
             showSearch
             optionFilterProp="label"
             options={[{ value: ALL_SYS, label: '— Все системы —' }, ...systems.map((s) => ({ value: s, label: s }))]}
+          />
+          <Text type="secondary"><FlagOutlined /> Характеристика:</Text>
+          <Select
+            value={charFilter}
+            onChange={setCharFilter}
+            style={{ minWidth: 210 }}
+            showSearch
+            optionFilterProp="label"
+            options={[{ value: ALL_CHAR, label: '— Все характеристики —' }, ...characteristics.map((c) => ({ value: c, label: c }))]}
           />
           <Segmented value={filter} onChange={(v) => setFilter(v as string)}
             options={filterKeys.map((k) => ({ label: `${k} (${counts[k] ?? 0})`, value: k }))} />

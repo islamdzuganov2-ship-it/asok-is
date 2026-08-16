@@ -81,6 +81,19 @@ class RolePermission(Base):
     )
 
 
+class MandatorySection(Base):
+    """Обязательные разделы (ТЗ v20 п.10): наличие строки (permission) = раздел обязателен для
+    ВСЕХ пользователей независимо от роли — нельзя скрыть в персональных настройках. Фиксируется
+    только супер-администратором (admin.mandatory_sections.manage). Без роли — в отличие от
+    RolePermission, здесь факт не «у роли есть право», а «раздел нельзя выключить никому»."""
+    __tablename__ = "mandatory_sections"
+
+    permission: Mapped[str] = mapped_column(String(100), primary_key=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False,
+    )
+
+
 class UserPreference(Base):
     """Персональные настройки интерфейса (BL-008, Фаза 4): состав и порядок виджетов дашбордов
     у конкретного пользователя. Одна строка на пользователя; `prefs` — свободный JSON вида

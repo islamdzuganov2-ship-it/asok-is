@@ -29,7 +29,7 @@ import { useAppDispatch } from '../store/hooks';
 import { logout, setPermissions } from '../store/slices/authSlice';
 import { setDataMode, NAV_SECTIONS } from '../store/slices/uiSlice';
 import { syncProposals } from '../store/slices/governanceSlice';
-import { useGetMyPermissionsQuery } from '../store/api/apiSlice';
+import { useGetMyPermissionsQuery, useGetMandatorySectionsQuery } from '../store/api/apiSlice';
 import { roleLabel } from '../constants/roles';
 import NotificationBell from './NotificationBell';
 import { PREMIUM, GOLD, TYPE, SPACE } from '../theme/premium';
@@ -61,6 +61,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     // Переключатели опциональных дашбордов из «Настройка» (ТЗ v17, req 5).
     const hiddenSections = useSelector((state: RootState) => state.ui.hiddenSections);
     const navOrder = useSelector((state: RootState) => state.ui.navOrder);
+    // ТЗ v20 п.10: разделы, зафиксированные супер-администратором как обязательные для всех —
+    // персональное скрытие (hiddenSections) их не должно затрагивать.
+    const { data: mandatorySections } = useGetMandatorySectionsQuery();
+    const mandatorySet = new Set(mandatorySections?.permissions ?? []);
     const userRole = role || 'GUEST';
 
     // Права пользователя (BL-008): грузим с сервера и кладём в стор (обновляются и при возврате
@@ -122,7 +126,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     // Раньше меню ветвилось по роли (isExec/isManager) — теперь состав задаёт матрица прав,
     // которую супер-админ настраивает в разделе «Права». Оценка СИИ (view.ai_assessments) в меню
     // намеренно не выводится (раздел под развитие), но маршрут доступен по праву.
-    const has = (perm: string) => permissions.includes(perm) && !hiddenSections[perm];
+    const has = (perm: string) => permissions.includes(perm) && (mandatorySet.has(perm) || !hiddenSections[perm]);
     // ДЕФ-12 (БТ-444): пункт виден, если есть ПРАВО и пользователь не скрыл раздел в
     // «Настройка». Раньше флаги действовали только для ADMIN/CTO/CEO — менеджер по качеству
     // щёлкал тумблер, и ничего не происходило. Персонализация — поверх RBAC, а не вместо:
