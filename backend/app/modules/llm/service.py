@@ -41,7 +41,7 @@ from dataclasses import asdict, dataclass
 
 from app.infrastructure.config import settings
 from app.modules.llm import brain
-from app.modules.llm.personas import TOP_MANAGER
+from app.modules.llm.personas import EXECUTOR, TOP_MANAGER
 from app.modules.llm.prompts import (  # noqa: F401  (публичный контракт модуля)
     CONCLUSION_SYSTEM_PROMPT,
     MEASURE_CARD_SUMMARY_PROMPT,
@@ -819,6 +819,74 @@ def generate_management_summary(
             reasons.append("решение (запрошенное действие) не отражено")
         if reasons:
             logger.warning("Резюме карточки меры отбраковано (%s) — честный fallback", "; ".join(reasons))
+            text = fallback
+    else:
+        text = fallback
+
+    _cache_put(key, text)
+    return text
+
+
+# ─── Мера на язык исполнителя (ТЗ v19 п.16, УК-16) ─────────────────────────────────────
+# Персона EXECUTOR (personas.py) уже задаёт нужный формат («Что сделать / Срок и риск / Чем
+# подтвердить / Что уточнить») — конвейер Э0–Э7 не нужен, вход короче (одна мера). Та же
+# деградация к честному fallback'у, но БЕЗ строгого лимита 80 слов (это требование заказчика
+# только для управленческой записки, п.14) — только запрет жаргона формул и grounding по числам.
+
+def _executor_brief_fallback(ask: str, problem: str, due_note: str) -> str:
+    action = (ask or problem or "").strip()
+    if not action:
+        action = "шаги не сформулированы в мере — уточните у менеджера по качеству"
+    words = action.split()
+    if len(words) > 40:
+        action = " ".join(words[:40]) + "…"
+    return (
+        f"Что сделать: {action}. Срок: {due_note}. "
+        "Чем подтвердить: отчёт менеджеру по качеству о выполнении (что сделано, результат)."
+    )
+
+
+def generate_executor_brief(title: str, problem: str, ask: str, due_note: str) -> str:
+    """Мера, переписанная на язык исполнителя — конкретные шаги вместо профессионального
+    суждения менеджера по качеству (rationale) и вместо запроса решения у ЛПР (expectation,
+    п.14 — другой адресат). `due_note` — уже честно оформлен («до 01.10.2026» либо «не
+    назначен») вызывающим кодом (governance), как в generate_management_summary."""
+    key = hash(("executor_brief", title, problem, ask, due_note))
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    fallback = _executor_brief_fallback(ask, problem, due_note)
+
+    facts = (
+        f"Поручение: {title}\n"
+        f"Контекст (профессиональное суждение менеджера по качеству): {problem}\n"
+        f"Требуемое решение/мера: {ask}\n"
+        f"Срок: {due_note}"
+    )
+    prompt = (
+        f"Факты по поручению (используй ТОЛЬКО их, ничего не добавляй от себя):\n{facts}\n"
+        "Перепиши поручение для исполнителя по формату из системной роли, не более 120 слов "
+        "суммарно. Если срок «не назначен» — так и напиши, не придумывай дату."
+    )
+    text = complete(prompt, system=EXECUTOR.system_prompt, max_tokens=EXECUTOR.max_tokens)
+
+    if text:
+        reasons = []
+        if _word_count(text) > 120:
+            reasons.append("превышен разумный объём")
+        if _JARGON_RE.search(text):
+            reasons.append("технический жаргон формул")
+        if _numbers_in(text) - _numbers_in(facts):
+            reasons.append("числа вне переданных фактов")
+        if _is_echo(text, facts):
+            # Найдено эмпирически (браузерная проверка): маленькая модель иногда пересказывает
+            # факты СВОИМИ ЖЕ ЛЕЙБЛАМИ («Поручение:/Контекст:/Решение:») вместо формата
+            # персоны — грамматически валидно, проходит остальные проверки, но не решение
+            # заказчика «через анализ, не переписыванием вслепую» (см. docstring выше).
+            reasons.append("эхо входных фактов без переработки в формат для исполнителя")
+        if reasons:
+            logger.warning("Переписанное поручение отбраковано (%s) — честный fallback", "; ".join(reasons))
             text = fallback
     else:
         text = fallback

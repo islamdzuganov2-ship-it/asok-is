@@ -103,6 +103,16 @@ class Proposal(Base, TimestampMixin):
     )
     effort_hours_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # ТЗ v19 УК-16 (п.16): переписывание меры на язык исполнителя (персона EXECUTOR) —
+    # конкретные шаги вместо профсуждения (rationale) и вместо просьбы к ЛПР (expectation, п.14).
+    # Запускает менеджер по качеству кнопкой «Переписать для исполнителя»; появляется на
+    # карточке задачи в «Плане задач» (внутренний Гант) и на «Моих задачах» исполнителя.
+    executor_brief: Mapped[str | None] = mapped_column(Text, nullable=True)
+    executor_brief_generated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
+    )
+    executor_brief_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # --- План задач / эскалация ---
     suz_link: Mapped[str | None] = mapped_column(String(512), nullable=True)
     top_comment: Mapped[str | None] = mapped_column(Text, nullable=True)

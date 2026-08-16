@@ -30,6 +30,7 @@ from app.modules.governance.schemas import (
     ProposalCreate,
     TaskUpdateIn,
 )
+from app.modules.llm import generate_executor_brief
 from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
 
 
@@ -154,6 +155,31 @@ async def set_effort_hours(
     p.effort_hours = hours
     p.effort_hours_set_by = user_id
     p.effort_hours_set_at = _now()
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+
+async def rewrite_for_executor(db: AsyncSession, p: Proposal, user_id: uuid.UUID | None) -> Proposal:
+    """Переписывает меру на язык исполнителя (п.16, персона EXECUTOR) — конкретные шаги вместо
+    профсуждения (rationale) и вместо запроса решения у ЛПР (expectation, п.14, другой адресат).
+    Только по одобренной мере: до решения переписывать для исполнения нечего (как и effort_hours,
+    В-41) — исполнение начинается после одобрения, не раньше."""
+    if p.status != STATUS_APPROVED:
+        raise ConflictError("Переписать для исполнителя можно только по одобренной мере")
+    if p.due_on:
+        due_note = f"до {p.due_on.strftime('%d.%m.%Y')}"
+    elif p.due_date:
+        due_note = f"до {p.due_date}"
+    else:
+        due_note = "не назначен"
+    text = generate_executor_brief(
+        title=p.risk_title or p.metric_name or p.system_name,
+        problem=p.rationale or "", ask=p.expectation or "", due_note=due_note,
+    )
+    p.executor_brief = text
+    p.executor_brief_generated_by = user_id
+    p.executor_brief_generated_at = _now()
     await db.commit()
     await db.refresh(p)
     return p

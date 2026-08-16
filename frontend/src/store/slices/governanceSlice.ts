@@ -47,6 +47,12 @@ export interface Proposal {
   effortHours?: number;
   effortHoursSetBy?: string;
   effortHoursSetAt?: string;
+  // ТЗ v19 п.16: мера, переписанная на язык исполнителя (персона EXECUTOR) — появляется в
+  // «Плане задач» (внутренний Гант) и на «Моих задачах» после того, как менеджер по качеству
+  // нажмёт «Переписать для исполнителя».
+  executorBrief?: string;
+  executorBriefGeneratedBy?: string;
+  executorBriefGeneratedAt?: string;
   /** Демо-мера (засеяна для презентации). В режиме LLM такие меры скрываются. */
   isDemo?: boolean;
   /** История правок меры (аудит): кто, когда, какое поле, старое → новое значение. */
@@ -278,6 +284,17 @@ export const setEffortHours = createAsyncThunk<Proposal | null, { id: string; ef
   },
 );
 
+/** Менеджер по качеству запускает переписывание меры на язык исполнителя (п.16). */
+export const rewriteForExecutor = createAsyncThunk<Proposal | null, { id: string }, { state: RootState }>(
+  'governance/rewrite-for-executor',
+  async ({ id }, { getState }) => {
+    if (isLive(getState())) return await govApi(`/proposals/${id}/rewrite-for-executor`, 'POST');
+    const p = getState().governance.proposals.find((x) => x.id === id);
+    if (!p || p.status !== 'APPROVED') return null;
+    return { ...p, executorBrief: `Что сделать: ${p.expectation || p.rationale}. Срок: ${p.dueDate ? `до ${p.dueDate}` : 'не назначен'}.`, executorBriefGeneratedAt: new Date().toISOString() };
+  },
+);
+
 type TaskArg = { id: string; suzLink?: string; topComment?: string; escalated?: boolean; owner?: string; ownerRole?: string; dueDate?: string };
 
 export const updateTask = createAsyncThunk<Proposal | null, TaskArg, { state: RootState }>(
@@ -407,8 +424,8 @@ const governanceSlice = createSlice({
       });
     // Мутации возвращают обновлённую меру (или null, если действие не применилось в mock).
     for (const thunk of [approveProposal, rejectProposal, updateProposalMeta, editProposal,
-      setExecution, setEffortHours, updateTask, escalateTask, decideEscalation, resolveEscalation,
-      addClarification, requestDueChange, decideDueChange]) {
+      setExecution, setEffortHours, rewriteForExecutor, updateTask, escalateTask, decideEscalation,
+      resolveEscalation, addClarification, requestDueChange, decideDueChange]) {
       builder.addCase(thunk.fulfilled, (state, action: PayloadAction<Proposal | null>) => {
         if (action.payload) {
           upsert(state, action.payload);

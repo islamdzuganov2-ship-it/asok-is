@@ -120,6 +120,17 @@ async def set_effort_hours(
     return await service.set_effort_hours(db, p, payload.effort_hours, uid)
 
 
+@router.post("/proposals/{pid}/rewrite-for-executor", response_model=ProposalOut)
+async def rewrite_for_executor(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.propose")),
+):
+    """Переписать меру на язык исполнителя — конкретные шаги для «Плана задач» (п.16)."""
+    p = await service.get_or_404(db, pid)
+    uid = await resolve_user_id(db, user.get("id"))
+    return await service.rewrite_for_executor(db, p, uid)
+
+
 @router.patch("/proposals/{pid}/task", response_model=ProposalOut)
 async def update_task(
     pid: uuid.UUID, payload: TaskUpdateIn,

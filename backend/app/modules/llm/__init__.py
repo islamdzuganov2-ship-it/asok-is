@@ -27,6 +27,7 @@ from app.modules.llm.prompts import CONCLUSION_SYSTEM_PROMPT, SYSTEM_PROMPT
 from app.modules.llm.reasoning import ReasoningInput, ReasoningTrace, generate_reasoned_conclusion, run_reasoning
 from app.modules.llm.service import (
     complete,
+    generate_executor_brief,
     generate_judgment_conclusion,
     generate_management_summary,
     generate_measures_analytics,
@@ -58,6 +59,7 @@ __all__ = [
     "generate_judgment_conclusion",
     "generate_measures_analytics",
     "generate_management_summary",
+    "generate_executor_brief",
     "ReasoningInput",
     "ReasoningTrace",
     "run_reasoning",

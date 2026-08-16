@@ -66,6 +66,10 @@ class ProposalOut(_CamelModel):
     effort_hours: float | None = None
     effort_hours_set_by: uuid.UUID | None = None
     effort_hours_set_at: datetime | None = None
+    # ТЗ v19 п.16: мера, переписанная на язык исполнителя (персона EXECUTOR).
+    executor_brief: str | None = None
+    executor_brief_generated_by: uuid.UUID | None = None
+    executor_brief_generated_at: datetime | None = None
     suz_link: str | None = None
     top_comment: str | None = None
     escalated: bool = False

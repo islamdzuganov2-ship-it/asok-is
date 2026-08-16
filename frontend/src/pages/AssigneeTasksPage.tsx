@@ -14,7 +14,7 @@ import React, { useMemo, useState } from 'react';
 import { Alert, Button, Col, DatePicker, Empty, Input, InputNumber, Modal, Row, Space, Statistic, Table, Tag, Timeline, Typography } from 'antd';
 import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
-import { ClockCircleOutlined, CommentOutlined, FieldTimeOutlined, ScheduleOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CommentOutlined, FieldTimeOutlined, FileTextOutlined, ScheduleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
@@ -172,6 +172,14 @@ const AssigneeTasksPage: React.FC = () => {
               <Tag>{sel.characteristic}</Tag>
               {statusTag(sel)}
             </Space>
+            {/* ТЗ v19 п.16: переписано менеджером по качеству на язык исполнителя — конкретные
+                шаги вместо профсуждения ниже. Показываем первым, обоснование — деталь под ним. */}
+            {sel.executorBrief && (
+              <div style={{ background: BRAND.surfaceSoft, borderRadius: 8, padding: 12 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}><FileTextOutlined /> Что сделать</Text>
+                <Paragraph style={{ marginBottom: 0, marginTop: 4 }}>{sel.executorBrief}</Paragraph>
+              </div>
+            )}
             <div><Text type="secondary">Метрика: </Text><Text>{sel.metricName}</Text></div>
             <div><Text type="secondary">Обоснование меры</Text><Paragraph style={{ marginBottom: 0 }}>{sel.rationale}</Paragraph></div>
             <div><Text type="secondary">Текущий срок: </Text><Text strong>{sel.dueDate || '—'}</Text></div>
