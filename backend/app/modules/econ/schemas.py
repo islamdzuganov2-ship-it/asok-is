@@ -6,9 +6,9 @@ Pydantic-схемы домена econ (BL-007). camelCase-алиасы — ка�
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -200,3 +200,41 @@ class CostDashboardOut(_CamelModel):
     top_risks: list[TopRiskOut]
     by_system: list[SystemAleOut]
     heatmap: list[HeatCellOut]      # ИС × подхарактеристика → ALE
+
+
+# ── Рыночные бенчмарки (ТЗ v19 п.9-10, В-30а) — структура без числового наполнения ──
+class MarketBenchmarkOut(_CamelModel):
+    id: uuid.UUID
+    kind: str
+    dimension: str
+    company_size_class: str | None = None
+    value: float
+    unit: str
+    source: str
+    observed_on: date
+    note: str | None = None
+    created_by: uuid.UUID | None = None
+    created_at: datetime | None = None
+
+
+class MarketBenchmarkCreate(_CamelModel):
+    kind: str
+    dimension: str
+    company_size_class: str | None = None
+    value: float
+    unit: str
+    # ОБЯЗАТЕЛЬНЫ (не Optional): без источника и даты запись не заводится — см. docstring
+    # econ/models.py MarketBenchmark. min_length=1 — пустая строка не проходит там же, где None.
+    source: str = Field(min_length=1)
+    observed_on: date
+    note: str | None = None
+
+
+class BenchmarkComparisonOut(_CamelModel):
+    """Сравнение своей цифры с рыночным ориентиром. benchmark=None — честное «нет данных»
+    (В-30а не решён), а не 0 и не подставленное среднее «на глаз»."""
+    own_value: float | None
+    own_unit: str
+    benchmark: MarketBenchmarkOut | None = None
+    delta_pct: float | None = None   # (own - benchmark) / benchmark × 100, None если сравнивать не с чем
+    note: str

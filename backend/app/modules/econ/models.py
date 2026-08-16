@@ -10,8 +10,9 @@ ORM-модели домена econ (BL-007, RE-01…RE-04): экономичес
 здесь только данные. Кросс-доменные связи — строковыми ForeignKey (правило зависимостей §B4).
 """
 import uuid
+from datetime import date
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -166,5 +167,43 @@ class EnterpriseProfile(Base, TimestampMixin):
     region: Mapped[str | None] = mapped_column(String(255), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
+    )
+
+
+# --- Рыночные бенчмарки (ТЗ v19 п.9-10, УК-09/10, В-30а) ---
+BENCHMARK_BP_COST = "BP_COST_PER_MIN"            # рыночная C_мин по типу БП (BP_KINDS, п.9)
+BENCHMARK_SUPPORT_RATE = "SUPPORT_RATE_PER_HOUR"  # рыночная ставка специалиста (EXECUTOR_TYPES × размер компании, п.10)
+BENCHMARK_KINDS = (BENCHMARK_BP_COST, BENCHMARK_SUPPORT_RATE)
+
+
+class MarketBenchmark(Base, TimestampMixin):
+    """Рыночный ориентир (ТЗ v19 п.9-10) — сравнение своих цифр (C_мин БП / ставка сопровождения)
+    со средним по рынку. В-30а НЕ решён заказчиком (какими открытыми источниками пользоваться) —
+    здесь заведена ТОЛЬКО структура, реальные значения не внесены (см. миграцию: таблица пуста).
+
+    source/observed_on ОБЯЗАТЕЛЬНЫ (NOT NULL, не Optional): без источника цифра неотличима от
+    выдуманной, рынок меняется — без даты не понять, насколько ориентир устарел. Тот же принцип,
+    что «не ноль молча» у эффорт-часов (В-41) — только здесь применён на входе, а не на выходе:
+    строку с пустым источником нельзя ЗАВЕСТИ, а не просто нельзя молча показать.
+
+    dimension — плоское значение словаря (BP_KINDS для BENCHMARK_BP_COST, EXECUTOR_TYPES для
+    BENCHMARK_SUPPORT_RATE), не FK: сами словари — фиксированные строковые константы модуля,
+    заводить под них отдельную таблицу-справочник избыточно (тот же приём, что BusinessProcess.kind).
+    company_size_class — параметр подстановки ТОЛЬКО для ставок (EnterpriseProfile.size_class,
+    п.10); для стоимости простоя БП размер компании не участвует (см. docstring EnterpriseProfile).
+    """
+    __tablename__ = "market_benchmarks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    dimension: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    company_size_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    value: Mapped[float] = mapped_column(Numeric(16, 2), nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), nullable=False)  # "₽/мин" | "₽/час"
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    observed_on: Mapped[date] = mapped_column(Date, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
     )

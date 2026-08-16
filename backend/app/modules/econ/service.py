@@ -16,6 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.econ import economics
 from app.modules.econ.models import (
+    BENCHMARK_BP_COST,
+    BENCHMARK_KINDS,
+    BENCHMARK_SUPPORT_RATE,
     BP_KINDS,
     COST_METHODS,
     ENTERPRISE_PROFILE_ID,
@@ -26,14 +29,18 @@ from app.modules.econ.models import (
     BusinessProcessCost,
     EconConfig,
     EnterpriseProfile,
+    MarketBenchmark,
     SupportRate,
     SystemBusinessProcess,
 )
 from app.modules.econ.schemas import (
+    BenchmarkComparisonOut,
     BpCostIn,
     BusinessProcessCreate,
     BusinessProcessUpdate,
     EnterpriseProfileIn,
+    MarketBenchmarkCreate,
+    MarketBenchmarkOut,
     SupportRateIn,
     SupportRateUpdate,
     SystemBpCreate,
@@ -393,3 +400,97 @@ async def compute_incident_cost(db: AsyncSession, incident) -> float:
     total = economics.cost_incident(labors=labors, downtime=downtime, secondary=0.0)
     incident.cost_total = total
     return total
+
+
+# ═══════════════════════ Рыночные бенчмарки (ТЗ v19 п.9-10, В-30а) ═══════════════════════
+# Структура без числового наполнения: заказчик не выбрал источники (В-30а), таблица пуста до
+# первой ручной записи. compare_* НЕ подменяют отсутствие данных средним «на глаз» — честное
+# note объясняет, чего не хватает (самой записи БП/ставки или бенчмарка для её измерения).
+
+def _validate_benchmark(data: MarketBenchmarkCreate) -> None:
+    if data.kind not in BENCHMARK_KINDS:
+        raise ValidationError(f"Недопустимый тип бенчмарка: {data.kind}")
+    if data.kind == BENCHMARK_BP_COST and data.dimension not in BP_KINDS:
+        raise ValidationError(f"Недопустимый тип БП для бенчмарка C_мин: {data.dimension}")
+    if data.kind == BENCHMARK_SUPPORT_RATE and data.dimension not in EXECUTOR_TYPES:
+        raise ValidationError(f"Недопустимый тип исполнителя для бенчмарка ставки: {data.dimension}")
+    if data.company_size_class is not None and data.company_size_class not in SIZE_CLASSES:
+        raise ValidationError(f"Недопустимый класс размера: {data.company_size_class}")
+
+
+async def create_benchmark(
+    db: AsyncSession, data: MarketBenchmarkCreate, created_by: uuid.UUID | None,
+) -> MarketBenchmark:
+    _validate_benchmark(data)
+    row = MarketBenchmark(**data.model_dump(), created_by=created_by)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def list_benchmarks(db: AsyncSession, kind: str | None = None) -> list[MarketBenchmark]:
+    stmt = select(MarketBenchmark).order_by(MarketBenchmark.observed_on.desc())
+    if kind:
+        stmt = stmt.where(MarketBenchmark.kind == kind)
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def _latest_benchmark(
+    db: AsyncSession, kind: str, dimension: str, company_size_class: str | None = None,
+) -> MarketBenchmark | None:
+    """Самая свежая запись (по observed_on) для точки сравнения — рынок меняется, старую
+    цифру молча использовать нельзя (см. observed_on в ответе — вызывающий код её показывает)."""
+    stmt = (
+        select(MarketBenchmark)
+        .where(MarketBenchmark.kind == kind, MarketBenchmark.dimension == dimension)
+        .order_by(MarketBenchmark.observed_on.desc())
+    )
+    if company_size_class is not None:
+        stmt = stmt.where(MarketBenchmark.company_size_class == company_size_class)
+    return (await db.execute(stmt)).scalars().first()
+
+
+async def compare_business_process(db: AsyncSession, bp_id: uuid.UUID) -> BenchmarkComparisonOut:
+    """Сравнение C_мин своей БП с рыночным ориентиром того же типа БП (п.9)."""
+    bp = await db.get(BusinessProcess, bp_id)
+    if bp is None:
+        raise NotFoundError("Бизнес-процесс не найден")
+    cost = await get_bp_cost(db, bp_id)
+    own = float(cost.cost_per_min_base) if cost and cost.cost_per_min_base is not None else None
+    bench = await _latest_benchmark(db, BENCHMARK_BP_COST, bp.kind)
+    return _comparison(own, "₽/мин", bench, no_own="стоимость минуты простоя не рассчитана")
+
+
+async def compare_support_rate(db: AsyncSession, rate_id: uuid.UUID) -> BenchmarkComparisonOut:
+    """Сравнение своей ставки сопровождения с рыночным ориентиром — тип исполнителя × размер
+    компании (п.10, EnterpriseProfile — параметр подстановки)."""
+    rate = await db.get(SupportRate, rate_id)
+    if rate is None:
+        raise NotFoundError("Ставка сопровождения не найдена")
+    profile = await get_enterprise_profile(db)
+    bench = await _latest_benchmark(db, BENCHMARK_SUPPORT_RATE, rate.executor_type, profile.size_class)
+    return _comparison(float(rate.rate_per_hour), "₽/час", bench, no_own="")
+
+
+def _comparison(
+    own: float | None, own_unit: str, bench: MarketBenchmark | None, no_own: str,
+) -> BenchmarkComparisonOut:
+    if own is None:
+        return BenchmarkComparisonOut(own_value=None, own_unit=own_unit, note=no_own)
+    if bench is None:
+        return BenchmarkComparisonOut(
+            own_value=own, own_unit=own_unit,
+            note="Рыночный ориентир не внесён (открытые источники не согласованы, В-30а)",
+        )
+    if not bench.value:
+        note = "ориентир внесён с нулевым значением — сравнение невозможно"
+        delta_pct = None
+    else:
+        delta_pct = round((own - float(bench.value)) / float(bench.value) * 100, 1)
+        direction = "выше" if delta_pct > 0 else "ниже"
+        note = f"{direction} рыночного ориентира на {abs(delta_pct)}%"
+    return BenchmarkComparisonOut(
+        own_value=own, own_unit=own_unit, benchmark=MarketBenchmarkOut.model_validate(bench),
+        delta_pct=delta_pct, note=note,
+    )
