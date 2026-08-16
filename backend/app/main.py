@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from app.api.v1.api import api_router
 from app.infrastructure.config import settings
 from app.infrastructure.database import AsyncSessionLocal, import_models
-from app.modules.econ import seed_econ_defaults
+from app.modules.econ import seed_econ_defaults, seed_market_benchmarks
 from app.modules.iam import seed_rbac_defaults
 from app.modules.llm import service as llm_service
 from app.scripts.seed_iso25010 import seed_iso25010_async
@@ -112,6 +112,9 @@ async def startup_init() -> None:
         # BL-007: первичный сид финпараметров контура (идемпотентно — не затирает правки).
         async with AsyncSessionLocal() as econ_session:
             await seed_econ_defaults(econ_session)
+        # ТЗ v19 п.9-10: сид рыночных бенчмарков source-данными (идемпотентно, В-30а закрыт).
+        async with AsyncSessionLocal() as benchmark_session:
+            await seed_market_benchmarks(benchmark_session)
         # BL-008: дефолтная матрица прав role→permission + учётка superadmin (идемпотентно).
         async with AsyncSessionLocal() as rbac_session:
             await seed_rbac_defaults(rbac_session)

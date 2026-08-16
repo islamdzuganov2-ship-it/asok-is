@@ -26,6 +26,7 @@ from app.modules.econ.service import (
     config_value,
     resolve_support_rate,
     seed_econ_defaults,
+    seed_market_benchmarks,
 )
 
 __all__ = [
@@ -45,6 +46,7 @@ __all__ = [
     # Сервис/транспорт
     "router",
     "seed_econ_defaults",
+    "seed_market_benchmarks",
     "resolve_support_rate",
     "compute_incident_cost",
     "config_value",
