@@ -4,12 +4,12 @@
  * Спокойная RAG-палитра, минимум текста и цвета.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Col, Row, Typography, Tag, Progress, Badge, Space, Button, Spin, Alert, Modal, Table } from 'antd';
+import { Card, Col, Row, Typography, Tag, Progress, Badge, Space, Button, Spin, Alert, Modal, Table, Segmented } from 'antd';
 import { RobotOutlined, FireOutlined, AppstoreOutlined, FundOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import ReactECharts from 'echarts-for-react';
 import { useSelector, shallowEqual } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { RootState } from '../../store';
 import { ExecSystemInsight, ExecutiveDashboardData } from '../../data/mockDashboards';
 import { EXECUTIVE_SCALE, HEATMAP_CHARS_FULL } from '../../data/mockScaleData';
@@ -29,6 +29,7 @@ import EmployeeEffectivenessCard from '../../components/EmployeeEffectivenessCar
 import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 import { QUALITY_MODEL } from '../../constants/qualityModel';
 import { useCharacteristicWeights } from '../../hooks/useCharacteristicWeights';
+import { fmtMoney } from '../../utils/money';
 
 // Точное сопоставление меры с ячейкой теплокарты (по полному названию характеристики).
 const norm = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[.\s]/g, '');
@@ -45,6 +46,19 @@ const CRITICALITY_ORDER: Record<string, number> = {
 
 const { Title, Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
+
+// УК-11: денежный слой теплокарты — грид ALE/ΔALE/покрытия за один запрос (risk-events/heatmap-money-layer).
+interface HeatmapMoneyCell {
+  systemName: string; characteristic: string;
+  totalAle: number; totalDeltaAle: number; coveragePct: number;
+}
+type MoneyMode = 'score' | 'ale' | 'delta' | 'coverage';
+const MONEY_MODE_OPTIONS: { value: MoneyMode; label: string }[] = [
+  { value: 'score', label: 'Балл качества' },
+  { value: 'ale', label: 'ALE под риском' },
+  { value: 'delta', label: 'ΔALE снимаемый мерами' },
+  { value: 'coverage', label: 'Покрытие мерами' },
+];
 
 interface LiveDashboard {
   globalHealthScore: number;
@@ -121,9 +135,14 @@ function buildExecFromLive(live: LiveDashboard | null, charWeights: Record<strin
   };
 }
 
-const RagDot: React.FC<{ score: number; size?: number; label?: string }> = ({ score, size = 14, label }) => (
+// `titleIsComplete` — режим денег (УК-11) передаёт готовый заголовок с реальными деньгами;
+// `score` там — только внутренняя интенсивность цвета (0..100 нормировано к максимуму грида),
+// не показатель для пользователя, поэтому обычный суффикс «: score%» (для баллов ГОСТ 25010) не нужен.
+const RagDot: React.FC<{ score: number; size?: number; label?: string; titleIsComplete?: boolean }> = ({
+  score, size = 14, label, titleIsComplete,
+}) => (
   <span
-    title={`${label ? label + ': ' : ''}${score < 0 ? 'н/д' : score + '%'}`}
+    title={titleIsComplete ? (label ?? '') : `${label ? label + ': ' : ''}${score < 0 ? 'н/д' : score + '%'}`}
     style={{
       display: 'inline-block', width: size, height: size, borderRadius: '50%',
       background: ragToken(score).color, boxShadow: `0 0 0 3px ${ragToken(score).soft}`,
@@ -133,6 +152,7 @@ const RagDot: React.FC<{ score: number; size?: number; label?: string }> = ({ sc
 
 const ExecutiveDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const dataMode = useSelector((s: RootState) => s.ui.dataMode);
   const isLive = dataMode === 'live';
   const [active, setActive] = useState<ExecSystemInsight | null>(null);
@@ -149,6 +169,22 @@ const ExecutiveDashboard: React.FC = () => {
   const [showRegistry, setShowRegistry] = useState(false);
   // ТЗ v19 п.3: переход «туда» из AI-карточки мер — характеристика, по которой кликнули.
   const [registryPreset, setRegistryPreset] = useState<string | null>(null);
+  // УК-08/09: контекст перехода — в URL (?characteristic=…), не только в локальном state —
+  // ссылку можно переслать коллеге, при открытии она сразу раскрывает реестр на нужной
+  // характеристике (критерий приёмки п.3). Читаем один раз при монтировании страницы.
+  useEffect(() => {
+    const c = searchParams.get('characteristic');
+    if (c) { setShowRegistry(true); setRegistryPreset(c); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const openRegistryFor = (c: string) => {
+    setShowRegistry(true); setRegistryPreset(c);
+    setSearchParams({ characteristic: c });
+  };
+  const closeRegistry = () => {
+    setShowRegistry(false); setRegistryPreset(null);
+    setSearchParams((sp) => { sp.delete('characteristic'); return sp; }, { replace: true });
+  };
   // Фокус на характеристике для карточки ИС (клик по ячейке теплокарты).
   const [activeChar, setActiveChar] = useState<string | undefined>(undefined);
   // Балл выбранной характеристики — для корректной карточки характеристики (T-56).
@@ -162,6 +198,39 @@ const ExecutiveDashboard: React.FC = () => {
   const [live, setLive] = useState<LiveDashboard | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
+
+  // УК-11: денежный слой теплокарты — грузится лениво, только когда впервые переключают с
+  // «Балл», не на каждой загрузке страницы (обогащение, не обязательный для дашборда путь).
+  const [moneyMode, setMoneyMode] = useState<MoneyMode>('score');
+  const [moneyLayer, setMoneyLayer] = useState<HeatmapMoneyCell[] | null>(null);
+  const [moneyLoading, setMoneyLoading] = useState(false);
+  useEffect(() => {
+    if (!isLive || moneyMode === 'score' || moneyLayer !== null) return;
+    let alive = true;
+    setMoneyLoading(true);
+    const token = localStorage.getItem('token');
+    fetch(`${VITE_API}/risk-events/heatmap-money-layer`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: HeatmapMoneyCell[]) => { if (alive) setMoneyLayer(d); })
+      .catch(() => { if (alive) setMoneyLayer([]); })
+      .finally(() => { if (alive) setMoneyLoading(false); });
+    return () => { alive = false; };
+  }, [isLive, moneyMode, moneyLayer]);
+
+  const moneyByKey = useMemo(() => {
+    const m = new Map<string, HeatmapMoneyCell>();
+    (moneyLayer ?? []).forEach((c) => m.set(`${c.systemName}|${c.characteristic}`, c));
+    return m;
+  }, [moneyLayer]);
+  // Нормировка ₽-режимов в 0..100 относительно максимума ТЕКУЩЕГО грида — своя шкала интенсивности
+  // для каждого режима (score-бакеты 25010 тут не подходят, деньги не ограничены сверху).
+  const moneyMax = useMemo(() => {
+    const ale = Math.max(0, ...(moneyLayer ?? []).map((c) => c.totalAle));
+    const delta = Math.max(0, ...(moneyLayer ?? []).map((c) => c.totalDeltaAle));
+    return { ale, delta };
+  }, [moneyLayer]);
 
   useEffect(() => {
     if (!isLive) { setLive(null); setLiveError(null); return; }
@@ -250,6 +319,24 @@ const ExecutiveDashboard: React.FC = () => {
       p.status === 'PENDING_APPROVAL'
       && norm(p.systemName) === norm(sys)
       && norm(p.characteristic) === norm(fullChar));
+
+  // УК-11: точка теплокарты в денежном режиме — своя шкала интенсивности на режим (деньги под
+  // риском/ΔALE/покрытие), не бакеты score ГОСТ 25010. «Нет данных» (риски не заведены) — от
+  // «нулевого значения» отличается отдельным флагом (критерий приёмки п.4).
+  const moneyCellVisual = (sys: string, fullChar: string): { score: number; label: string; noData: boolean } => {
+    const cell = moneyByKey.get(`${sys}|${fullChar}`);
+    if (!cell) return { score: -1, label: 'риски не заведены', noData: true };
+    if (moneyMode === 'ale') {
+      const pct = moneyMax.ale > 0 ? (cell.totalAle / moneyMax.ale) * 100 : 0;
+      return { score: 100 - pct, label: `ALE: ${fmtMoney(cell.totalAle)}/год`, noData: false };
+    }
+    if (moneyMode === 'delta') {
+      const pct = moneyMax.delta > 0 ? (cell.totalDeltaAle / moneyMax.delta) * 100 : 0;
+      return { score: pct, label: `ΔALE снимаемый мерами: ${fmtMoney(cell.totalDeltaAle)}/год`, noData: false };
+    }
+    // coverage
+    return { score: cell.coveragePct, label: `Покрытие мерами: ${cell.coveragePct}% ALE`, noData: false };
+  };
 
   // ТЗ v20 п.2: топ-3 проблемных ИС — по баллу качества, взвешенному по весам ГОСТ 25010
   // (тяжелее весом характеристика → сильнее тянет ранжирование), не по статичному полю
@@ -429,7 +516,7 @@ const ExecutiveDashboard: React.FC = () => {
       {/* Топ проблемных ИС — AI-аналитика по мерам (предложения LLM, не карточки) */}
       <MeasuresAiAnalyticsCard
         proposals={proposals}
-        onOpenCharacteristic={(c) => { setShowRegistry(true); setRegistryPreset(c); }}
+        onOpenCharacteristic={openRegistryFor}
         onOpenInTaskPlan={(c) => navigate(`/dashboard/taskplan?characteristic=${encodeURIComponent(c)}`)}
       />
 
@@ -504,6 +591,22 @@ const ExecutiveDashboard: React.FC = () => {
             {...premiumCard('slate')}
             styles={{ header: premiumCard('slate').styles.header, body: { padding: SPACE.airy, overflowX: 'auto' } }}
           >
+            {/* УК-11: переключатель режима отображения — балл качества / деньги под риском /
+                эффект мер / покрытие. Цветовая шкала точек перестраивается под режим (moneyCellVisual). */}
+            <Segmented
+              size="small"
+              value={moneyMode}
+              onChange={(v) => setMoneyMode(v as MoneyMode)}
+              options={MONEY_MODE_OPTIONS}
+              style={{ marginBottom: SPACE.cozy }}
+              disabled={!isLive}
+            />
+            {moneyMode !== 'score' && !isLive && (
+              <Text type="secondary" style={{ display: 'block', fontSize: TYPE.caption.fontSize, marginBottom: SPACE.cozy }}>
+                Денежный слой доступен только в режиме live (риски заводятся в реестре, не в демо-наборе).
+              </Text>
+            )}
+            {moneyMode !== 'score' && isLive && moneyLoading && <Spin size="small" style={{ marginBottom: SPACE.cozy }} />}
             <table style={{ borderCollapse: 'separate', borderSpacing: '0 8px', width: '100%' }}>
               <thead>
                 <tr>
@@ -539,6 +642,11 @@ const ExecutiveDashboard: React.FC = () => {
                       >{r.system}</td>
                       {r.cells.map((cell, i) => {
                         const measured = cellHasMeasure(r.system, heatCharsFull[i]);
+                        const money = moneyMode !== 'score' ? moneyCellVisual(r.system, heatCharsFull[i]) : null;
+                        const dotScore = money ? money.score : cell.score;
+                        const dotLabel = money
+                          ? `${r.system} · ${heatCharsFull[i]} · ${money.label}`
+                          : `${r.system} · ${heatCharsFull[i]}${measured ? ' · мера ожидает решения' : ''}`;
                         return (
                           <td
                             key={i}
@@ -547,8 +655,18 @@ const ExecutiveDashboard: React.FC = () => {
                             style={{ textAlign: 'center', cursor: sys ? 'pointer' : 'default' }}
                           >
                             <span style={{ position: 'relative', display: 'inline-block', lineHeight: 0 }}>
-                              <RagDot score={cell.score} label={`${r.system} · ${heatCharsFull[i]}${measured ? ' · мера ожидает решения' : ''}`} />
-                              {measured && (
+                              {money?.noData ? (
+                                <span
+                                  title={dotLabel}
+                                  style={{
+                                    display: 'inline-block', width: 14, height: 14, borderRadius: '50%',
+                                    border: `1.5px dashed ${BRAND.inkSoft}`, boxSizing: 'border-box',
+                                  }}
+                                />
+                              ) : (
+                                <RagDot score={dotScore} label={dotLabel} titleIsComplete={!!money} />
+                              )}
+                              {measured && !money && (
                                 <span
                                   title="По этой характеристике есть мера, ожидающая решения"
                                   style={{
@@ -571,13 +689,25 @@ const ExecutiveDashboard: React.FC = () => {
               {(['good', 'medium', 'bad'] as const).map((k) => (
                 <Space key={k} size={6}>
                   <RagDot score={k === 'good' ? 90 : k === 'medium' ? 60 : 20} size={10} />
-                  <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{RAG[k].label}</Text>
+                  <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
+                    {moneyMode === 'score' ? RAG[k].label
+                      : moneyMode === 'ale' ? (k === 'good' ? 'ALE низкий' : k === 'medium' ? 'ALE средний' : 'ALE высокий')
+                      : moneyMode === 'delta' ? (k === 'good' ? 'ΔALE высокий' : k === 'medium' ? 'ΔALE средний' : 'ΔALE низкий')
+                      : (k === 'good' ? 'покрытие высокое' : k === 'medium' ? 'покрытие среднее' : 'покрытие низкое')}
+                  </Text>
                 </Space>
               ))}
-              <Space size={6}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: RAG.good.color, boxShadow: '0 0 0 2px #fff', display: 'inline-block' }} />
-                <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>мера ожидает решения</Text>
-              </Space>
+              {moneyMode === 'score' ? (
+                <Space size={6}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: RAG.good.color, boxShadow: '0 0 0 2px #fff', display: 'inline-block' }} />
+                  <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>мера ожидает решения</Text>
+                </Space>
+              ) : (
+                <Space size={6}>
+                  <span style={{ width: 12, height: 12, borderRadius: '50%', border: `1.5px dashed ${BRAND.inkSoft}`, boxSizing: 'border-box', display: 'inline-block' }} />
+                  <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>риски не заведены (не то же самое, что 0 ₽)</Text>
+                </Space>
+              )}
             </Space>
             {orderedHeatRows.length > 5 && (
               <div style={{ textAlign: 'center', marginTop: 8 }}>
@@ -604,7 +734,7 @@ const ExecutiveDashboard: React.FC = () => {
         style={{ marginTop: 16 }}
         title={<><UnorderedListOutlined /> Реестр мер качества</>}
         open={showRegistry}
-        onToggle={(next) => { setShowRegistry(next); if (!next) setRegistryPreset(null); }}
+        onToggle={(next) => { if (next) setShowRegistry(true); else closeRegistry(); }}
       >
         <MeasuresRegistryCard proposals={proposals} onOpen={setDecisionProposal} presetCharacteristic={registryPreset} />
       </CollapsibleCard>

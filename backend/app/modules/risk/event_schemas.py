@@ -140,3 +140,14 @@ class HeatmapCellDetailOut(_CamelModel):
     characteristic: str
     total_ale: float
     risks: list[HeatmapCellRiskOut]
+
+
+# УК-11: денежный слой всей теплокарты за один запрос — та же агрегация, что в HeatmapCellDetailOut,
+# но по всем ячейкам (ИС × характеристика) сразу, иначе фронту пришлось бы дёргать /by-cell
+# N×M раз, чтобы перекрасить весь грид под режим «деньги».
+class HeatmapMoneyCellOut(_CamelModel):
+    system_name: str
+    characteristic: str
+    total_ale: float          # деньги под риском (Σ ALE активных рисков ячейки, без дублей)
+    total_delta_ale: float    # ΔALE, снимаемый привязанными мерами (Σ ale_avg × Σ ale_reduction_share)
+    coverage_pct: float       # доля ALE рисков, у которых есть хотя бы одна привязанная мера

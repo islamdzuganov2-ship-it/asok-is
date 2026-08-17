@@ -183,3 +183,61 @@ async def test_cell_detail_ignores_archived_risks(db_session):
 
     result = await service.cell_detail(db_session, "ИС-архив", "Надёжность")
     assert result.risks == []
+
+
+# ── УК-11: денежный слой всей теплокарты (грид, не одна ячейка) ──
+
+async def test_heatmap_money_layer_aggregates_per_system_and_characteristic(db_session):
+    sys = await _system(db_session, name="ИС-грид")
+    ev1 = await service.create_event(db_session, RiskEventCreate(code="RE-GRID-1", title="Риск A", system_id=sys.id), "rm")
+    ev1.ale_avg = 100000
+    ev2 = await service.create_event(db_session, RiskEventCreate(code="RE-GRID-2", title="Риск B", system_id=sys.id), "rm")
+    ev2.ale_avg = 40000
+    await db_session.commit()
+    await service.link_subchar(db_session, ev1.id, SubcharLinkIn(characteristic="Надёжность", subcharacteristic="Отказоустойчивость"))
+    await service.link_subchar(db_session, ev2.id, SubcharLinkIn(characteristic="Защищённость", subcharacteristic="Целостность"))
+
+    cells = {(c.system_name, c.characteristic): c for c in await service.heatmap_money_layer(db_session)}
+    assert cells[("ИС-грид", "Надёжность")].total_ale == 100000.0
+    assert cells[("ИС-грид", "Защищённость")].total_ale == 40000.0
+
+
+async def test_heatmap_money_layer_dedups_risk_across_two_subchars_of_same_characteristic(db_session):
+    sys = await _system(db_session, name="ИС-дедуп")
+    ev = await service.create_event(db_session, RiskEventCreate(code="RE-GRID-3", title="Риск", system_id=sys.id), "rm")
+    ev.ale_avg = 70000
+    await db_session.commit()
+    await service.link_subchar(db_session, ev.id, SubcharLinkIn(characteristic="Надёжность", subcharacteristic="Отказоустойчивость"))
+    await service.link_subchar(db_session, ev.id, SubcharLinkIn(characteristic="Надёжность", subcharacteristic="Восстанавливаемость (MTTR)"))
+
+    cells = {(c.system_name, c.characteristic): c for c in await service.heatmap_money_layer(db_session)}
+    # Один и тот же риск под двумя подхарактеристиками ОДНОЙ характеристики — ALE не удвоен.
+    assert cells[("ИС-дедуп", "Надёжность")].total_ale == 70000.0
+
+
+async def test_heatmap_money_layer_computes_delta_ale_and_coverage_from_measures(db_session):
+    sys = await _system(db_session, name="ИС-покрытие")
+    ev1 = await service.create_event(db_session, RiskEventCreate(code="RE-GRID-4", title="Риск с мерой", system_id=sys.id), "rm")
+    ev1.ale_avg = 100000
+    ev2 = await service.create_event(db_session, RiskEventCreate(code="RE-GRID-5", title="Риск без меры", system_id=sys.id), "rm")
+    ev2.ale_avg = 50000
+    await db_session.commit()
+    await service.link_subchar(db_session, ev1.id, SubcharLinkIn(characteristic="Надёжность", subcharacteristic="Отказоустойчивость"))
+    await service.link_subchar(db_session, ev2.id, SubcharLinkIn(characteristic="Надёжность", subcharacteristic="Отказоустойчивость"))
+
+    from app.modules.governance import Proposal
+    proposal = Proposal(system_name="ИС-покрытие", characteristic="Надёжность", risk_title="Мера",
+                         status="APPROVED", rosi=1.5, verdict="ELIMINATE")
+    db_session.add(proposal)
+    await db_session.flush()
+    await service.link_measure(db_session, ev1.id, MeasureLinkIn(proposal_id=proposal.id, ale_reduction_share=0.6))
+
+    cells = {(c.system_name, c.characteristic): c for c in await service.heatmap_money_layer(db_session)}
+    cell = cells[("ИС-покрытие", "Надёжность")]
+    assert cell.total_ale == 150000.0
+    assert cell.total_delta_ale == 60000.0          # 100000 × 0.6
+    assert cell.coverage_pct == round(100000 / 150000 * 100, 1)   # только риск с мерой покрыт
+
+
+async def test_heatmap_money_layer_empty_when_no_risks(db_session):
+    assert await service.heatmap_money_layer(db_session) == []

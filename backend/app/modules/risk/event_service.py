@@ -21,6 +21,7 @@ from app.modules.risk.event_schemas import (
     HeatmapCellDetailOut,
     HeatmapCellMeasureOut,
     HeatmapCellRiskOut,
+    HeatmapMoneyCellOut,
     MeasureLinkIn,
     RiskEventCreate,
     RiskEventUpdate,
@@ -274,3 +275,52 @@ async def cell_detail(db: AsyncSession, system_name: str, characteristic: str) -
     return HeatmapCellDetailOut(
         system_name=system.name, characteristic=characteristic, total_ale=total_ale, risks=risks_out,
     )
+
+
+async def heatmap_money_layer(db: AsyncSession) -> list[HeatmapMoneyCellOut]:
+    """УК-11: денежный слой ВСЕЙ теплокарты за один запрос — та же агрегация, что cell_detail(),
+    по всем ячейкам (ИС × характеристика) сразу вместо N×M отдельных вызовов на весь грид.
+
+    Оговорка: если риск привязан к подхарактеристикам ДВУХ разных характеристик (RiskEventSubchar
+    допускает M:N), его ALE войдёт в обе ячейки — то же допущение, что уже принято в cell_detail()
+    (сумма по одной ячейке не защищена от риска, распределённого по нескольким характеристикам)."""
+    rows = (await db.execute(
+        select(RiskEvent, RiskEventSubchar.characteristic, System.name)
+        .join(RiskEventSubchar, RiskEventSubchar.risk_event_id == RiskEvent.id)
+        .join(System, System.id == RiskEvent.system_id)
+        .where(RiskEvent.status == RISK_EVENT_ACTIVE)
+    )).all()
+
+    # Дедуп риска в рамках ОДНОЙ ячейки — риск, привязанный к нескольким подхарактеристикам
+    # ОДНОЙ характеристики, не должен удваивать свой ALE (тот же принцип, что risks_by_id выше).
+    cell_risks: dict[tuple[str, str], dict[uuid.UUID, RiskEvent]] = defaultdict(dict)
+    for ev, characteristic, system_name in rows:
+        cell_risks[(system_name, characteristic)][ev.id] = ev
+
+    if not cell_risks:
+        return []
+
+    all_risk_ids = {ev.id for risks in cell_risks.values() for ev in risks.values()}
+    measure_links = (await db.execute(
+        select(RiskEventMeasure).where(RiskEventMeasure.risk_event_id.in_(all_risk_ids))
+    )).scalars().all()
+    shares_by_risk: dict[uuid.UUID, list[float]] = defaultdict(list)
+    for link in measure_links:
+        shares_by_risk[link.risk_event_id].append(
+            float(link.ale_reduction_share) if link.ale_reduction_share is not None else 0.0
+        )
+
+    out: list[HeatmapMoneyCellOut] = []
+    for (system_name, characteristic), risks in cell_risks.items():
+        total_ale = sum(float(ev.ale_avg or 0) for ev in risks.values())
+        total_delta_ale = sum(
+            float(ev.ale_avg or 0) * sum(shares_by_risk.get(ev.id, [])) for ev in risks.values()
+        )
+        covered_ale = sum(float(ev.ale_avg or 0) for ev in risks.values() if shares_by_risk.get(ev.id))
+        coverage_pct = round(covered_ale / total_ale * 100, 1) if total_ale > 0 else 0.0
+        out.append(HeatmapMoneyCellOut(
+            system_name=system_name, characteristic=characteristic,
+            total_ale=round(total_ale, 2), total_delta_ale=round(total_delta_ale, 2),
+            coverage_pct=coverage_pct,
+        ))
+    return out
