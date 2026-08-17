@@ -13,7 +13,7 @@ SoD (ролевая модель v12 §5.1) обеспечивается в ро
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -36,6 +36,13 @@ ESCALATION_REQUEST_MEASURES = "REQUEST_MEASURES"
 MEASURE_ELIMINATING = "ELIMINATING"
 MEASURE_COMPENSATING = "COMPENSATING"
 MEASURE_TYPES = (MEASURE_ELIMINATING, MEASURE_COMPENSATING)
+
+# ТЗ v19 §17.6 (УК-55): источник формулировки меры — карточка, к которой прикасался LLM,
+# несёт неубираемую метку (УК-55 критерий приёмки), отличимую от меры, введённой человеком.
+MEASURE_SOURCE_MANUAL = "MANUAL"    # введена человеком
+MEASURE_SOURCE_CATALOG = "CATALOG"  # переиспользован measure_catalog.py как есть
+MEASURE_SOURCE_LLM = "LLM"          # LLM предложила новую формулировку (требует ревью, УК-56)
+MEASURE_SOURCES = (MEASURE_SOURCE_MANUAL, MEASURE_SOURCE_CATALOG, MEASURE_SOURCE_LLM)
 
 # Вердикт решения (RE-12/RE-13): три исхода, а не два (§3.1). Proposal остаётся совмещённой
 # (мера + решение в одной сущности, решение заказчика) — вердикт живёт полем здесь.
@@ -145,3 +152,52 @@ class Proposal(Base, TimestampMixin):
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ══════════════ ТЗ v19 §17 (Пункт 17): карточка поручения, критичность, Ц_ОМ ══════════════
+
+    # §17.2 (УК-42): обязательная привязка к risk_event — кроме процессных мер без риск-события
+    # (напр. чисто организационная мера). Проверяется в service._ensure_routable, не здесь.
+    is_process_measure: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # §17.2 (УК-44): Mission Critical под угрозой — переопределяет денежный порог, эскалация
+    # всегда. Денормализовано с Nonconformity.is_blocking при связывании (nonconformity легитимно
+    # зависит от governance, не наоборот — модульный монолит, ARCHITECTURE.md §B4), чтобы
+    # governance не импортировал nonconformity.
+    is_blocking_override: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # §17.4 (УК-49): Ц_ОМ — снимок на момент фиксации просрочки (неизменен задним числом) +
+    # текущее значение, пересчитываемое ежедневно фоновой задачей (governance/tasks.py).
+    ale_at_risk_snapshot: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    ale_at_risk_snapshot_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ale_at_risk_current: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    ale_at_risk_current_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # §17.3 (УК-46/48): состав карточки эскалации.
+    # alternative_solutions: [{"title": str, "capex": float|None, "opex": float|None, "note": str}]
+    alternative_solutions: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    systemic_scope_note: Mapped[str | None] = mapped_column(Text, nullable=True)         # ручной анализ
+    systemic_scope_llm_note: Mapped[str | None] = mapped_column(Text, nullable=True)     # пометка LLM
+    systemic_scope_system_count: Mapped[int | None] = mapped_column(Integer, nullable=True)  # детерминированно
+    department: Mapped[str | None] = mapped_column(String(255), nullable=True)           # из measure_departments
+
+    # §17.6 (УК-55/56): источник формулировки меры и обязательное ревью LLM-рекомендаций.
+    measure_source: Mapped[str] = mapped_column(String(16), default=MEASURE_SOURCE_MANUAL, nullable=False)
+    llm_reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
+    )
+    llm_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MeasureDepartment(Base, TimestampMixin):
+    """Временный справочник направлений (§17.3, УК-47) — «характеристика → направление»,
+    условное деление вручную до интеграции с AD (задел, не оргструктура сотрудников).
+    Одна запись на характеристику (не подхарактеристику — «условное деление», решение
+    заказчика §17.3): деление по подхарактеристикам добавить позже без переделки карточки,
+    если понадобится более тонкая гранулярность."""
+    __tablename__ = "measure_departments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    characteristic: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    department_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
+    )

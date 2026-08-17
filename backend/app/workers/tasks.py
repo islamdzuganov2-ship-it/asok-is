@@ -11,10 +11,12 @@ import logging
 from app.infrastructure.redis import get_redis
 from app.infrastructure.workers import celery_app  # noqa: F401  (re-export для -A ...tasks.celery_app)
 from app.modules.dataio.tasks import parse_excel_task  # noqa: F401  (регистрация задачи dataio)
+from app.modules.governance.tasks import recompute_price_of_inaction_task  # noqa: F401  (ТЗ v19 §17.4)
 from app.modules.llm.tasks import (  # noqa: F401  (регистрация задач llm)
     generate_ai_summary_task,
     llm_selfcheck_task,
 )
+from app.modules.nonconformity.tasks import sla_autoescalate_task  # noqa: F401  (ТЗ v19 §17.9)
 
 logger = logging.getLogger(__name__)
 

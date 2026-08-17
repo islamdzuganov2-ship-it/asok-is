@@ -23,9 +23,10 @@ def setup_function():
 
 
 def _new(**kw) -> ProposalCreate:
+    # is_process_measure=True по умолчанию — см. test_governance.py._new (§17.2 не в объёме этих тестов).
     base = dict(system_name="АБС Core", characteristic="Надёжность", metric_name="Доступность (uptime)",
                 rationale="Регламент резервирования узлов не соблюдается, узел восстанавливается вручную",
-                expectation="Утвердить внедрение автоматического резервирования узлов")
+                expectation="Утвердить внедрение автоматического резервирования узлов", is_process_measure=True)
     base.update(kw)
     return ProposalCreate(**base)
 

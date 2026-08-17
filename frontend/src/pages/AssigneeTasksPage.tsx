@@ -11,17 +11,18 @@
  * топ-менеджмента (маршруты в App.tsx), но действия по мерам — только просмотр.
  */
 import React, { useMemo, useState } from 'react';
-import { Alert, Button, Col, DatePicker, Empty, Input, InputNumber, Modal, Row, Space, Statistic, Table, Tag, Timeline, Typography } from 'antd';
+import { Alert, Button, Col, DatePicker, Empty, Input, InputNumber, Modal, Radio, Row, Space, Statistic, Table, Tag, Timeline, Typography } from 'antd';
 import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
-import { ClockCircleOutlined, CommentOutlined, FieldTimeOutlined, FileTextOutlined, ScheduleOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CommentOutlined, FieldTimeOutlined, FileTextOutlined, ScheduleOutlined, WarningOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { useAppDispatch } from '../store/hooks';
 import {
-  selectProposalsForAssignee, addClarification, requestDueChange, setEffortHours, type Proposal,
+  selectProposalsForAssignee, addClarification, requestDueChange, setEffortHours,
+  fetchPriceOfInaction, type Proposal, type PriceOfInaction,
 } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, SPACE } from '../theme/premium';
@@ -69,6 +70,11 @@ const AssigneeTasksPage: React.FC = () => {
   const [justif, setJustif] = useState('');
   const [hours, setHours] = useState<number | null>(null);
   const [savingHours, setSavingHours] = useState(false);
+  // ТЗ v19 §17.4/17.8 (УК-49/58): цена неисполнения (Ц_ОМ) — видна, только если выдано право
+  // view.measure_economics.own (своя мера) или общее view.risk_economics (менеджмент).
+  const canSeeEconomics = permissions.includes('view.measure_economics.own') || permissions.includes('view.risk_economics');
+  const [priceOfInaction, setPriceOfInaction] = useState<PriceOfInaction | null>(null);
+  const [priceHorizon, setPriceHorizon] = useState<'current' | 'snapshot'>('current');
 
   const stats = useMemo(() => {
     const done = tasks.filter((t) => t.execution === 'DONE').length;
@@ -76,7 +82,16 @@ const AssigneeTasksPage: React.FC = () => {
     return { total: tasks.length, done, overdue, eff: tasks.length ? Math.round((done / tasks.length) * 100) : 0 };
   }, [tasks]);
 
-  const open = (p: Proposal) => { setSel(p); setClarify(''); setNewDue(p.dueDate ? dayjs(parseRu(p.dueDate)) : null); setJustif(''); setHours(p.effortHours ?? null); };
+  const open = (p: Proposal) => {
+    setSel(p); setClarify(''); setNewDue(p.dueDate ? dayjs(parseRu(p.dueDate)) : null);
+    setJustif(''); setHours(p.effortHours ?? null);
+    setPriceOfInaction(null); setPriceHorizon('current');
+    if (canSeeEconomics) {
+      dispatch(fetchPriceOfInaction({ id: p.id })).unwrap()
+        .then((r) => setPriceOfInaction(r))
+        .catch(() => setPriceOfInaction(null));
+    }
+  };
 
   const submitHours = async () => {
     if (!sel) return;
@@ -184,6 +199,40 @@ const AssigneeTasksPage: React.FC = () => {
               <Tag>{sel.characteristic}</Tag>
               {statusTag(sel)}
             </Space>
+
+            {/* ТЗ v19 §17.4 (УК-49/51): цена неисполнения (Ц_ОМ) — только при наличии права
+                view.measure_economics.own/view.risk_economics (§17.8, УК-58) и только для
+                просроченных мер (иначе показывать нечего — «неисполнения» ещё не произошло). */}
+            {canSeeEconomics && priceOfInaction?.isOverdue && (
+              <Alert
+                type="error"
+                showIcon
+                icon={<WarningOutlined />}
+                message="Цена неисполнения (Ц_ОМ)"
+                description={
+                  <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                    <Radio.Group size="small" value={priceHorizon} onChange={(e) => setPriceHorizon(e.target.value)}>
+                      <Radio.Button value="current">На сегодня</Radio.Button>
+                      <Radio.Button value="snapshot">На момент просрочки</Radio.Button>
+                    </Radio.Group>
+                    <Text strong style={{ fontSize: 18, color: RAG.bad.strong }}>
+                      {(
+                        (priceHorizon === 'current' ? priceOfInaction.priceCurrent : priceOfInaction.priceSnapshot) ?? 0
+                      ).toLocaleString('ru-RU')} ₽
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {sel.measureType === 'COMPENSATING'
+                        ? 'Компенсирующая мера: фактический ущерб по связанным сбоям с момента просрочки, не доля риска (§17.4).'
+                        : 'Деньги под риском, которые остаются незакрытыми, пока мера не выполнена (§17.4).'}
+                      {priceOfInaction.priceCurrentAt && priceHorizon === 'current' && (
+                        <> Пересчитано: {dayjs(priceOfInaction.priceCurrentAt).format('DD.MM.YYYY')}.</>
+                      )}
+                    </Text>
+                  </Space>
+                }
+              />
+            )}
+
             {/* ТЗ v19 п.16: переписано менеджером по качеству на язык исполнителя — конкретные
                 шаги вместо профсуждения ниже. Показываем первым, обоснование — деталь под ним. */}
             {sel.executorBrief && (

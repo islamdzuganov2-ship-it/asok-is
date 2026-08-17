@@ -39,6 +39,10 @@ PERMISSIONS: list[Permission] = [
     Permission("view.reports", "Разделы", "Отчёты"),
     Permission("view.risks", "Разделы", "База рисков"),
     Permission("view.risk_economics", "Разделы", "Риск-экономика"),
+    Permission("view.measure_economics.own", "Разделы", "Цена неисполнения своей меры (Ц_ОМ)",
+               "ТЗ v19 §17.8 (УК-58): финансовый блок карточки (CAPEX/OPEX/ROSI/Ц_ОМ) на "
+               "СВОИХ мерах — отдельно от общего view.risk_economics, переключается через "
+               "конструктор прав на усмотрение суперадминистратора"),
     Permission("view.ai_assessments", "Разделы", "Оценка СИИ (ГОСТ Р 59898)"),
     Permission("view.my_tasks", "Разделы", "Мои задачи (исполнитель)",
                "Поручения, назначенные на пользователя: уточнения и запрос переноса срока"),
@@ -59,6 +63,10 @@ PERMISSIONS: list[Permission] = [
     Permission("incidents.edit", "Оценка", "Вести реестр технических сбоев"),
     Permission("governance.propose", "Меры", "Предлагать меры/задачи качества"),
     Permission("governance.decide", "Меры", "Одобрять/отклонять меры (топ-менеджмент)"),
+    Permission("governance.decide.minor", "Меры", "Одобрять/отклонять НЕкритичные меры",
+               "ТЗ v19 §17.1/17.2 (УК-39/43): ниже денежного порога маршрутизации — без "
+               "выхода на governance.decide. QUALITY_MANAGER/ADMIN — любая мера; EXECUTOR — "
+               "только мера, где он сам указан ответственным (ОМ)"),
     Permission("econ.ref.edit", "Риск-экономика", "Вести справочники контура"),
     Permission("econ.config.edit", "Риск-экономика", "Править финпараметры (риск-аппетит/пороги)"),
     Permission("risk.base.edit", "Риск-экономика", "Вести базу рисков"),
@@ -133,7 +141,8 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "view.assessments", "view.risk_economics",
         "systems.edit",
         "assessment.edit", "assessment.review", "dataio.import", "incidents.edit",
-        "governance.propose", "econ.ref.edit", "risk.base.edit", "nonconformity.edit",
+        "governance.propose", "governance.decide.minor", "econ.ref.edit", "risk.base.edit",
+        "nonconformity.edit",
     } | _WITH_RISK_BASE,
     "TEST_ANALYST": {
         "view.dashboard.analytics", "view.assessments", "view.risk_economics",
@@ -156,5 +165,13 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "view.my_tasks",
         "view.dashboard.analytics", "view.dashboard.dynamics",
         "view.dashboard.taskplan", "view.dashboard.incidents", "view.dashboard.risk_radar",
+        # ТЗ v19 §17.1 (УК-39): «может и сам директор на себя сделать меру, которую видит» —
+        # только СВОИ меры ниже порога маршрутизации (проверяется в governance.service.can_self_decide).
+        # НЕ добавляем governance.propose — approve/reject гейтятся отдельно (decide/decide.minor),
+        # остальные governance.propose-эндпоинты (создание/эскалация/переписывание меры) вне
+        # объёма §17.1 и не запрашивались.
+        "governance.decide.minor",
+        # view.measure_economics.own НЕ включено по умолчанию (§17.8, УК-58) — на усмотрение
+        # SUPER_ADMIN через конструктор прав, а не встроенное поведение роли.
     } | _VIEW_COMMON,
 }

@@ -13,6 +13,7 @@
 import { createSlice, createAsyncThunk, PayloadAction, nanoid } from '@reduxjs/toolkit';
 import type { RootState } from '../index';
 import { SCALE_PROPOSALS } from '../../data/mockScaleData';
+import { govApi } from '../api/govApi';
 
 export type ProposalStatus = 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
 
@@ -81,6 +82,49 @@ export interface Proposal {
   rosi?: number;
   recommendedVerdict?: 'ELIMINATE' | 'COMPENSATE' | 'ACCEPT';
   verdict?: 'ELIMINATE' | 'COMPENSATE' | 'ACCEPT';
+  // ТЗ v19 §17: карточка поручения, критичность, Ц_ОМ (governance/schemas.py ProposalOut).
+  isProcessMeasure?: boolean;
+  isBlockingOverride?: boolean;
+  aleAtRiskSnapshot?: number;
+  aleAtRiskSnapshotAt?: string;
+  aleAtRiskCurrent?: number;
+  aleAtRiskCurrentAt?: string;
+  alternativeSolutions?: AlternativeSolution[];
+  systemicScopeNote?: string;
+  systemicScopeLlmNote?: string;
+  systemicScopeSystemCount?: number;
+  department?: string;
+  measureSource?: 'MANUAL' | 'CATALOG' | 'LLM';
+  llmReviewedBy?: string;
+  llmReviewedAt?: string;
+}
+
+/** Альтернативный вариант решения на карточке эскалации (§17.3). */
+export interface AlternativeSolution {
+  title: string;
+  capex?: number;
+  opex?: number;
+  note?: string;
+}
+
+/** Ц_ОМ — цена неисполнения меры на карточке (§17.4). */
+export interface PriceOfInaction {
+  proposalId: string;
+  measureType?: 'ELIMINATING' | 'COMPENSATING';
+  isOverdue: boolean;
+  aleRisk: number;
+  priceSnapshot?: number;
+  priceSnapshotAt?: string;
+  priceCurrent?: number;
+  priceCurrentAt?: string;
+}
+
+/** Справочник направлений (§17.3, УК-47) — временный, характеристика → направление. */
+export interface MeasureDepartment {
+  id: string;
+  characteristic: string;
+  departmentName: string;
+  updatedBy?: string;
 }
 
 /** Уточнение исполнителя по метрике/поручению (видит менеджер по качеству). */
@@ -142,22 +186,6 @@ function persist(items: Proposal[]) {
 }
 
 // --- API governance (live-режим) ---
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
-
-async function govApi(path: string, method: string, body?: unknown): Promise<any> {
-  const token = localStorage.getItem('token');
-  const res = await fetch(`${API_BASE}/governance${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error(`governance ${method} ${path} → ${res.status}`);
-  return res.json();
-}
-
 const isLive = (s: RootState) => s.ui.dataMode === 'live';
 
 export type NewProposalInput = Omit<
@@ -389,6 +417,15 @@ export const decideDueChange = createAsyncThunk<Proposal | null, { id: string; a
   },
 );
 
+// ТЗ v19 §17 (Пункт 17): карточка поручения, критичность, Ц_ОМ — вынесено в отдельный файл
+// (governanceCardThunks.ts, потолок размера файла check-size.mjs), реэкспортируется отсюда,
+// чтобы публичный контракт слайса для потребителей (компоненты импортируют из governanceSlice) не менялся.
+export {
+  fetchPriceOfInaction, updateSystemicScope, updateAlternatives, reviewLlmMeasure,
+  fetchMeasureDepartments, upsertMeasureDepartment,
+} from './governanceCardThunks';
+import { updateSystemicScope, updateAlternatives, reviewLlmMeasure } from './governanceCardThunks';
+
 // ─────────────────────────────────── Slice ───────────────────────────────────
 interface GovernanceState {
   proposals: Proposal[];
@@ -425,7 +462,8 @@ const governanceSlice = createSlice({
     // Мутации возвращают обновлённую меру (или null, если действие не применилось в mock).
     for (const thunk of [approveProposal, rejectProposal, updateProposalMeta, editProposal,
       setExecution, setEffortHours, rewriteForExecutor, updateTask, escalateTask, decideEscalation,
-      resolveEscalation, addClarification, requestDueChange, decideDueChange]) {
+      resolveEscalation, addClarification, requestDueChange, decideDueChange,
+      updateSystemicScope, updateAlternatives, reviewLlmMeasure]) {
       builder.addCase(thunk.fulfilled, (state, action: PayloadAction<Proposal | null>) => {
         if (action.payload) {
           upsert(state, action.payload);

@@ -19,18 +19,25 @@ from app.modules.governance.models import (
     EXECUTION_NOT_DONE,
     ESCALATION_IGNORE,
     ESCALATION_REQUEST_MEASURES,
+    MEASURE_SOURCE_LLM,
+    MeasureDepartment,
     STATUS_APPROVED,
     STATUS_PENDING,
     STATUS_REJECTED,
     Proposal,
 )
 from app.modules.governance.schemas import (
+    AlternativesIn,
     EditIn,
+    LlmReviewIn,
+    MeasureDepartmentIn,
     MetaIn,
     ProposalCreate,
+    SystemicScopeIn,
     TaskUpdateIn,
 )
 from app.infrastructure.integrations.notifications import get_notification_port
+from app.modules.iam import get_role_permissions, resolve_user_id
 from app.modules.llm import generate_executor_brief
 from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
 from app.shared.notification_events import (
@@ -42,6 +49,12 @@ from app.shared.notification_events import (
     EVENT_TITLES,
 )
 from app.shared.ports import NotificationEvent
+
+# §17.1/17.2: полное право решает всё; "минорное" — только меры без обязательной эскалации,
+# и только QUALITY_MANAGER/ADMIN (любая мера) или EXECUTOR-владелец (только своя мера, §17.1).
+FULL_DECIDE_PERMISSION = "governance.decide"
+MINOR_DECIDE_PERMISSION = "governance.decide.minor"
+_MINOR_DECIDE_ANY_MEASURE_ROLES = ("QUALITY_MANAGER", "ADMIN")
 
 
 def _now() -> datetime:
@@ -65,7 +78,7 @@ def _notify(event_type: str, recipient: str | None, p: Proposal, body: str) -> N
 
 async def list_proposals(
     db: AsyncSession, *, system: str | None = None, status: str | None = None,
-    include_demo: bool = True,
+    include_demo: bool = True, order_by: str = "priority",
 ) -> list[Proposal]:
     stmt = select(Proposal)
     if system:
@@ -74,8 +87,47 @@ async def list_proposals(
         stmt = stmt.where(Proposal.status == status)
     if not include_demo:
         stmt = stmt.where(Proposal.is_demo.is_(False))
-    stmt = stmt.order_by(Proposal.created_at.desc())
-    return list((await db.execute(stmt)).scalars().all())
+    if order_by != "priority":
+        stmt = stmt.order_by(Proposal.created_at.desc())
+        return list((await db.execute(stmt)).scalars().all())
+
+    # §17.5 (УК-52): очередь по составному весу вместо created_at. N+1 запросов по деньгам под
+    # риском — приемлемо для пилотного объёма (В-39 не блокирует); серверная SQL-сортировка
+    # добавится отдельно при росте объёмов, см. §17.5 критерии приёмки.
+    rows = list((await db.execute(stmt)).scalars().all())
+    weight_by_char = await _priority_weight_lookup(db)
+    keyed = [(p, await _priority_key(db, p, weight_by_char)) for p in rows]
+    keyed.sort(key=lambda pair: pair[1], reverse=True)
+    return [p for p, _ in keyed]
+
+
+async def _priority_weight_lookup(db: AsyncSession) -> dict[str, float]:
+    """Вес ХАРАКТЕРИСТИКИ (§1.0 ГОСТ, через weights_service) — усреднение по её подхарактеристикам,
+    т.к. `Proposal.characteristic` хранит характеристику, не конкретную подхарактеристику.
+
+    Импорт ОТЛОЖЕН (не на уровне модуля): weights_service тянет econ, а governance/__init__.py
+    грузится из глубины цепочки econ.router→manager_metrics_service→governance.models — импорт
+    econ.* на уровне модуля governance/service.py даёт циклический импорт при старте приложения
+    (econ ещё не успел доопределить свои имена). На вызов функции (после старта) цикла уже нет."""
+    from app.modules.econ.weights_service import compute_subchar_weights
+
+    result = await compute_subchar_weights(db)
+    by_char: dict[str, list[float]] = {}
+    for w in result.weights:
+        by_char.setdefault(w.characteristic, []).append(w.final_weight)
+    return {c: (sum(ws) / len(ws) if ws else 0.0) for c, ws in by_char.items()}
+
+
+async def _priority_key(db: AsyncSession, p: Proposal, weight_by_char: dict[str, float]) -> float:
+    """Составной вес очереди (§17.5, УК-52/53): вес_характеристики × деньги_под_риском, с
+    двукратной надбавкой за просрочку (урегулирует срочность без отдельной формулы Ц_ОМ здесь —
+    Ц_ОМ считается отдельно, ежедневно, см. economics_service.recompute_price_of_inaction)."""
+    from app.modules.governance.economics_service import measure_ale_risk_value
+
+    w = weight_by_char.get(p.characteristic or "", 0.0) or 0.01  # неизвестная характеристика — не 0
+    ale_risk = await measure_ale_risk_value(db, p.id)
+    overdue = p.execution != EXECUTION_DONE and p.due_on is not None and p.due_on < _now()
+    return w * max(ale_risk, 1.0) * (2.0 if overdue else 1.0)
 
 
 async def get_or_404(db: AsyncSession, pid: uuid.UUID) -> Proposal:
@@ -94,12 +146,76 @@ async def create(db: AsyncSession, data: ProposalCreate, username: str) -> Propo
     db.add(p)
     await db.commit()
     await db.refresh(p)
-    return p
+    return await apply_department(db, p)
 
 
-async def decide(db: AsyncSession, p: Proposal, approve: bool, comment: str | None, username: str) -> Proposal:
+async def _ensure_routable(db: AsyncSession, p: Proposal) -> None:
+    """§17.2 (УК-42): без привязки к risk_event мера не может быть решена/эскалирована —
+    кроме явно помеченных процессных мер (`is_process_measure`). Проверяется на действии, не
+    на создании: линковка к risk_event идёт отдельным вызовом ПОСЛЕ создания Proposal."""
+    if p.is_process_measure:
+        return
+    from app.modules.governance.economics_service import has_linked_risks
+
+    if not await has_linked_risks(db, p.id):
+        raise ValidationError(
+            "Мера не привязана ни к одному рисковому событию (risk_event) — обязательно для "
+            "решения/эскалации (§17.2, УК-42). Пометьте меру как процессную, если привязка "
+            "неприменима.",
+        )
+
+
+async def can_self_decide(db: AsyncSession, p: Proposal, user: dict) -> bool:
+    """§17.1/17.2: ниже денежного порога — решает QUALITY_MANAGER/ADMIN (любая мера) или сам
+    ОМ-исполнитель на СВОЮ меру (owner_user_id совпадает), без выхода на governance.decide."""
+    from app.modules.governance.economics_service import route_measure
+
+    escalate, _ = await route_measure(db, p)
+    if escalate:
+        return False
+    roles = user.get("roles", [])
+    if any(r in _MINOR_DECIDE_ANY_MEASURE_ROLES for r in roles):
+        return True
+    if "EXECUTOR" in roles:
+        uid = await resolve_user_id(db, user.get("id"))
+        return uid is not None and p.owner_user_id is not None and p.owner_user_id == uid
+    return False
+
+
+async def decide(
+    db: AsyncSession, p: Proposal, approve: bool, comment: str | None, username: str,
+    user: dict | None = None,
+) -> Proposal:
     if p.status != STATUS_PENDING:
         raise ConflictError("Решение можно принять только по мере, ожидающей одобрения")
+    await _ensure_routable(db, p)
+
+    # §17.1/17.2: если у вызывающего нет ПОЛНОГО права (только «минорное»), решение допустимо
+    # только для мер ниже порога маршрутизации и только своей ролью (QUALITY_MANAGER/ADMIN —
+    # любая; EXECUTOR — только своя). Роутер уже пропустил по require_permission(full ИЛИ minor).
+    escalation_required = False
+    if user is not None:
+        granted = await get_role_permissions(db, (user.get("roles") or [""])[0])
+        if FULL_DECIDE_PERMISSION not in granted:
+            if not await can_self_decide(db, p, user):
+                raise ConflictError(
+                    "Эта мера требует эскалации к топ-менеджменту (порог/критичность §17.2) — "
+                    "самостоятельное решение недоступно",
+                )
+        else:
+            from app.modules.governance.economics_service import route_measure
+
+            escalation_required, _ = await route_measure(db, p)
+
+    # §17.6 (УК-56): LLM-рекомендация без ревью QUALITY_MANAGER/RISK_MANAGER не может дойти
+    # до решения топ-менеджмента — гейт применяется именно на пути эскалации, не на самостоятельном
+    # решении QUALITY_MANAGER (тот и есть ревьюер по построению SoD, см. §17.6).
+    if escalation_required and llm_review_pending(p):
+        raise ConflictError(
+            "Мера предложена LLM и ещё не прошла обязательное ревью QUALITY_MANAGER/"
+            "RISK_MANAGER (§17.6, УК-56) — решение топ-менеджмента недоступно до ревью",
+        )
+
     p.status = STATUS_APPROVED if approve else STATUS_REJECTED
     p.decided_by = username
     p.decided_at = _now()
@@ -263,4 +379,126 @@ async def resolve_escalation(db: AsyncSession, p: Proposal) -> Proposal:
     p.escalated = False
     await db.commit()
     await db.refresh(p)
+    return p
+
+
+# ═══════════════════════ §17.3 (УК-46/48): состав карточки эскалации ═══════════════════════
+
+async def set_systemic_scope(db: AsyncSession, p: Proposal, note: str, username: str) -> Proposal:
+    """Ручной анализ системности (QUALITY_MANAGER) — приоритетнее LLM-пометки, никогда ею не
+    затирается. Пересчитывает и число систем, и LLM-пометку заново поверх нового ручного текста."""
+    from app.modules.governance.systemic_scope import compute_systemic_scope
+
+    changes = _apply_with_history(p, {"systemic_scope_note": note}, username)
+    count, llm_note = await compute_systemic_scope(db, p)
+    p.systemic_scope_system_count = count
+    p.systemic_scope_llm_note = llm_note
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+
+async def refresh_systemic_scope(db: AsyncSession, p: Proposal) -> Proposal:
+    """Пересчёт числа систем/LLM-пометки БЕЗ изменения ручного анализа — вызывается при
+    появлении новых связей риск↔ТС/риск↔мера, не только по кнопке пользователя."""
+    from app.modules.governance.systemic_scope import compute_systemic_scope
+
+    count, llm_note = await compute_systemic_scope(db, p)
+    p.systemic_scope_system_count = count
+    p.systemic_scope_llm_note = llm_note
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+
+async def set_alternative_solutions(
+    db: AsyncSession, p: Proposal, alternatives: list[dict], username: str,
+) -> Proposal:
+    """Альтернативные варианты решения на карточке эскалации (§17.3, УК-48)."""
+    at = _now().isoformat()
+    history = list(p.history or [])
+    history.append({
+        "at": at, "by": username, "field": "alternativeSolutions",
+        "from": f"{len(p.alternative_solutions or [])} вариант(а)",
+        "to": f"{len(alternatives)} вариант(а)",
+    })
+    p.alternative_solutions = alternatives
+    p.history = history
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+
+# ═══════════════════════ §17.6 (УК-55/56): источник и ревью LLM-рекомендаций ═══════════════════════
+
+async def mark_llm_reviewed(
+    db: AsyncSession, p: Proposal, approved: bool, comment: str | None,
+    reviewer_username: str, reviewer_uid: uuid.UUID | None,
+) -> Proposal:
+    """Обязательное ревью перед эскалацией (УК-56): LLM-рекомендация не может дойти до
+    governance.decide без этой отметки. `approved=False` возвращает меру к MANUAL — исходный
+    текст остаётся (правит ревьюер вручную), метка «рекомендация LLM» снимается."""
+    if p.measure_source != MEASURE_SOURCE_LLM:
+        raise ConflictError("Ревью применимо только к мерам с источником LLM")
+    at = _now().isoformat()
+    history = list(p.history or [])
+    history.append({
+        "at": at, "by": reviewer_username, "field": "llmReview",
+        "from": "LLM, не проверено", "to": ("одобрено" if approved else "отклонено") +
+        (f": {comment.strip()}" if comment else ""),
+    })
+    p.history = history
+    if approved:
+        p.llm_reviewed_by = reviewer_uid
+        p.llm_reviewed_at = _now()
+    else:
+        p.measure_source = "MANUAL"
+        p.llm_reviewed_by = None
+        p.llm_reviewed_at = None
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+
+def llm_review_pending(p: Proposal) -> bool:
+    """§17.6 (УК-56): гейт эскалации — LLM-текст без ревью не может уйти к топ-менеджменту."""
+    return p.measure_source == MEASURE_SOURCE_LLM and p.llm_reviewed_by is None
+
+
+# ═══════════════════════ §17.3 (УК-47): справочник направлений ═══════════════════════
+
+async def list_departments(db: AsyncSession) -> list[MeasureDepartment]:
+    stmt = select(MeasureDepartment).order_by(MeasureDepartment.characteristic)
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def set_department(
+    db: AsyncSession, data: MeasureDepartmentIn, user_id: uuid.UUID | None,
+) -> MeasureDepartment:
+    """Upsert по характеристике — временный справочник (§17.3), задел под AD (УК-47)."""
+    row = (await db.execute(
+        select(MeasureDepartment).where(MeasureDepartment.characteristic == data.characteristic)
+    )).scalar_one_or_none()
+    if row is None:
+        row = MeasureDepartment(characteristic=data.characteristic)
+        db.add(row)
+    row.department_name = data.department_name
+    row.updated_by = user_id
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def apply_department(db: AsyncSession, p: Proposal) -> Proposal:
+    """Подставляет направление на карточку по характеристике меры (§17.3) — вызывается при
+    создании/правке характеристики, идемпотентно (нет справочника для характеристики → без изменений)."""
+    if not p.characteristic:
+        return p
+    row = (await db.execute(
+        select(MeasureDepartment).where(MeasureDepartment.characteristic == p.characteristic)
+    )).scalar_one_or_none()
+    if row is not None and p.department != row.department_name:
+        p.department = row.department_name
+        await db.commit()
+        await db.refresh(p)
     return p

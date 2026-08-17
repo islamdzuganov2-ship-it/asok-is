@@ -11,26 +11,32 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
 from app.modules.governance import economics_service, management_summary, service
 from app.modules.governance.schemas import (
+    AlternativesIn,
     DecisionIn,
     EditIn,
     EffortHoursIn,
     EscalateIn,
     EscalationDecisionIn,
     ExecutionIn,
+    LlmReviewIn,
+    MeasureDepartmentIn,
+    MeasureDepartmentOut,
     MeasureEconomicsIn,
     MeasureEconomicsResult,
     MetaIn,
+    PriceOfInactionOut,
     ProposalCreate,
     ProposalOut,
+    SystemicScopeIn,
     TaskUpdateIn,
 )
-from app.modules.iam import get_current_user, require_permission, resolve_user_id
+from app.modules.iam import get_current_user, get_role_permissions, require_permission, resolve_user_id
 
 router = APIRouter()
 
@@ -49,10 +55,15 @@ async def list_proposals(
     system: str | None = None,
     status: str | None = None,
     include_demo: bool = True,
+    order_by: str = "priority",
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> list:
-    return await service.list_proposals(db, system=system, status=status, include_demo=include_demo)
+    """order_by=priority (по умолчанию, §17.5, УК-52) — вес характеристики × деньги под риском,
+    ×2 при просрочке. order_by=created_at — прежнее поведение (создано→новее сверху)."""
+    return await service.list_proposals(
+        db, system=system, status=status, include_demo=include_demo, order_by=order_by,
+    )
 
 
 @router.post("/proposals", response_model=ProposalOut, status_code=201)
@@ -67,19 +78,23 @@ async def create_proposal(
 @router.post("/proposals/{pid}/approve", response_model=ProposalOut)
 async def approve_proposal(
     pid: uuid.UUID, payload: DecisionIn | None = None,
-    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.decide")),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("governance.decide", "governance.decide.minor")),
 ):
+    """§17.1/17.2: полное право решает любую меру; «минорное» — только ниже порога маршрутизации
+    (проверяется в service.decide через can_self_decide)."""
     p = await service.get_or_404(db, pid)
-    return await service.decide(db, p, True, (payload.comment if payload else None), _username(user))
+    return await service.decide(db, p, True, (payload.comment if payload else None), _username(user), user=user)
 
 
 @router.post("/proposals/{pid}/reject", response_model=ProposalOut)
 async def reject_proposal(
     pid: uuid.UUID, payload: DecisionIn | None = None,
-    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.decide")),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("governance.decide", "governance.decide.minor")),
 ):
     p = await service.get_or_404(db, pid)
-    return await service.decide(db, p, False, (payload.comment if payload else None), _username(user))
+    return await service.decide(db, p, False, (payload.comment if payload else None), _username(user), user=user)
 
 
 @router.patch("/proposals/{pid}/meta", response_model=ProposalOut)
@@ -199,3 +214,96 @@ async def get_management_summary(
     стоимость → результат → ответственный, ≤80 слов, без формул (см. модуль)."""
     p = await service.get_or_404(db, pid)
     return management_summary.build_management_summary(p)
+
+
+# ── ТЗ v19 §17 (Пункт 17): карточка поручения, критичность, Ц_ОМ ──
+
+@router.get("/proposals/{pid}/price-of-inaction", response_model=PriceOfInactionOut)
+async def get_price_of_inaction(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("view.risk_economics", "view.measure_economics.own")),
+):
+    """Ц_ОМ на карточке (§17.4). Держатель только `view.measure_economics.own` (обычно
+    EXECUTOR) видит цену неисполнения ТОЛЬКО своей меры — общий `view.risk_economics` видит
+    любую (менеджмент/риск-менеджер)."""
+    p = await service.get_or_404(db, pid)
+    granted = await get_role_permissions(db, (user.get("roles") or [""])[0])
+    if "view.risk_economics" not in granted:
+        uid = await resolve_user_id(db, user.get("id"))
+        if uid is None or p.owner_user_id != uid:
+            raise HTTPException(status_code=403, detail="Доступна только цена неисполнения своей меры")
+    return await economics_service.compute_price_of_inaction(db, p)
+
+
+@router.post("/proposals/{pid}/price-of-inaction/recompute", response_model=ProposalOut)
+async def recompute_price_of_inaction(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db), _: dict = Depends(require_permission("governance.propose")),
+):
+    """Пересчёт по кнопке (кроме ежедневной фоновой задачи, governance/tasks.py)."""
+    p = await service.get_or_404(db, pid)
+    return await economics_service.recompute_price_of_inaction(db, p)
+
+
+@router.patch("/proposals/{pid}/systemic-scope", response_model=ProposalOut)
+async def update_systemic_scope(
+    pid: uuid.UUID, payload: SystemicScopeIn,
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.propose")),
+):
+    """Ручной анализ системности (§17.3, УК-46) — приоритетнее LLM-пометки."""
+    p = await service.get_or_404(db, pid)
+    return await service.set_systemic_scope(db, p, payload.note, _username(user))
+
+
+@router.post("/proposals/{pid}/systemic-scope/refresh", response_model=ProposalOut)
+async def refresh_systemic_scope(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db), _: dict = Depends(require_permission("governance.propose")),
+):
+    """Пересчёт числа систем/LLM-пометки без изменения ручного анализа (§17.3)."""
+    p = await service.get_or_404(db, pid)
+    return await service.refresh_systemic_scope(db, p)
+
+
+@router.patch("/proposals/{pid}/alternatives", response_model=ProposalOut)
+async def update_alternatives(
+    pid: uuid.UUID, payload: AlternativesIn,
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.propose")),
+):
+    """Альтернативные варианты решения на карточке эскалации (§17.3, УК-48)."""
+    p = await service.get_or_404(db, pid)
+    alternatives = [a.model_dump(by_alias=False) for a in payload.alternatives]
+    return await service.set_alternative_solutions(db, p, alternatives, _username(user))
+
+
+@router.post("/proposals/{pid}/llm-review", response_model=ProposalOut)
+async def review_llm_measure(
+    pid: uuid.UUID, payload: LlmReviewIn,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("governance.propose", "risk.register.edit")),
+):
+    """Обязательное ревью LLM-рекомендации перед эскалацией (§17.6, УК-56) —
+    QUALITY_MANAGER (governance.propose) или RISK_MANAGER (risk.register.edit)."""
+    p = await service.get_or_404(db, pid)
+    uid = await resolve_user_id(db, user.get("id"))
+    return await service.mark_llm_reviewed(db, p, payload.approved, payload.comment, _username(user), uid)
+
+
+@router.get("/measure-departments", response_model=list[MeasureDepartmentOut])
+async def list_measure_departments(
+    db: AsyncSession = Depends(get_db), _: dict = Depends(get_current_user),
+):
+    """Временный справочник направлений (§17.3, УК-47) — характеристика → направление."""
+    return await service.list_departments(db)
+
+
+@router.put("/measure-departments", response_model=MeasureDepartmentOut)
+async def upsert_measure_department(
+    payload: MeasureDepartmentIn,
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("admin.permissions.manage")),
+):
+    """Ведение справочника — SUPER_ADMIN (В-58: рекомендация — тот же уровень, что настройка
+    прав, пока не решено иначе)."""
+    uid = await resolve_user_id(db, user.get("id"))
+    return await service.set_department(db, payload, uid)

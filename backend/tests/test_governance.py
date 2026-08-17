@@ -13,8 +13,10 @@ from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
 
 
 def _new(system="АБС Core", **kw) -> ProposalCreate:
+    # is_process_measure=True по умолчанию: эти фикстуры проверяют SoD/статусы, не §17.2
+    # (обязательная привязка к risk_event) — без этого decide() требует risk_event.
     base = dict(system_name=system, characteristic="Надёжность", metric_name="Доступность",
-                rationale="Инцидент P1", expectation="Резервирование узлов")
+                rationale="Инцидент P1", expectation="Резервирование узлов", is_process_measure=True)
     base.update(kw)
     return ProposalCreate(**base)
 
