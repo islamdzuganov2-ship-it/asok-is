@@ -39,6 +39,7 @@ from app.modules.governance.schemas import (
 from app.infrastructure.integrations.notifications import get_notification_port
 from app.modules.iam import get_role_permissions, resolve_user_id
 from app.modules.llm import generate_executor_brief
+from app.shared.dates import parse_ru_date
 from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
 from app.shared.notification_events import (
     EVENT_MEASURE_APPROVED,
@@ -168,6 +169,9 @@ async def create(db: AsyncSession, data: ProposalCreate, username: str) -> Propo
         **data.model_dump(exclude_none=False),
         status=STATUS_PENDING,
         created_by=username,
+        # ТЗ v19 УК-36: due_on — источник истины, считается от due_date сразу при создании
+        # (не только разовым backfill-скриптом), иначе новые меры навсегда остаются без due_on.
+        due_on=parse_ru_date(data.due_date),
     )
     db.add(p)
     await db.commit()
@@ -292,6 +296,11 @@ def _apply_with_history(p: Proposal, patch: dict, username: str) -> int:
         })
         setattr(p, field, value)
         changed += 1
+        # ТЗ v19 УК-36: due_date правится и топ-менеджментом (MetaIn), и аудитом (EditIn) —
+        # due_on должен пересчитываться при каждой правке, иначе разъезжается с due_date молча
+        # после первого редактирования (backfill_due_dates.py закрывает это только один раз).
+        if field == "due_date":
+            p.due_on = parse_ru_date(value)
     if changed:
         p.history = history
     return changed

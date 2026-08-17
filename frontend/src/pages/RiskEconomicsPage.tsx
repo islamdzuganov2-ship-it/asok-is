@@ -10,7 +10,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography } from 'antd';
 import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
-import { PlusOutlined, ReloadOutlined, InboxOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, InboxOutlined, SwapOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import KpiCard from '../components/KpiCard';
 import { premiumCard, accentDot, accentColorOf, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
@@ -41,6 +41,12 @@ interface BpCost { id: string; businessProcessId: string; method: string; costPe
 interface MarketBenchmark {
   id: string; kind: string; dimension: string; companySizeClass?: string | null;
   value: number; unit: string; source: string; observedOn: string; note?: string | null;
+}
+// ТЗ v19 п.9-10 (УК-24): сравнение «мы/рынок» — бэкенд считает (econ/service.py compare_business_process/
+// compare_support_rate), эндпоинты уже были, просто не вызывались с фронта.
+interface BenchmarkComparison {
+  ownValue: number | null; ownUnit: string; benchmark?: MarketBenchmark | null;
+  deltaPct?: number | null; note: string;
 }
 interface Nonconformity {
   id: string; code?: string | null; systemName: string; characteristic: string;
@@ -439,6 +445,10 @@ const ReferencesTab: React.FC = () => {
   const [rateForm] = Form.useForm();
   const [bpForm] = Form.useForm();
   const [benchmarkForm] = Form.useForm();
+  // ТЗ v19 УК-24: сравнение «мы/рынок» — по клику, не пересчитывается фоном (рынок обновляется
+  // редко, и результат зависит от того, что именно вносили в last-load costs/rates).
+  const [compareOpen, setCompareOpen] = useState<{ title: string; data: BenchmarkComparison } | null>(null);
+  const [comparing, setComparing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -486,6 +496,24 @@ const ReferencesTab: React.FC = () => {
     finally { setSaving(false); }
   };
 
+  const compareRate = async (rate: SupportRate) => {
+    setComparing(rate.id);
+    try {
+      const data = await api<BenchmarkComparison>(`/econ/rates/${rate.id}/benchmark`);
+      setCompareOpen({ title: `Ставка ${rate.executorType === 'VENDOR' ? 'вендора' : 'внутренняя'} · линия ${rate.line}`, data });
+    } catch (e: any) { message.error(`Ошибка сравнения: ${e.message}`); }
+    finally { setComparing(null); }
+  };
+
+  const compareBp = async (bp: BusinessProcess) => {
+    setComparing(bp.id);
+    try {
+      const data = await api<BenchmarkComparison>(`/econ/business-processes/${bp.id}/benchmark`);
+      setCompareOpen({ title: `${bp.name} (${bp.code})`, data });
+    } catch (e: any) { message.error(`Ошибка сравнения: ${e.message}`); }
+    finally { setComparing(null); }
+  };
+
   const createBenchmark = async () => {
     try {
       const v = await benchmarkForm.validateFields();
@@ -515,6 +543,14 @@ const ReferencesTab: React.FC = () => {
       sorter: sorterFor((r: SupportRate) => r.systemId),
       render: (s?: string | null) => <Tag>{s ? 'Для ИС' : 'Глобальная'}</Tag>,
     },
+    {
+      title: '', key: 'compare', width: 130, fixed: 'right',
+      render: (_: unknown, r: SupportRate) => (
+        <Button size="small" icon={<SwapOutlined />} loading={comparing === r.id} onClick={() => compareRate(r)}>
+          С рынком
+        </Button>
+      ),
+    },
   ];
 
   const bpCols: ColumnsType<BusinessProcess> = [
@@ -529,6 +565,14 @@ const ReferencesTab: React.FC = () => {
       sorter: sorterFor((bp: BusinessProcess) => costs[bp.id]),
       render: (_: unknown, bp: BusinessProcess) => fmtMoney(costs[bp.id]),
     }),
+    {
+      title: '', key: 'compare', width: 130, fixed: 'right',
+      render: (_: unknown, bp: BusinessProcess) => (
+        <Button size="small" icon={<SwapOutlined />} loading={comparing === bp.id} onClick={() => compareBp(bp)}>
+          С рынком
+        </Button>
+      ),
+    },
   ];
 
   const benchmarkCols: ColumnsType<MarketBenchmark> = [
@@ -557,7 +601,7 @@ const ReferencesTab: React.FC = () => {
       >
         <Table<SupportRate>
           columns={rateCols} dataSource={rates} rowKey="id" loading={loading} size="small"
-          scroll={{ x: 820 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
+          scroll={{ x: 950 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
           locale={{ emptyText: 'Ставок нет. Внутренняя = (ФОТ×K_накладных)/фонд; вендорская — из контракта.' }}
         />
       </Card>
@@ -570,7 +614,7 @@ const ReferencesTab: React.FC = () => {
       >
         <Table<BusinessProcess>
           columns={bpCols} dataSource={bps} rowKey="id" loading={loading} size="small"
-          scroll={{ x: 700 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
+          scroll={{ x: 830 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
           locale={{ emptyText: 'БП нет. Стоимость минуты — атрибут процесса: фронтальные считаются транзакционно, бэк-офис ресурсно.' }}
         />
       </Card>
@@ -674,6 +718,40 @@ const ReferencesTab: React.FC = () => {
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* ТЗ v19 УК-24: результат сравнения «мы/рынок» — по клику из строки ставки/БП. */}
+      <Modal
+        title={compareOpen ? `Сравнение с рынком · ${compareOpen.title}` : ''}
+        open={!!compareOpen}
+        onCancel={() => setCompareOpen(null)}
+        footer={<Button onClick={() => setCompareOpen(null)}>Закрыть</Button>}
+      >
+        {compareOpen && (
+          compareOpen.data.ownValue === null ? (
+            <Text type="secondary">{compareOpen.data.note}</Text>
+          ) : (
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Space size="large">
+                <Statistic title="У нас" value={compareOpen.data.ownValue} suffix={compareOpen.data.ownUnit} precision={2} />
+                {compareOpen.data.benchmark && (
+                  <Statistic title="Рынок" value={compareOpen.data.benchmark.value} suffix={compareOpen.data.benchmark.unit} precision={2} />
+                )}
+              </Space>
+              {compareOpen.data.deltaPct != null && (
+                <Text strong style={{ color: compareOpen.data.deltaPct > 0 ? RAG.bad.strong : RAG.good.strong }}>
+                  {compareOpen.data.note}
+                </Text>
+              )}
+              {compareOpen.data.deltaPct == null && <Text type="secondary">{compareOpen.data.note}</Text>}
+              {compareOpen.data.benchmark && (
+                <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                  Источник: {compareOpen.data.benchmark.source} · на {compareOpen.data.benchmark.observedOn}
+                </Text>
+              )}
+            </Space>
+          )
+        )}
       </Modal>
     </Space>
   );

@@ -37,6 +37,36 @@ const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api
 interface SubDetail { name: string; score: number }
 interface CharDetail { title: string; abbr: string; score: number; subs: SubDetail[] }
 
+// ТЗ v19 УК-01/02/03 — «объяснимая цифра»: бэкенд уже считает вклад каждой ИС в портфельный
+// балл (assessment/router.py scoreBreakdown) и вклад каждой подхарактеристики в балл самой ИС
+// (systemDetails[i].scoreBreakdown) — опционально, потому что демо-данные (mockScaleData.ts)
+// таких полей не несут (там простое среднее, без веса критичности) — режим live получает
+// честное объяснение, mock честно показывает старое приближение, а не фейковую свёртку.
+interface SystemContribution {
+  system: string;
+  criticality: string | null;
+  score: number;
+  criticalityWeight: number;
+  pointsContribution: number;
+}
+interface PortfolioBreakdown {
+  criticalityWeightApplied: number;
+  systemContributions: SystemContribution[];
+}
+interface SubcharContribution {
+  characteristic: string;
+  subcharacteristic: string;
+  weight: number;
+  x: number;
+  pointsContribution: number;
+}
+interface SystemScoreBreakdown {
+  coverage: number;
+  weightApplied: number;
+  weightTotal: number;
+  contributions: SubcharContribution[];
+}
+
 interface DashboardData {
   globalHealthScore: number;
   levelCounts: Record<string, number>;
@@ -46,7 +76,8 @@ interface DashboardData {
   problematicSystems: { id: string; name: string; criticality: string; lowMetricsCount: number }[];
   totalMetrics: number;
   characteristics?: CharDetail[];   // средние по характеристикам (шапка)
-  systemDetails?: { name: string; chars: CharDetail[] }[]; // по каждой системе
+  systemDetails?: { name: string; chars: CharDetail[]; scoreBreakdown?: SystemScoreBreakdown }[]; // по каждой системе
+  scoreBreakdown?: PortfolioBreakdown;   // портфельный уровень — только live
 }
 
 type CharModal = CharDetail & { system?: string };
@@ -84,7 +115,7 @@ const DashboardPage: React.FC = () => {
   // ТЗ v20 п.7.1: клик по цифре «Низких метрик» у КОНКРЕТНОЙ ИС — карточка именно с её
   // просевшими метриками, а не общий список ещё раз (это и была жалоба: «тот же список,
   // просто расширенный»).
-  const [sysLowDetail, setSysLowDetail] = useState<{ system: string; rows: { characteristic: string; subcharacteristic: string; score: number }[] } | null>(null);
+  const [sysLowDetail, setSysLowDetail] = useState<{ system: string; rows: { characteristic: string; subcharacteristic: string; score: number }[]; breakdown?: SystemScoreBreakdown } | null>(null);
   const { weights: charWeights } = useCharacteristicWeights();
   const donutRef = useRef<HTMLDivElement>(null);
   const donutChart = useRef<echarts.ECharts | null>(null);
@@ -240,7 +271,7 @@ const DashboardPage: React.FC = () => {
       .map((s) => ({ characteristic: c.title, subcharacteristic: s.name, score: s.score, weight: charWeights[c.title] ?? 0 })))
       .sort((a, b) => b.weight - a.weight)
       .map(({ characteristic, subcharacteristic, score }) => ({ characteristic, subcharacteristic, score }));
-    setSysLowDetail({ system: sysName, rows });
+    setSysLowDetail({ system: sysName, rows, breakdown: sd?.scoreBreakdown });
   };
 
   if (error) {
@@ -271,10 +302,44 @@ const DashboardPage: React.FC = () => {
       return (
         <>
           {detail === 'global' && (
-            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-              Глобальный балл {healthPct}% — среднее по {data.totalMetrics} метрикам {data.yAxisLabels.length} ИС.
-              Ниже — распределение метрик по уровням качества.
-            </Text>
+            <>
+              {data.scoreBreakdown ? (
+                <>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                    Глобальный балл {healthPct}% — взвешенная свёртка баллов {data.yAxisLabels.length} ИС,
+                    вес каждой — класс критичности системы (не голое среднее). Ниже — вклад каждой ИС,
+                    от наибольшего к наименьшему.
+                  </Text>
+                  <Table
+                    dataSource={data.scoreBreakdown.systemContributions}
+                    rowKey="system"
+                    size="small"
+                    pagination={false}
+                    style={{ marginBottom: 16 }}
+                    columns={[
+                      { title: 'ИС', dataIndex: 'system', ellipsis: true, sorter: sorterFor((r: SystemContribution) => r.system) },
+                      { title: 'Критичность', dataIndex: 'criticality',
+                        sorter: sorterFor((r: SystemContribution) => CRIT_RANK[r.criticality ?? ''] ?? -1),
+                        render: (v: string | null) => v ? critTag(v) : <Text type="secondary">—</Text> },
+                      numericColumn({ title: 'Балл', dataIndex: 'score', width: 80,
+                        sorter: sorterFor((r: SystemContribution) => r.score),
+                        render: (v: number) => <Text>{v}%</Text> }),
+                      numericColumn({ title: 'Вес', dataIndex: 'criticalityWeight', width: 70,
+                        sorter: sorterFor((r: SystemContribution) => r.criticalityWeight) }),
+                      numericColumn({ title: 'Вклад в баллах', dataIndex: 'pointsContribution', width: 130,
+                        sorter: sorterFor((r: SystemContribution) => r.pointsContribution),
+                        defaultSortOrder: 'descend',
+                        render: (v: number) => <Text strong>{v.toFixed(1)}</Text> }),
+                    ]}
+                  />
+                </>
+              ) : (
+                <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                  Глобальный балл {healthPct}% — среднее по {data.totalMetrics} метрикам {data.yAxisLabels.length} ИС.
+                  Ниже — распределение метрик по уровням качества.
+                </Text>
+              )}
+            </>
           )}
           <Table
             dataSource={levelDist} rowKey="level" size="small" pagination={false}
@@ -525,23 +590,32 @@ const DashboardPage: React.FC = () => {
         title={sysLowDetail ? `${sysLowDetail.system} — низкие метрики (${sysLowDetail.rows.length})` : ''}
       >
         {sysLowDetail && (
-          sysLowDetail.rows.length === 0 ? (
-            <Text type="secondary">Нет метрик уровня «Низкий уровень» по этой ИС.</Text>
-          ) : (
-            <Table
-              dataSource={sysLowDetail.rows} rowKey={(r) => `${r.characteristic}|${r.subcharacteristic}`}
-              size="small" pagination={false}
-              columns={[
-                { title: 'Характеристика', dataIndex: 'characteristic', ellipsis: true,
-                  sorter: sorterFor((r: any) => r.characteristic) },
-                { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', ellipsis: true,
-                  sorter: sorterFor((r: any) => r.subcharacteristic) },
-                numericColumn({ title: 'Балл', dataIndex: 'score', width: 100,
-                  sorter: sorterFor((r: any) => r.score),
-                  render: (v: number) => <Tag style={solidTagStyle(RAG.bad.strong)}>{v}%</Tag> }),
-              ]}
-            />
-          )
+          <>
+            {sysLowDetail.breakdown && (
+              <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                Покрытие измеримостью: {Math.round(sysLowDetail.breakdown.coverage * 100)}%
+                {' '}({sysLowDetail.breakdown.weightApplied} из {sysLowDetail.breakdown.weightTotal} баллов веса
+                модели измерено — остальное не влияет на балл системы, вместо штрафа за нехватку данных).
+              </Text>
+            )}
+            {sysLowDetail.rows.length === 0 ? (
+              <Text type="secondary">Нет метрик уровня «Низкий уровень» по этой ИС.</Text>
+            ) : (
+              <Table
+                dataSource={sysLowDetail.rows} rowKey={(r) => `${r.characteristic}|${r.subcharacteristic}`}
+                size="small" pagination={false}
+                columns={[
+                  { title: 'Характеристика', dataIndex: 'characteristic', ellipsis: true,
+                    sorter: sorterFor((r: any) => r.characteristic) },
+                  { title: 'Подхарактеристика', dataIndex: 'subcharacteristic', ellipsis: true,
+                    sorter: sorterFor((r: any) => r.subcharacteristic) },
+                  numericColumn({ title: 'Балл', dataIndex: 'score', width: 100,
+                    sorter: sorterFor((r: any) => r.score),
+                    render: (v: number) => <Tag style={solidTagStyle(RAG.bad.strong)}>{v}%</Tag> }),
+                ]}
+              />
+            )}
+          </>
         )}
       </Modal>
     </div>

@@ -49,6 +49,16 @@ const parseRu = (d?: string): Date | null => {
   const m = /(\d{2})\.(\d{2})\.(\d{4})/.exec(d);
   return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
 };
+// ТЗ v19 УК-36: срок — из реального `dueOn` (ISO, источник истины), а не из парсинга строки
+// `dueDate` регуляркой. `dueOn` есть только в live-режиме (демо-данные его не несут) — mock
+// продолжает использовать старый парсинг, честно, а не подделывает ISO-дату под демо-строку.
+const dueDateOf = (p: Proposal): Date | null => {
+  if (p.dueOn) {
+    const d = new Date(p.dueOn);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return parseRu(p.dueDate);
+};
 const fmt = (d: Date) => d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 
 type Kind = 'done' | 'overdue' | 'escalated' | 'progress' | 'pending';
@@ -110,14 +120,14 @@ const TaskPlanDashboard: React.FC = () => {
     if (t.execution === 'DONE') return 'done';
     if (t.escalated) return 'escalated';
     if (t.status === 'PENDING_APPROVAL') return 'pending';
-    const d = parseRu(t.dueDate);
+    const d = dueDateOf(t);
     if (d && d.getTime() < now) return 'overdue';
     return 'progress';
   };
   // Зона задачи (3 цвета): просрочено / зона риска / в плане.
   const healthOf = (t: Proposal): Health => {
     if (t.execution === 'DONE') return 'plan';
-    const d = parseRu(t.dueDate);
+    const d = dueDateOf(t);
     if (!d) return 'plan';
     const daysLeft = Math.round((d.getTime() - now) / DAY);
     if (daysLeft < 0) return 'overdue';
@@ -142,7 +152,7 @@ const TaskPlanDashboard: React.FC = () => {
       .filter((p) => sysFilter === ALL_SYS || p.systemName === sysFilter)
       .filter((p) => charFilter === ALL_CHAR || p.characteristic === charFilter)
       .map((p) => ({ p, kind: kindOf(p) }))
-      .sort((a, b) => (parseRu(a.p.dueDate)?.getTime() ?? Infinity) - (parseRu(b.p.dueDate)?.getTime() ?? Infinity)),
+      .sort((a, b) => (dueDateOf(a.p)?.getTime() ?? Infinity) - (dueDateOf(b.p)?.getTime() ?? Infinity)),
     [proposals, sysFilter, charFilter],
   );
   const counts = useMemo(() => {
@@ -166,7 +176,7 @@ const TaskPlanDashboard: React.FC = () => {
   const bounds = useMemo(() => {
     const ts = tasks.flatMap(({ p }) => {
       const s = new Date(p.createdAt).getTime();
-      const e = (parseRu(p.dueDate)?.getTime()) ?? s + 30 * DAY;
+      const e = (dueDateOf(p)?.getTime()) ?? s + 30 * DAY;
       return [s, e];
     });
     ts.push(now, now + 45 * DAY, now - 15 * DAY);
@@ -259,9 +269,9 @@ const TaskPlanDashboard: React.FC = () => {
       render: (_: unknown, r: { p: Proposal }) => (r.p.owner ? <Text>{r.p.owner}</Text> : <Text type="secondary">не назначен</Text>) },
     {
       title: 'Срок исполнения', key: 'due', width: 160,
-      sorter: (a: { p: Proposal }, b: { p: Proposal }) => (parseRu(a.p.dueDate)?.getTime() ?? Infinity) - (parseRu(b.p.dueDate)?.getTime() ?? Infinity),
+      sorter: (a: { p: Proposal }, b: { p: Proposal }) => (dueDateOf(a.p)?.getTime() ?? Infinity) - (dueDateOf(b.p)?.getTime() ?? Infinity),
       render: (_: unknown, r: { p: Proposal }) => {
-        const d = parseRu(r.p.dueDate);
+        const d = dueDateOf(r.p);
         const daysLeft = d ? Math.round((d.getTime() - now) / DAY) : null;
         const color = daysLeft == null ? BRAND.inkSoft
           : daysLeft < 0 ? RAG.bad.strong : daysLeft <= RISK_DAYS ? RAG.medium.strong : RAG.good.strong;
@@ -344,7 +354,7 @@ const TaskPlanDashboard: React.FC = () => {
 
               {tasks.map(({ p, kind }, idx) => {
                 const start = new Date(p.createdAt).getTime();
-                const dueDate = parseRu(p.dueDate);
+                const dueDate = dueDateOf(p);
                 const end = dueDate?.getTime() ?? start + 30 * DAY;
                 const left = ((start - bounds.min) / bounds.span) * 100;
                 const width = Math.max(3, ((end - start) / bounds.span) * 100);

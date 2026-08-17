@@ -31,6 +31,9 @@ export interface Proposal {
   owner?: string;
   ownerRole?: string;
   dueDate?: string;
+  /** ТЗ v19 УК-36: реальный тип даты (ISO), источник истины для сортировки/сравнения — `dueDate`
+   * остаётся строкой для обратной совместимости и ручного ввода, но не пересчитывается из dueOn. */
+  dueOn?: string;
   /** Что ожидается от ЛПР и почему — для понятности топ-менеджменту (R2.5). */
   expectation: string;
   createdBy: string;
