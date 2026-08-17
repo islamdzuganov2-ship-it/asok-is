@@ -40,5 +40,16 @@ celery_app.conf.update(
             "schedule": crontab(hour=3, minute=30, day_of_week=1),
             "kwargs": {"mode": "full", "trigger": "schedule"},
         },
+        # ТЗ v19 §17.4 (УК-49): снимок Ц_ОМ фиксируется один раз при первой просрочке, текущее
+        # значение пересчитывается каждую ночь — лёгкие агрегатные запросы, не требуют инференса.
+        "governance-price-of-inaction-daily": {
+            "task": "tasks.recompute_price_of_inaction",
+            "schedule": crontab(hour=2, minute=0),
+        },
+        # ТЗ v19 §17.9 (УК-59/60): автоэскалация по SLA (минор 30 дней / критично 3 дня).
+        "nonconformity-sla-autoescalate-daily": {
+            "task": "tasks.nonconformity_sla_autoescalate",
+            "schedule": crontab(hour=2, minute=15),
+        },
     },
 )

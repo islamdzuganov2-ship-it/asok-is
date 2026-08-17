@@ -11,6 +11,10 @@ from app.modules.econ.economics import (
     cost_incident,
     decide,
     k_performance_degradation,
+    measure_ale_risk,
+    price_of_inaction_compensating,
+    price_of_inaction_eliminating,
+    requires_escalation,
     rosi,
 )
 from app.modules.econ.models import (
@@ -43,6 +47,10 @@ __all__ = [
     "decide",
     "DecisionInput",
     "k_performance_degradation",
+    "measure_ale_risk",
+    "requires_escalation",
+    "price_of_inaction_eliminating",
+    "price_of_inaction_compensating",
     # Сервис/транспорт
     "router",
     "seed_econ_defaults",

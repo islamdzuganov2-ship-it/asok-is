@@ -16,6 +16,8 @@ EVENT_MEASURE_REJECTED = "measure.rejected"
 EVENT_MEASURE_ESCALATED = "measure.escalated"
 EVENT_MEASURE_ESCALATION_DECIDED = "measure.escalation_decided"
 EVENT_MEASURE_EXECUTOR_BRIEF_READY = "measure.executor_brief_ready"
+# ТЗ v19 §17.9 (УК-59/60): автоэскалация несоответствия по SLA (дифференцирован по критичности).
+EVENT_NONCONFORMITY_SLA_ESCALATED = "nonconformity.sla_escalated"
 
 # Заголовок по умолчанию для события — адаптер/вызывающий код может переопределить под контекст
 # конкретной меры, это только нейтральная подпись типа события (для лога заглушки и на будущее).
@@ -25,6 +27,7 @@ EVENT_TITLES: dict[str, str] = {
     EVENT_MEASURE_ESCALATED: "Мера эскалирована топ-менеджменту",
     EVENT_MEASURE_ESCALATION_DECIDED: "Решение по эскалации принято",
     EVENT_MEASURE_EXECUTOR_BRIEF_READY: "Мера переписана для исполнителя",
+    EVENT_NONCONFORMITY_SLA_ESCALATED: "Несоответствие эскалировано автоматически по SLA",
 }
 
 ALL_EVENTS: frozenset[str] = frozenset(EVENT_TITLES)

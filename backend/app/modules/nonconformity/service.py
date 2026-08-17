@@ -18,6 +18,7 @@ from app.modules.econ import config_value
 from app.modules.governance import Proposal
 from app.modules.nonconformity.models import (
     EVIDENCE_TYPES,
+    LEVEL_CRITICAL,
     LEVELS,
     STATUS_DECIDED,
     STATUS_EVALUATED,
@@ -109,9 +110,16 @@ async def create(db: AsyncSession, data: NonconformityCreate, username: str | No
 # ═══════════════════════ Жизненный цикл (§3.3) ═══════════════════════
 
 async def evaluate(db: AsyncSession, nc: Nonconformity, evaluated_ale: float, username: str | None) -> Nonconformity:
-    """Оценено (₽): фиксируем ALE и SLA на решение (>N дней без решения → эскалация)."""
+    """Оценено (₽): фиксируем ALE и SLA на решение (>N дней без решения → эскалация).
+
+    ТЗ v19 §17.9 (УК-59, В-64): срок дифференцирован по `level` — тот же критерий, что и
+    маршрутизация мер (§17.2), не отдельная классификация. CRITICAL — короткий SLA
+    (`nc_sla_days_critical`, по умолчанию 3 дня); MINOR/MAJOR — обычный `nc_sla_days` (30)."""
     _require_status(nc, STATUS_IDENTIFIED)
-    sla_days = int(await config_value(db, "nc_sla_days", 30) or 30)
+    if nc.level == LEVEL_CRITICAL:
+        sla_days = int(await config_value(db, "nc_sla_days_critical", 3) or 3)
+    else:
+        sla_days = int(await config_value(db, "nc_sla_days", 30) or 30)
     _log(nc, username, "evaluate", STATUS_EVALUATED)
     nc.evaluated_ale = evaluated_ale
     nc.sla_due = _now() + timedelta(days=sla_days)
@@ -143,15 +151,22 @@ async def decide(db: AsyncSession, nc: Nonconformity, data: DecideIn, username: 
 
 async def assign_measure(db: AsyncSession, nc: Nonconformity, proposal_id: uuid.UUID,
                          username: str | None) -> Nonconformity:
-    """Мера назначена. Только для вердиктов «устранить»/«компенсировать» (у «принять» меры нет)."""
+    """Мера назначена. Только для вердиктов «устранить»/«компенсировать» (у «принять» меры нет).
+
+    ТЗ v19 §17.2 (УК-44): `is_blocking` денормализуется в `Proposal.is_blocking_override` —
+    governance не импортирует nonconformity (модульный монолит), а nonconformity легитимно
+    зависит от governance, поэтому пишет сюда при связывании, а не наоборот."""
     _require_status(nc, STATUS_DECIDED)
     if nc.decision_verdict not in (VERDICT_ELIMINATE, VERDICT_COMPENSATE):
         raise ConflictError("Назначить меру можно только при вердикте «устранить»/«компенсировать»")
-    if await db.get(Proposal, proposal_id) is None:
+    proposal = await db.get(Proposal, proposal_id)
+    if proposal is None:
         raise NotFoundError("Мера (proposal) не найдена")
     _log(nc, username, "assign_measure", STATUS_MEASURE_ASSIGNED)
     nc.proposal_id = proposal_id
     nc.status = STATUS_MEASURE_ASSIGNED
+    if nc.is_blocking and not proposal.is_blocking_override:
+        proposal.is_blocking_override = True
     await db.commit()
     await db.refresh(nc)
     return nc
@@ -196,6 +211,49 @@ async def verify(db: AsyncSession, nc: Nonconformity, verified_by: str | None,
     await db.commit()
     await db.refresh(nc)
     return nc
+
+
+# ═══════════════════════ §17.9 (УК-59/60): автоэскалация по SLA ═══════════════════════
+
+async def auto_escalate_overdue(db: AsyncSession) -> int:
+    """Ежедневная задача (nonconformity/tasks.py): несоответствия в «Оценено» (STATUS_EVALUATED)
+    с просроченным `sla_due` — уведомление владельцу + подъём статуса к топ-менеджменту.
+
+    Автоэскалация НЕ меняет ответственного и НЕ считает отдельную величину сверх Ц_ОМ —
+    поднимает уже существующую карточку по тому же маршруту, что и §17.2 (решение заказчика,
+    §17.9). Флаг `sla_escalated` не даёт слать уведомление повторно каждый прогон."""
+    stmt = select(Nonconformity).where(
+        Nonconformity.status == STATUS_EVALUATED,
+        Nonconformity.sla_due.is_not(None),
+        Nonconformity.sla_due < _now(),
+        Nonconformity.sla_escalated.is_(False),
+    )
+    overdue = list((await db.execute(stmt)).scalars().all())
+    for nc in overdue:
+        _log(nc, "system", "auto_escalate_sla", nc.status)
+        nc.sla_escalated = True
+        nc.sla_escalated_at = _now()
+        _notify_sla_escalation(nc)
+    if overdue:
+        await db.commit()
+    return len(overdue)
+
+
+def _notify_sla_escalation(nc: Nonconformity) -> None:
+    from app.infrastructure.integrations.notifications import get_notification_port
+    from app.shared.notification_events import EVENT_NONCONFORMITY_SLA_ESCALATED, EVENT_TITLES
+    from app.shared.ports import NotificationEvent
+
+    recipient = (nc.owner or "").strip()
+    if not recipient:
+        return
+    get_notification_port().notify(NotificationEvent(
+        event_type=EVENT_NONCONFORMITY_SLA_ESCALATED, recipient=recipient,
+        subject=f"{EVENT_TITLES[EVENT_NONCONFORMITY_SLA_ESCALATED]}: {nc.system_name} / {nc.subcharacteristic}",
+        body=f"Решение по несоответствию просрочено (SLA до {nc.sla_due.strftime('%d.%m.%Y')}, "
+             f"level={nc.level}) — автоматически эскалировано к топ-менеджменту.",
+        entity_type="nonconformity", entity_id=str(nc.id),
+    ))
 
 
 # ═══════════════════════ Воронка замкнутости (§5, виджет 6) ═══════════════════════

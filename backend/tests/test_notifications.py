@@ -22,8 +22,9 @@ from app.shared.ports import NotificationEvent, NotificationPort
 
 
 def _new(**kw) -> ProposalCreate:
+    # is_process_measure=True по умолчанию — см. test_governance.py._new (§17.2 не в объёме этих тестов).
     base = dict(system_name="АБС Core", characteristic="Надёжность", metric_name="Доступность",
-                rationale="Инцидент", expectation="Резервирование")
+                rationale="Инцидент", expectation="Резервирование", is_process_measure=True)
     base.update(kw)
     return ProposalCreate(**base)
 

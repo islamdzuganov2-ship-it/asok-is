@@ -241,3 +241,52 @@ def decide(inp: DecisionInput) -> DecisionResult:
 
     reasons.append("ROSI≤0 и риск в пределах аппетита — принять с подписью и датой пересмотра")
     return DecisionResult(VERDICT_ACCEPT, reasons)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# §17.2 (УК-43/44) — маршрутизация мер по критичности
+# ─────────────────────────────────────────────────────────────────────────────
+
+def measure_ale_risk(risk_ale_shares: list[tuple[float, float]]) -> float:
+    """Деньги под риском, которые снимает мера: Σ(ale_avg × доля_снятия) по связанным рискам
+    (§17.2). Пары (ale_avg, ale_reduction_share); share=None трактуется как 1.0 у вызывающей
+    стороны (тот же приём, что _linked_risks в governance/economics_service.py)."""
+    return round(sum(ale * share for ale, share in risk_ale_shares), 2)
+
+
+def requires_escalation(
+    ale_risk: float,
+    risk_appetite: float | None,
+    threshold_share: float,
+    is_blocking: bool = False,
+    regulatory: bool = False,
+) -> bool:
+    """Маршрутизация минор/крит (§17.2). is_blocking (Mission Critical под угрозой) и
+    regulatory (вето) переопределяют денежный порог — эскалация всегда, без исключений
+    (§17.2, УК-44). Порог — доля `threshold_share` от риск-аппетита класса ИС (В-56); без
+    аппетита (не задан для класса) — консервативно эскалируем любую меру с деньгами под ней,
+    чтобы отсутствие данных не маскировалось молчаливым авто-одобрением."""
+    if is_blocking or regulatory:
+        return True
+    if risk_appetite is None or risk_appetite <= 0:
+        return ale_risk > 0
+    return ale_risk > (risk_appetite * threshold_share)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# §17.4 (УК-49/50) — Ц_ОМ: цена неисполнения меры ответственным
+# ─────────────────────────────────────────────────────────────────────────────
+
+def price_of_inaction_eliminating(measure_ale_risk_value: float) -> float:
+    """Ц_ОМ устраняющей меры (по умолчанию) — деньги под риском, остающиеся незакрытыми,
+    пока мера просрочена и не выполнена (§17.4, УК-49). Тот же `ale_risk`, что и в
+    маршрутизации (§17.2) — не два разных расчёта одной и той же связи риск↔мера."""
+    return round(max(0.0, measure_ale_risk_value), 2)
+
+
+def price_of_inaction_compensating(realized_incident_costs: list[float]) -> float:
+    """Ц_ОМ компенсирующей меры — ДРУГАЯ формула (§17.4, УК-50): компенсирующая мера не
+    снижает вероятность риска, а гасит последствия, поэтому цена бездействия — это фактически
+    реализовавшийся ущерб (Σ C_ТС по инцидентам, связанным с риском, за период просрочки), а
+    не доля ALE. Пустой список (пока не было инцидентов после просрочки) → 0.0, не ошибка."""
+    return round(sum(c for c in realized_incident_costs if c), 2)

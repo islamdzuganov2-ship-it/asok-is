@@ -117,3 +117,9 @@ class Nonconformity(Base, TimestampMixin):
     history: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ТЗ v19 §17.9 (УК-59/60): автоэскалация по SLA — дифференцирована по level (тот же критерий,
+    # что маршрутизация мер §17.2, В-64). Флаг защищает от повторной нотификации каждый прогон
+    # ежедневной задачи (nonconformity/tasks.py) — эскалируем один раз, не спамим.
+    sla_escalated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sla_escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

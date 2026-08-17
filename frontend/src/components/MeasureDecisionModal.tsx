@@ -25,6 +25,7 @@ import { DollarOutlined, FileTextOutlined } from '@ant-design/icons';
 import { ragToken, solidTagStyle, RAG, ACCENT } from '../theme/ragPalette';
 import { SPACE, TYPE } from '../theme/premium';
 import { fmtMoney, fmtNum } from '../utils/money';
+import { MeasureCardExtras } from './MeasureCardExtras';
 
 // ТЗ v19 п.14: карточка меры на языке топ-менеджмента (что не так → деньги/срок → решение →
 // стоимость → результат → ответственный), ≤80 слов, без формул — считает бэкенд
@@ -162,6 +163,10 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
   const canEditMeta = canDecide;
   // Вносить правки в меру (с аудитом) — топ-менеджмент, на любом статусе.
   const canEdit = canDecide;
+  // ТЗ v19 §17.3: системность/альтернативы ведёт менеджер по качеству (governance.propose).
+  const canManageCard = role === 'QUALITY_MANAGER';
+  // §17.6 (УК-56): обязательное ревью LLM-рекомендации — QUALITY_MANAGER или RISK_MANAGER.
+  const canReviewLlm = role === 'QUALITY_MANAGER' || role === 'RISK_MANAGER';
   const st = STATUS_TAG[p.status];
   const tok = ragToken(p.calculatedScore);
   const history = p.history ?? [];
@@ -333,6 +338,9 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
           </Space>
         </div>
       )}
+
+      {/* ТЗ v19 §17.3/17.4/17.6: LLM-ревью, цена неисполнения, системность/направление/альтернативы. */}
+      <MeasureCardExtras proposal={p} canManageCard={canManageCard} canReviewLlm={canReviewLlm} />
 
       {editing ? (
         <>

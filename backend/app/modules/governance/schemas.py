@@ -94,6 +94,70 @@ class ProposalOut(_CamelModel):
     created_by: str | None = None
     created_at: datetime | None = None
 
+    # ── ТЗ v19 §17: карточка поручения, критичность, Ц_ОМ ──
+    is_process_measure: bool = False
+    is_blocking_override: bool = False
+    ale_at_risk_snapshot: float | None = None
+    ale_at_risk_snapshot_at: datetime | None = None
+    ale_at_risk_current: float | None = None
+    ale_at_risk_current_at: datetime | None = None
+    alternative_solutions: list | None = None
+    systemic_scope_note: str | None = None
+    systemic_scope_llm_note: str | None = None
+    systemic_scope_system_count: int | None = None
+    department: str | None = None
+    measure_source: str = "MANUAL"
+    llm_reviewed_by: uuid.UUID | None = None
+    llm_reviewed_at: datetime | None = None
+
+
+class AlternativeSolutionIn(_CamelModel):
+    title: str
+    capex: float | None = None
+    opex: float | None = None
+    note: str | None = None
+
+
+class AlternativesIn(_CamelModel):
+    alternatives: list[AlternativeSolutionIn]
+
+
+class SystemicScopeIn(_CamelModel):
+    """Ручной анализ системности (§17.3, УК-46) — если задан, LLM-пометка дополняет его,
+    но никогда не перезаписывает (см. governance/systemic_scope.py)."""
+    note: str
+
+
+class PriceOfInactionOut(_CamelModel):
+    """Ц_ОМ на карточке (§17.4) — снимок на момент просрочки + текущее значение, разная
+    формула для ELIMINATING/COMPENSATING (УК-49/50)."""
+    proposal_id: uuid.UUID
+    measure_type: str | None = None
+    is_overdue: bool
+    ale_risk: float                       # деньги под риском по связанным risk_event (§17.2)
+    price_snapshot: float | None = None   # Ц_ОМ на момент фиксации просрочки
+    price_snapshot_at: datetime | None = None
+    price_current: float | None = None    # Ц_ОМ на сегодня (пересчитывается ежедневно)
+    price_current_at: datetime | None = None
+
+
+class MeasureDepartmentOut(_CamelModel):
+    id: uuid.UUID
+    characteristic: str
+    department_name: str
+    updated_by: uuid.UUID | None = None
+
+
+class MeasureDepartmentIn(_CamelModel):
+    characteristic: str
+    department_name: str
+
+
+class LlmReviewIn(_CamelModel):
+    """Обязательное ревью LLM-рекомендации перед эскалацией (§17.6, УК-56)."""
+    approved: bool
+    comment: str | None = None
+
 
 # ── BL-007 (RE-11/12): экономические входы меры и результат расчёта ROSI ──
 class MeasureEconomicsIn(_CamelModel):
@@ -135,6 +199,9 @@ class ProposalCreate(_CamelModel):
     owner_role: str | None = None
     due_date: str | None = None
     is_demo: bool = False
+    # §17.2 (УК-42): мера без риск-события по умолчанию не эскалируема/не одобряема, пока не
+    # привязана к risk_event — кроме явно помеченных процессных мер (см. service._ensure_routable).
+    is_process_measure: bool = False
 
 
 class DecisionIn(_CamelModel):
