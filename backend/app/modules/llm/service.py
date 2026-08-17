@@ -41,7 +41,7 @@ from dataclasses import asdict, dataclass
 
 from app.infrastructure.config import settings
 from app.modules.llm import brain
-from app.modules.llm.personas import EXECUTOR, TOP_MANAGER
+from app.modules.llm.personas import EXECUTOR, QUALITY_MANAGER, TOP_MANAGER
 from app.modules.llm.prompts import (  # noqa: F401  (публичный контракт модуля)
     CONCLUSION_SYSTEM_PROMPT,
     MEASURE_CARD_SUMMARY_PROMPT,
@@ -887,6 +887,68 @@ def generate_executor_brief(title: str, problem: str, ask: str, due_note: str) -
             reasons.append("эхо входных фактов без переработки в формат для исполнителя")
         if reasons:
             logger.warning("Переписанное поручение отбраковано (%s) — честный fallback", "; ".join(reasons))
+            text = fallback
+    else:
+        text = fallback
+
+    _cache_put(key, text)
+    return text
+
+
+def _systemic_scope_fallback(indirect_systems: list[str]) -> str:
+    """Тот же детерминированный шаблон, что раньше жил прямо в systemic_scope.py — теперь
+    служит честным откатом, когда LLM недоступна или её текст не прошёл заземление."""
+    n = len(indirect_systems)
+    word = "система" if n == 1 else ("системы" if n < 5 else "систем")
+    return (
+        f"LLM: возможно также затронуты ещё {n} {word} по совпадению категории риска и "
+        f"ключевых слов — {', '.join(sorted(indirect_systems))}. Рекомендательная пометка, "
+        "не подтверждена ручным анализом."
+    )
+
+
+def generate_systemic_scope_note(direct_systems: list[str], indirect_systems: list[str]) -> str | None:
+    """Текст-пометка о косвенной системности (ТЗ v19 §17.3, УК-46) — ДОПОЛНЯЕТ ручной анализ
+    QUALITY_MANAGER, никогда его не заменяет (вызывающий код, governance/systemic_scope.py,
+    не трогает Proposal.systemic_scope_note). Заземление: список косвенных систем задан
+    ДЕТЕРМИНИРОВАННЫМ подсчётом (systemic_scope.py — граф риск↔ТС↔риск-база), LLM только
+    формулирует предупреждение вокруг уже посчитанного списка — не может назвать систему,
+    которой нет во входных данных."""
+    if not indirect_systems:
+        return None  # нечего дополнять — прямой список исчерпывает системность
+
+    key = hash(("systemic_scope", tuple(sorted(direct_systems)), tuple(sorted(indirect_systems))))
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    fallback = _systemic_scope_fallback(indirect_systems)
+
+    facts = (
+        f"Системы, где мера применяется напрямую: {', '.join(sorted(direct_systems)) or '—'}\n"
+        f"Системы с косвенным совпадением (по категории риска и ключевым словам, "
+        f"НЕ через прямую связь): {', '.join(sorted(indirect_systems))}"
+    )
+    prompt = (
+        f"Факты о системности проблемы (используй ТОЛЬКО перечисленные системы, не добавляй "
+        f"других):\n{facts}\n"
+        "Сформулируй короткую пометку-предупреждение (1-2 предложения, не более 60 слов) для "
+        "менеджера по качеству: эти косвенные системы стоит проверить на ту же проблему. "
+        "Явно назови их рекомендацией, не утверждением факта — ручной анализ ещё не проводился."
+    )
+    text = complete(prompt, system=QUALITY_MANAGER.system_prompt, max_tokens=QUALITY_MANAGER.max_tokens)
+
+    if text:
+        reasons = []
+        if _word_count(text) > 60:
+            reasons.append("превышен разумный объём")
+        if _numbers_in(text) - _numbers_in(facts):
+            reasons.append("числа вне переданных фактов")
+        missing = [s for s in indirect_systems if s not in text]
+        if missing:
+            reasons.append(f"не названы все косвенные системы: {', '.join(missing)}")
+        if reasons:
+            logger.warning("Пометка о системности отбракована (%s) — честный fallback", "; ".join(reasons))
             text = fallback
     else:
         text = fallback

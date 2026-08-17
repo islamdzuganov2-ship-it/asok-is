@@ -200,6 +200,15 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen, prese
                         {p.status === 'APPROVED' && !p.execution && <Tag color="blue">ждёт выполнения</Tag>}
                         {overdue && <Tag color="red">просрочено</Tag>}
                         {soon && !overdue && <Tag color="gold">срок близко</Tag>}
+                        {p.priorityIsAtypical && (
+                          <Tag
+                            icon={<WarningOutlined />}
+                            color="purple"
+                            title="Деньги под риском продвинули меру на малозначимой характеристике выше мер с более высоким весом ГОСТ (§17.5) — не блокирует, только для проверки человеком"
+                          >
+                            нетипичный порядок
+                          </Tag>
+                        )}
                       </Space>
                     }
                     description={

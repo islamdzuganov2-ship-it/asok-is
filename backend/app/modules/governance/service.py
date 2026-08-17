@@ -96,9 +96,10 @@ async def list_proposals(
     # добавится отдельно при росте объёмов, см. §17.5 критерии приёмки.
     rows = list((await db.execute(stmt)).scalars().all())
     weight_by_char = await _priority_weight_lookup(db)
-    keyed = [(p, await _priority_key(db, p, weight_by_char)) for p in rows]
-    keyed.sort(key=lambda pair: pair[1], reverse=True)
-    return [p for p, _ in keyed]
+    triples = [(p, *(await _priority_components(db, p, weight_by_char))) for p in rows]
+    _attach_priority_fields(triples)
+    triples.sort(key=lambda t: t[3], reverse=True)
+    return [p for p, *_ in triples]
 
 
 async def _priority_weight_lookup(db: AsyncSession) -> dict[str, float]:
@@ -118,16 +119,41 @@ async def _priority_weight_lookup(db: AsyncSession) -> dict[str, float]:
     return {c: (sum(ws) / len(ws) if ws else 0.0) for c, ws in by_char.items()}
 
 
-async def _priority_key(db: AsyncSession, p: Proposal, weight_by_char: dict[str, float]) -> float:
-    """Составной вес очереди (§17.5, УК-52/53): вес_характеристики × деньги_под_риском, с
-    двукратной надбавкой за просрочку (урегулирует срочность без отдельной формулы Ц_ОМ здесь —
-    Ц_ОМ считается отдельно, ежедневно, см. economics_service.recompute_price_of_inaction)."""
+async def _priority_components(
+    db: AsyncSession, p: Proposal, weight_by_char: dict[str, float],
+) -> tuple[float, float, float]:
+    """(вес_характеристики, деньги_под_риском, итоговый_ключ) — §17.5, УК-52/53. Итоговый ключ —
+    вес × деньги, с двукратной надбавкой за просрочку (Ц_ОМ считается отдельно, ежедневно,
+    см. economics_service.recompute_price_of_inaction — здесь только ориентир для очереди)."""
     from app.modules.governance.economics_service import measure_ale_risk_value
 
     w = weight_by_char.get(p.characteristic or "", 0.0) or 0.01  # неизвестная характеристика — не 0
     ale_risk = await measure_ale_risk_value(db, p.id)
     overdue = p.execution != EXECUTION_DONE and p.due_on is not None and p.due_on < _now()
-    return w * max(ale_risk, 1.0) * (2.0 if overdue else 1.0)
+    key = w * max(ale_risk, 1.0) * (2.0 if overdue else 1.0)
+    return w, ale_risk, key
+
+
+def _attach_priority_fields(triples: list[tuple[Proposal, float, float, float]]) -> None:
+    """§17.5 критерии приёмки: помечает «нетипичный порядок» — деньги продвинули меру на
+    малозначимой характеристике (нижняя половина по весу) в верхнюю четверть очереди. Пишет
+    транзиентные атрибуты прямо на ORM-объект (не колонки, не коммитятся) — ProposalOut их
+    подхватит через from_attributes. Не блокирует, только помечает (решение заказчика, 5.2)."""
+    n = len(triples)
+    if n == 0:
+        return
+    # Меньше 4 мер — «нижняя половина»/«верхняя четверть» не несут смысла (при n=1 любая
+    # единственная мера тривиально попадала бы и туда, и туда) — не помечаем вообще.
+    comparable = n >= 4
+    by_weight = sorted(range(n), key=lambda i: triples[i][1])            # индексы, по весу возрастанию
+    by_final = sorted(range(n), key=lambda i: triples[i][3], reverse=True)  # по итоговому ключу убыв.
+    weight_rank = {idx: rank for rank, idx in enumerate(by_weight)}       # 0 = наименьший вес
+    final_rank = {idx: rank for rank, idx in enumerate(by_final)}        # 0 = первый в очереди
+    for i, (p, w, money, key) in enumerate(triples):
+        p.priority_weight = round(w, 4)
+        p.priority_money = round(money, 2)
+        # нижняя половина по весу (weight_rank мал), но верхняя четверть очереди (final_rank мал)
+        p.priority_is_atypical = comparable and weight_rank[i] < n / 2 and final_rank[i] < n // 4
 
 
 async def get_or_404(db: AsyncSession, pid: uuid.UUID) -> Proposal:
@@ -303,6 +329,54 @@ async def set_effort_hours(
     await db.commit()
     await db.refresh(p)
     return p
+
+
+# ═══════════════════════ §17.7 (УК-57): факт по бюджету/трудоёмкости ═══════════════════════
+
+async def set_actuals(
+    db: AsyncSession, p: Proposal, capex: float | None, opex: float | None,
+    effort_hours: float | None, user_id: uuid.UUID | None,
+) -> Proposal:
+    """Факт по бюджету — вносит исполнитель по завершении меры (решение заказчика 7.1).
+    Только по одобренной и выполненной мере (§17.7 отдельная фаза после Ц_ОМ, но тот же
+    инвариант, что и для effort_hours/execution): факт без исполнения — нечего сверять."""
+    if p.status != STATUS_APPROVED or p.execution != EXECUTION_DONE:
+        raise ConflictError("Факт по бюджету можно внести только по выполненной (execution=DONE) мере")
+    if capex is None and opex is None and effort_hours is None:
+        raise ValidationError("Укажите хотя бы одно значение факта (CAPEX/OPEX/часы)")
+    if capex is not None:
+        p.actual_capex = capex
+    if opex is not None:
+        p.actual_opex = opex
+    if effort_hours is not None:
+        p.actual_effort_hours = effort_hours
+    p.actuals_set_by = user_id
+    p.actuals_set_at = _now()
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+
+def budget_variance(p: Proposal) -> dict:
+    """План/факт (§17.7) — variance = факт − план, None при отсутствии любой из сторон
+    (честное «не оценено», не 0 молча — тот же принцип, что effort_hours В-41)."""
+    def _variance(planned, actual):
+        if planned is None or actual is None:
+            return None
+        return round(float(actual) - float(planned), 2)
+
+    return {
+        "proposal_id": p.id,
+        "planned_capex": float(p.capex) if p.capex is not None else None,
+        "actual_capex": float(p.actual_capex) if p.actual_capex is not None else None,
+        "capex_variance": _variance(p.capex, p.actual_capex),
+        "planned_opex": float(p.opex_per_year) if p.opex_per_year is not None else None,
+        "actual_opex": float(p.actual_opex) if p.actual_opex is not None else None,
+        "opex_variance": _variance(p.opex_per_year, p.actual_opex),
+        "planned_effort_hours": float(p.effort_hours) if p.effort_hours is not None else None,
+        "actual_effort_hours": float(p.actual_effort_hours) if p.actual_effort_hours is not None else None,
+        "effort_variance": _variance(p.effort_hours, p.actual_effort_hours),
+    }
 
 
 async def rewrite_for_executor(db: AsyncSession, p: Proposal, user_id: uuid.UUID | None) -> Proposal:

@@ -8,7 +8,7 @@ Pydantic-схемы домена governance (T-10). camelCase-алиасы — �
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -110,6 +110,19 @@ class ProposalOut(_CamelModel):
     llm_reviewed_by: uuid.UUID | None = None
     llm_reviewed_at: datetime | None = None
 
+    # §17.5 (УК-52/53): транзиентные поля очереди — считаются только при order_by=priority
+    # (list_proposals), не хранятся в БД. None вне режима приоритета, а не 0 молча.
+    priority_weight: float | None = None
+    priority_money: float | None = None
+    priority_is_atypical: bool | None = None
+
+    # §17.7 (УК-57): факт по бюджету/трудоёмкости — рядом с уже существующим планом.
+    actual_capex: float | None = None
+    actual_opex: float | None = None
+    actual_effort_hours: float | None = None
+    actuals_set_by: uuid.UUID | None = None
+    actuals_set_at: datetime | None = None
+
 
 class AlternativeSolutionIn(_CamelModel):
     title: str
@@ -139,6 +152,46 @@ class PriceOfInactionOut(_CamelModel):
     price_snapshot_at: datetime | None = None
     price_current: float | None = None    # Ц_ОМ на сегодня (пересчитывается ежедневно)
     price_current_at: datetime | None = None
+
+
+class PriceHistoryPointOut(_CamelModel):
+    """Одна дневная точка Ц_ОМ (§17.4, УК-51)."""
+    date: date
+    price: float
+
+
+class PriceHistoryOut(_CamelModel):
+    """История Ц_ОМ за период — честная квартальная агрегация вместо переиспользования
+    снимка/текущего значения под другой подписью (§17.4, УК-51)."""
+    proposal_id: uuid.UUID
+    period: str  # 'day' | 'quarter'
+    period_start: date
+    period_end: date
+    points: list[PriceHistoryPointOut]
+    period_avg: float | None = None
+
+
+class ActualsIn(_CamelModel):
+    """Факт по бюджету/трудоёмкости меры (§17.7, УК-57) — исполнитель вносит по завершении.
+    Хотя бы одно поле обязательно (проверяется в сервисе) — пустой вызов бессмыслен."""
+    actual_capex: float | None = None
+    actual_opex: float | None = None
+    actual_effort_hours: float | None = None
+
+
+class BudgetVarianceOut(_CamelModel):
+    """План/факт по мере (§17.7) — variance = факт − план, None, если одной из сторон нет
+    (а не 0 молча: «не оценено» ≠ «отклонения нет»)."""
+    proposal_id: uuid.UUID
+    planned_capex: float | None = None
+    actual_capex: float | None = None
+    capex_variance: float | None = None
+    planned_opex: float | None = None
+    actual_opex: float | None = None
+    opex_variance: float | None = None
+    planned_effort_hours: float | None = None
+    actual_effort_hours: float | None = None
+    effort_variance: float | None = None
 
 
 class MeasureDepartmentOut(_CamelModel):

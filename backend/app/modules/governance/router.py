@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.database import get_db
 from app.modules.governance import economics_service, management_summary, service
 from app.modules.governance.schemas import (
+    ActualsIn,
     AlternativesIn,
+    BudgetVarianceOut,
     DecisionIn,
     EditIn,
     EffortHoursIn,
@@ -30,6 +32,7 @@ from app.modules.governance.schemas import (
     MeasureEconomicsIn,
     MeasureEconomicsResult,
     MetaIn,
+    PriceHistoryOut,
     PriceOfInactionOut,
     ProposalCreate,
     ProposalOut,
@@ -246,6 +249,25 @@ async def recompute_price_of_inaction(
     return await economics_service.recompute_price_of_inaction(db, p)
 
 
+@router.get("/proposals/{pid}/price-of-inaction/history", response_model=PriceHistoryOut)
+async def get_price_of_inaction_history(
+    pid: uuid.UUID, period: str = "quarter",
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("view.risk_economics", "view.measure_economics.own")),
+):
+    """История Ц_ОМ по дням за период (§17.4, УК-51) — тот же гейт видимости, что у
+    price-of-inaction (своя мера для EXECUTOR, любая для менеджмента)."""
+    p = await service.get_or_404(db, pid)
+    granted = await get_role_permissions(db, (user.get("roles") or [""])[0])
+    if "view.risk_economics" not in granted:
+        uid = await resolve_user_id(db, user.get("id"))
+        if uid is None or p.owner_user_id != uid:
+            raise HTTPException(status_code=403, detail="Доступна только цена неисполнения своей меры")
+    if period not in ("day", "quarter"):
+        raise HTTPException(status_code=422, detail="period должен быть 'day' или 'quarter'")
+    return await economics_service.price_history(db, pid, period=period)
+
+
 @router.patch("/proposals/{pid}/systemic-scope", response_model=ProposalOut)
 async def update_systemic_scope(
     pid: uuid.UUID, payload: SystemicScopeIn,
@@ -307,3 +329,35 @@ async def upsert_measure_department(
     прав, пока не решено иначе)."""
     uid = await resolve_user_id(db, user.get("id"))
     return await service.set_department(db, payload, uid)
+
+
+# ── §17.7 (УК-57): факт по бюджету/трудоёмкости (перерасход), отдельная фаза после Ц_ОМ ──
+
+@router.patch("/proposals/{pid}/actuals", response_model=ProposalOut)
+async def set_actuals(
+    pid: uuid.UUID, payload: ActualsIn,
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.propose")),
+):
+    """Факт по бюджету — вносит исполнитель по завершении меры (§17.7, решение 7.1)."""
+    p = await service.get_or_404(db, pid)
+    uid = await resolve_user_id(db, user.get("id"))
+    return await service.set_actuals(
+        db, p, payload.actual_capex, payload.actual_opex, payload.actual_effort_hours, uid,
+    )
+
+
+@router.get("/proposals/{pid}/budget-variance", response_model=BudgetVarianceOut)
+async def get_budget_variance(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("view.risk_economics", "view.measure_economics.own")),
+):
+    """План/факт по мере (§17.7) — тот же гейт видимости, что у Ц_ОМ (своя мера для EXECUTOR,
+    любая для менеджмента)."""
+    p = await service.get_or_404(db, pid)
+    granted = await get_role_permissions(db, (user.get("roles") or [""])[0])
+    if "view.risk_economics" not in granted:
+        uid = await resolve_user_id(db, user.get("id"))
+        if uid is None or p.owner_user_id != uid:
+            raise HTTPException(status_code=403, detail="Доступен только план/факт своей меры")
+    return service.budget_variance(p)

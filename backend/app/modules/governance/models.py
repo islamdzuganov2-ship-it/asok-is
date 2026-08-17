@@ -11,9 +11,9 @@ SoD (ролевая модель v12 §5.1) обеспечивается в ро
 и эскалацию ведёт менеджер по качеству, решение по эскалации — топ-менеджмент.
 """
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -186,6 +186,18 @@ class Proposal(Base, TimestampMixin):
     )
     llm_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # §17.7 (УК-57): факт по бюджету/трудоёмкости — рядом с уже существующим планом
+    # (capex/opex_per_year/effort_hours). Вносит сам исполнитель по завершении меры (В решение
+    # заказчика 7.1), не автоматически — интеграция с внешним источником фактических затрат
+    # придёт позже без переделки полей. None ≠ 0 — «факт не внесён» отличается от «потрачено 0».
+    actual_capex: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    actual_opex: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    actual_effort_hours: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    actuals_set_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
+    )
+    actuals_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
 class MeasureDepartment(Base, TimestampMixin):
     """Временный справочник направлений (§17.3, УК-47) — «характеристика → направление»,
@@ -200,4 +212,26 @@ class MeasureDepartment(Base, TimestampMixin):
     department_name: Mapped[str] = mapped_column(String(255), nullable=False)
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True,
+    )
+
+
+class ProposalPriceSnapshot(Base, TimestampMixin):
+    """Дневной снимок Ц_ОМ (§17.4, УК-49/51) — одна строка на (мера, календарный день).
+
+    Отдельная таблица вместо перезаписи `Proposal.ale_at_risk_current` каждый день: реальная
+    история нужна для честной квартальной агрегации (переключатель «день/квартал» на карточке)
+    вместо двух статичных чисел (снимок на просрочку + текущее). Пишет ежедневная задача
+    (governance/tasks.py) — идемпотентно, один UPDATE вместо нового INSERT при повторном
+    прогоне за тот же день (см. record_daily_price_snapshot)."""
+    __tablename__ = "proposal_price_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    proposal_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("proposals.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    price: Mapped[float] = mapped_column(Numeric(16, 2), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("proposal_id", "snapshot_date", name="uq_proposal_price_snapshot_day"),
     )

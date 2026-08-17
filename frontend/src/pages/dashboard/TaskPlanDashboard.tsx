@@ -35,6 +35,7 @@ import { sorterFor } from '../../theme/table';
 import CollapsibleCard from '../../components/CollapsibleCard';
 import TaskBubbleTimeline from '../../components/TaskBubbleTimeline';
 import EmployeeEffectivenessCard from '../../components/EmployeeEffectivenessCard';
+import { MeasureCardExtras } from '../../components/MeasureCardExtras';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -76,6 +77,8 @@ const TaskPlanDashboard: React.FC = () => {
   const proposals = useSelector(selectVisibleProposals, shallowEqual);
   const canManage = role === 'QUALITY_MANAGER';
   const isExec = ['ADMIN', 'CTO', 'CEO', 'CIO', 'EXECUTIVE'].includes(role);
+  // §17.6 (УК-56): ревью LLM-рекомендаций — тот же состав ролей, что MeasureDecisionModal.tsx.
+  const canReviewLlm = role === 'QUALITY_MANAGER' || role === 'RISK_MANAGER';
 
   const [sel, setSel] = useState<Proposal | null>(null);
   const [comment, setComment] = useState('');
@@ -456,6 +459,11 @@ const TaskPlanDashboard: React.FC = () => {
               {sel.execution === 'DONE' && <Tag color="green">выполнено</Tag>}
               {sel.escalated && <Tag color="purple">эскалирована</Tag>}
             </Space>
+
+            {/* ТЗ v19 §17 (Пункт 17, п.9.2): та же карточка, что на управленческом дашборде —
+                Ц_ОМ/LLM-ревью/системность/направление/альтернативы, без урезания на Ганте. */}
+            <MeasureCardExtras proposal={sel} canManageCard={canManage} canReviewLlm={canReviewLlm} />
+
             {sel.executorBrief && (
               <div style={{ background: '#F5F6F8', borderRadius: 8, padding: 12, borderInlineStart: `3px solid ${GOLD.base}` }}>
                 <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}><FileTextOutlined /> Для исполнителя</Text>
