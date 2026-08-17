@@ -7,14 +7,15 @@
  * мутации — родителю достаточно передать проп `proposal` и флаги прав.
  */
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Input, InputNumber, List, Space, Typography } from 'antd';
+import { Alert, Button, Input, InputNumber, List, Radio, Space, Typography } from 'antd';
 import { message } from '../theme/appMessage';
 import { PlusOutlined, DeleteOutlined, WarningOutlined, RobotOutlined } from '@ant-design/icons';
 import { useAppDispatch } from '../store/hooks';
 import {
-  fetchPriceOfInaction, updateSystemicScope, updateAlternatives, reviewLlmMeasure,
-  type AlternativeSolution, type PriceOfInaction, type Proposal,
+  fetchPriceOfInaction, fetchPriceHistory, fetchBudgetVariance, updateSystemicScope, updateAlternatives, reviewLlmMeasure,
+  type AlternativeSolution, type BudgetVariance, type PriceHistory, type PriceOfInaction, type Proposal,
 } from '../store/slices/governanceSlice';
+import { RAG } from '../theme/ragPalette';
 import { TYPE } from '../theme/premium';
 import { fmtMoney } from '../utils/money';
 
@@ -33,13 +34,27 @@ export const MeasureCardExtras: React.FC<Props> = ({ proposal: p, canManageCard,
   const [altDraft, setAltDraft] = useState<AlternativeSolution[]>([]);
   const [altEditing, setAltEditing] = useState(false);
   const [priceOfInaction, setPriceOfInaction] = useState<PriceOfInaction | null>(null);
+  // §17.4 (УК-51): переключатель «сегодня / за квартал» — квартал = честное среднее по
+  // дневным точкам истории (fetchPriceHistory), не переиспользование снимка под другой подписью.
+  const [priceHistory, setPriceHistory] = useState<PriceHistory | null>(null);
+  const [priceHorizon, setPriceHorizon] = useState<'current' | 'quarter'>('current');
+  // §17.7 (УК-57): план/факт — читаем на карточке эскалации, вносит исполнитель на «Моих задачах».
+  const [budgetVariance, setBudgetVariance] = useState<BudgetVariance | null>(null);
 
   useEffect(() => {
     setScopeNote(p.systemicScopeNote || ''); setScopeEditing(false);
     setAltDraft(p.alternativeSolutions || []); setAltEditing(false);
-    setPriceOfInaction(null);
+    setPriceOfInaction(null); setPriceHistory(null); setPriceHorizon('current');
+    setBudgetVariance(null);
     dispatch(fetchPriceOfInaction({ id: p.id })).unwrap()
-      .then((r) => setPriceOfInaction(r)).catch(() => setPriceOfInaction(null));
+      .then((r) => {
+        setPriceOfInaction(r);
+        if (r?.isOverdue) fetchPriceHistory(p.id, 'quarter').then(setPriceHistory).catch(() => setPriceHistory(null));
+      })
+      .catch(() => setPriceOfInaction(null));
+    if (p.execution === 'DONE' && canManageCard) {
+      fetchBudgetVariance(p.id).then(setBudgetVariance).catch(() => setBudgetVariance(null));
+    }
   }, [p.id]);
 
   const saveScopeNote = () => {
@@ -89,20 +104,37 @@ export const MeasureCardExtras: React.FC<Props> = ({ proposal: p, canManageCard,
         />
       )}
 
-      {/* §17.4 (УК-49): цена неисполнения — только для просроченных мер. */}
+      {/* §17.4 (УК-49/51): цена неисполнения — только для просроченных мер, с переключателем
+          «сегодня / за квартал» (квартал — честное среднее по дневной истории, не снимок). */}
       {priceOfInaction?.isOverdue && (
         <Alert
           style={{ marginBottom: 12 }}
           type="error"
           showIcon
           icon={<WarningOutlined />}
-          message={`Цена неисполнения (Ц_ОМ): ${(priceOfInaction.priceCurrent ?? 0).toLocaleString('ru-RU')} ₽`}
+          message="Цена неисполнения (Ц_ОМ)"
           description={
-            p.measureType === 'COMPENSATING'
-              ? 'Компенсирующая мера: фактический ущерб по связанным сбоям с момента просрочки (§17.4).'
-              : 'Деньги под риском, остающиеся незакрытыми, пока мера не выполнена (§17.4). '
-                + (priceOfInaction.priceSnapshot != null
-                  ? `На момент просрочки: ${priceOfInaction.priceSnapshot.toLocaleString('ru-RU')} ₽.` : '')
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              {priceHistory && (
+                <Radio.Group size="small" value={priceHorizon} onChange={(e) => setPriceHorizon(e.target.value)}>
+                  <Radio.Button value="current">На сегодня</Radio.Button>
+                  <Radio.Button value="quarter">За квартал (среднее)</Radio.Button>
+                </Radio.Group>
+              )}
+              <Text strong style={{ fontSize: 16 }}>
+                {(
+                  (priceHorizon === 'quarter' ? priceHistory?.periodAvg : priceOfInaction.priceCurrent) ?? 0
+                ).toLocaleString('ru-RU')} ₽
+              </Text>
+              <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize }}>
+                {p.measureType === 'COMPENSATING'
+                  ? 'Компенсирующая мера: фактический ущерб по связанным сбоям с момента просрочки (§17.4).'
+                  : 'Деньги под риском, остающиеся незакрытыми, пока мера не выполнена (§17.4).'}
+                {priceHorizon === 'quarter' && priceHistory && (
+                  <> Среднее по {priceHistory.points.length} дн. текущего квартала.</>
+                )}
+              </Text>
+            </Space>
           }
         />
       )}
@@ -198,6 +230,35 @@ export const MeasureCardExtras: React.FC<Props> = ({ proposal: p, canManageCard,
           ) : null}
         </Space>
       </div>
+
+      {/* §17.7 (УК-57): план/факт по бюджету и трудоёмкости — read-only здесь, факт вносит
+          исполнитель на «Моих задачах» (AssigneeTasksPage). Показываем только при наличии
+          хотя бы одного расхождения — нечего показывать до первого факта. */}
+      {budgetVariance && (budgetVariance.capexVariance != null || budgetVariance.opexVariance != null || budgetVariance.effortVariance != null) && (
+        <div style={{ background: '#F5F6F8', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>План / факт (перерасход бюджета и ресурсов)</Text>
+          <Space direction="vertical" size={2} style={{ width: '100%', marginTop: 4 }}>
+            {budgetVariance.capexVariance != null && (
+              <Text style={{ fontSize: 13, color: budgetVariance.capexVariance > 0 ? RAG.bad.strong : RAG.good.strong }}>
+                CAPEX: план {fmtMoney(budgetVariance.plannedCapex ?? 0)} · факт {fmtMoney(budgetVariance.actualCapex ?? 0)} ·{' '}
+                {budgetVariance.capexVariance > 0 ? 'перерасход' : 'экономия'} {fmtMoney(Math.abs(budgetVariance.capexVariance))}
+              </Text>
+            )}
+            {budgetVariance.opexVariance != null && (
+              <Text style={{ fontSize: 13, color: budgetVariance.opexVariance > 0 ? RAG.bad.strong : RAG.good.strong }}>
+                OPEX/год: план {fmtMoney(budgetVariance.plannedOpex ?? 0)} · факт {fmtMoney(budgetVariance.actualOpex ?? 0)} ·{' '}
+                {budgetVariance.opexVariance > 0 ? 'перерасход' : 'экономия'} {fmtMoney(Math.abs(budgetVariance.opexVariance))}
+              </Text>
+            )}
+            {budgetVariance.effortVariance != null && (
+              <Text style={{ fontSize: 13, color: budgetVariance.effortVariance > 0 ? RAG.bad.strong : RAG.good.strong }}>
+                Трудоёмкость: план {budgetVariance.plannedEffortHours ?? 0} ч · факт {budgetVariance.actualEffortHours ?? 0} ч ·{' '}
+                {budgetVariance.effortVariance > 0 ? 'перерасход' : 'экономия'} {Math.abs(budgetVariance.effortVariance)} ч
+              </Text>
+            )}
+          </Space>
+        </div>
+      )}
     </>
   );
 };

@@ -11,7 +11,7 @@ governance оставался лёгким и без циклов с risk (risk.
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import date as date_cls, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -254,7 +254,9 @@ async def recompute_all_overdue_price_of_inaction(db: AsyncSession) -> int:
 
 async def recompute_price_of_inaction(db: AsyncSession, p: Proposal) -> Proposal:
     """Пишет текущее значение и, при первой фиксации просрочки, снимок (§17.4, УК-49) —
-    вызывается ежедневной задачей (governance/tasks.py) и по кнопке пересчёта на карточке."""
+    вызывается ежедневной задачей (governance/tasks.py) и по кнопке пересчёта на карточке.
+    Дополнительно пишет дневную точку истории (§17.4, УК-51) — основа честной квартальной
+    агрегации на переключателе «день/квартал», не повторное использование того же числа."""
     result = await compute_price_of_inaction(db, p)
     if not result.is_overdue:
         return p
@@ -266,4 +268,73 @@ async def recompute_price_of_inaction(db: AsyncSession, p: Proposal) -> Proposal
     p.ale_at_risk_current_at = now
     await db.commit()
     await db.refresh(p)
+    await record_daily_price_snapshot(db, p.id, now.date(), result.price_current or 0.0)
     return p
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# §17.4 (УК-51) — дневная история Ц_ОМ и квартальная агрегация
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def record_daily_price_snapshot(
+    db: AsyncSession, proposal_id, snapshot_date, price: float,
+) -> None:
+    """Идемпотентная запись дневной точки (§17.4) — один UPDATE вместо нового INSERT при
+    повторном прогоне за тот же день (кнопка «пересчитать» + ночная задача в один день)."""
+    from app.modules.governance.models import ProposalPriceSnapshot
+
+    row = (await db.execute(
+        select(ProposalPriceSnapshot).where(
+            ProposalPriceSnapshot.proposal_id == proposal_id,
+            ProposalPriceSnapshot.snapshot_date == snapshot_date,
+        )
+    )).scalar_one_or_none()
+    if row is None:
+        db.add(ProposalPriceSnapshot(proposal_id=proposal_id, snapshot_date=snapshot_date, price=price))
+    else:
+        row.price = price
+    await db.commit()
+
+
+def _quarter_bounds(on_date: date_cls) -> tuple[date_cls, date_cls]:
+    """(начало, конец) календарного квартала, содержащего `on_date` — обе границы включительно."""
+    q_start_month = ((on_date.month - 1) // 3) * 3 + 1
+    start = date_cls(on_date.year, q_start_month, 1)
+    next_month = q_start_month + 3
+    next_year = on_date.year
+    if next_month > 12:
+        next_month -= 12
+        next_year += 1
+    end = date_cls(next_year, next_month, 1) - timedelta(days=1)
+    return start, end
+
+
+async def price_history(db: AsyncSession, proposal_id, *, period: str = "quarter") -> "PriceHistoryOut":
+    """История дневных точек Ц_ОМ за период (§17.4, УК-51). period='quarter' — календарный
+    квартал, содержащий сегодняшний день; period='day' — только сегодняшняя точка (если есть)."""
+    from app.modules.governance.models import ProposalPriceSnapshot
+    from app.modules.governance.schemas import PriceHistoryOut, PriceHistoryPointOut
+
+    today = _now().date()
+    if period == "day":
+        since, until = today, today
+    else:
+        since, until = _quarter_bounds(today)
+
+    rows = list((await db.execute(
+        select(ProposalPriceSnapshot)
+        .where(
+            ProposalPriceSnapshot.proposal_id == proposal_id,
+            ProposalPriceSnapshot.snapshot_date >= since,
+            ProposalPriceSnapshot.snapshot_date <= until,
+        )
+        .order_by(ProposalPriceSnapshot.snapshot_date)
+    )).scalars().all())
+
+    points = [PriceHistoryPointOut(date=r.snapshot_date, price=float(r.price)) for r in rows]
+    avg = round(sum(p.price for p in points) / len(points), 2) if points else None
+    return PriceHistoryOut(
+        proposal_id=proposal_id, period=period,
+        period_start=since, period_end=until,
+        points=points, period_avg=avg,
+    )

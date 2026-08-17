@@ -106,17 +106,18 @@ async def _indirect_systems(
 
 async def compute_systemic_scope(db: AsyncSession, p: Proposal) -> tuple[int, str | None]:
     """Возвращает (число затронутых систем, текст LLM-пометки). Пометка — None, если косвенных
-    признаков не найдено (не показываем оговорку, которой не о чем предупреждать)."""
+    признаков не найдено (не показываем оговорку, которой не о чем предупреждать).
+
+    Число систем ВСЕГДА детерминированное (граф риск↔ТС↔риск-база, см. функции выше) — LLM
+    только формулирует текст пометки вокруг уже посчитанного списка, заземлённый вызов не
+    может назвать систему, которой нет в `indirect` (governance/llm/service.py:
+    generate_systemic_scope_note, УК-46)."""
     events = await _linked_risk_events(db, p.id)
     direct = await _direct_systems(db, p, events)
     indirect = await _indirect_systems(db, events, direct)
 
     llm_note = None
     if indirect:
-        word = "система" if len(indirect) == 1 else ("системы" if len(indirect) < 5 else "систем")
-        llm_note = (
-            f"LLM: возможно также затронуты ещё {len(indirect)} {word} по совпадению категории "
-            f"риска и ключевых слов — {', '.join(sorted(indirect))}. Рекомендательная пометка, "
-            "не подтверждена ручным анализом."
-        )
+        from app.modules.llm import generate_systemic_scope_note
+        llm_note = generate_systemic_scope_note(sorted(direct), sorted(indirect))
     return len(direct) + len(indirect), llm_note

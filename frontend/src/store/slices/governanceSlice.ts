@@ -97,6 +97,31 @@ export interface Proposal {
   measureSource?: 'MANUAL' | 'CATALOG' | 'LLM';
   llmReviewedBy?: string;
   llmReviewedAt?: string;
+  // §17.5 (УК-52/53): транзиентные поля очереди — заполнены, только когда список запрошен
+  // с order_by=priority (по умолчанию в live-режиме).
+  priorityWeight?: number;
+  priorityMoney?: number;
+  priorityIsAtypical?: boolean;
+  // §17.7 (УК-57): факт по бюджету/трудоёмкости — рядом с планом (capex/opexPerYear/effortHours).
+  actualCapex?: number;
+  actualOpex?: number;
+  actualEffortHours?: number;
+  actualsSetBy?: string;
+  actualsSetAt?: string;
+}
+
+/** План/факт по мере (§17.7) — variance = факт − план, undefined при отсутствии любой стороны. */
+export interface BudgetVariance {
+  proposalId: string;
+  plannedCapex?: number;
+  actualCapex?: number;
+  capexVariance?: number;
+  plannedOpex?: number;
+  actualOpex?: number;
+  opexVariance?: number;
+  plannedEffortHours?: number;
+  actualEffortHours?: number;
+  effortVariance?: number;
 }
 
 /** Альтернативный вариант решения на карточке эскалации (§17.3). */
@@ -117,6 +142,21 @@ export interface PriceOfInaction {
   priceSnapshotAt?: string;
   priceCurrent?: number;
   priceCurrentAt?: string;
+}
+
+/** Дневная точка Ц_ОМ и агрегация за период (§17.4, УК-51). */
+export interface PriceHistoryPoint {
+  date: string;
+  price: number;
+}
+
+export interface PriceHistory {
+  proposalId: string;
+  period: 'day' | 'quarter';
+  periodStart: string;
+  periodEnd: string;
+  points: PriceHistoryPoint[];
+  periodAvg?: number;
 }
 
 /** Справочник направлений (§17.3, УК-47) — временный, характеристика → направление. */
@@ -422,9 +462,10 @@ export const decideDueChange = createAsyncThunk<Proposal | null, { id: string; a
 // чтобы публичный контракт слайса для потребителей (компоненты импортируют из governanceSlice) не менялся.
 export {
   fetchPriceOfInaction, updateSystemicScope, updateAlternatives, reviewLlmMeasure,
-  fetchMeasureDepartments, upsertMeasureDepartment,
+  fetchMeasureDepartments, upsertMeasureDepartment, fetchPriceHistory,
+  setActuals, fetchBudgetVariance,
 } from './governanceCardThunks';
-import { updateSystemicScope, updateAlternatives, reviewLlmMeasure } from './governanceCardThunks';
+import { updateSystemicScope, updateAlternatives, reviewLlmMeasure, setActuals } from './governanceCardThunks';
 
 // ─────────────────────────────────── Slice ───────────────────────────────────
 interface GovernanceState {
@@ -463,7 +504,7 @@ const governanceSlice = createSlice({
     for (const thunk of [approveProposal, rejectProposal, updateProposalMeta, editProposal,
       setExecution, setEffortHours, rewriteForExecutor, updateTask, escalateTask, decideEscalation,
       resolveEscalation, addClarification, requestDueChange, decideDueChange,
-      updateSystemicScope, updateAlternatives, reviewLlmMeasure]) {
+      updateSystemicScope, updateAlternatives, reviewLlmMeasure, setActuals]) {
       builder.addCase(thunk.fulfilled, (state, action: PayloadAction<Proposal | null>) => {
         if (action.payload) {
           upsert(state, action.payload);

@@ -9,7 +9,7 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import type { RootState } from '../index';
 import { govApi } from '../api/govApi';
-import type { AlternativeSolution, MeasureDepartment, PriceOfInaction, Proposal } from './governanceSlice';
+import type { AlternativeSolution, BudgetVariance, MeasureDepartment, PriceHistory, PriceOfInaction, Proposal } from './governanceSlice';
 
 const isLive = (s: RootState) => s.ui.dataMode === 'live';
 
@@ -82,6 +82,13 @@ export const reviewLlmMeasure = createAsyncThunk<Proposal | null, { id: string; 
   },
 );
 
+/** История Ц_ОМ по дням за период (§17.4, УК-51) — честная квартальная агрегация вместо
+ * переиспользования снимка/текущего значения под другой подписью. Read-only: не мутирует
+ * Proposal, поэтому обычная async-функция (govApi), а не thunk с upsert в extraReducers. */
+export async function fetchPriceHistory(id: string, period: 'day' | 'quarter' = 'quarter'): Promise<PriceHistory> {
+  return govApi(`/proposals/${id}/price-of-inaction/history?period=${period}`, 'GET');
+}
+
 /** Временный справочник направлений (§17.3, УК-47) — характеристика → направление. */
 export async function fetchMeasureDepartments(): Promise<MeasureDepartment[]> {
   return govApi('/measure-departments', 'GET');
@@ -89,4 +96,35 @@ export async function fetchMeasureDepartments(): Promise<MeasureDepartment[]> {
 
 export async function upsertMeasureDepartment(characteristic: string, departmentName: string): Promise<MeasureDepartment> {
   return govApi('/measure-departments', 'PUT', { characteristic, departmentName });
+}
+
+/** Факт по бюджету/трудоёмкости после исполнения меры (§17.7, УК-57) — вносит исполнитель. */
+export const setActuals = createAsyncThunk<
+  Proposal | null,
+  { id: string; capex?: number; opex?: number; effortHours?: number },
+  { state: RootState }
+>(
+  'governance/set-actuals',
+  async ({ id, capex, opex, effortHours }, { getState }) => {
+    if (isLive(getState())) {
+      return await govApi(`/proposals/${id}/actuals`, 'PATCH', {
+        capex, opex, effortHours,
+      });
+    }
+    const p = getState().governance.proposals.find((x) => x.id === id);
+    if (!p) return null;
+    return {
+      ...p,
+      actualCapex: capex ?? p.actualCapex,
+      actualOpex: opex ?? p.actualOpex,
+      actualEffortHours: effortHours ?? p.actualEffortHours,
+      actualsSetBy: 'demo',
+      actualsSetAt: new Date().toISOString(),
+    };
+  },
+);
+
+/** План/факт (§17.7) — read-only, не мутирует Proposal (тот же паттерн, что fetchPriceHistory). */
+export async function fetchBudgetVariance(id: string): Promise<BudgetVariance> {
+  return govApi(`/proposals/${id}/budget-variance`, 'GET');
 }

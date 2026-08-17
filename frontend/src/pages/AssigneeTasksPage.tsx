@@ -22,7 +22,8 @@ import { RootState } from '../store';
 import { useAppDispatch } from '../store/hooks';
 import {
   selectProposalsForAssignee, addClarification, requestDueChange, setEffortHours,
-  fetchPriceOfInaction, type Proposal, type PriceOfInaction,
+  fetchPriceOfInaction, fetchPriceHistory, setActuals, fetchBudgetVariance,
+  type Proposal, type PriceOfInaction, type PriceHistory, type BudgetVariance,
 } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, SPACE } from '../theme/premium';
@@ -74,7 +75,17 @@ const AssigneeTasksPage: React.FC = () => {
   // view.measure_economics.own (своя мера) или общее view.risk_economics (менеджмент).
   const canSeeEconomics = permissions.includes('view.measure_economics.own') || permissions.includes('view.risk_economics');
   const [priceOfInaction, setPriceOfInaction] = useState<PriceOfInaction | null>(null);
-  const [priceHorizon, setPriceHorizon] = useState<'current' | 'snapshot'>('current');
+  // §17.4 (УК-51): «за квартал» — честное среднее по дневной истории (fetchPriceHistory),
+  // не переиспользование снимка на просрочку под другой подписью.
+  const [priceHistory, setPriceHistory] = useState<PriceHistory | null>(null);
+  const [priceHorizon, setPriceHorizon] = useState<'current' | 'quarter'>('current');
+  // §17.7 (УК-57): факт по бюджету/трудоёмкости — исполнитель вносит после «выполнено» (execution
+  // === DONE), variance считает бэкенд (или live-эквивалент в моке) — не дублируем арифметику тут.
+  const [actualCapex, setActualCapex] = useState<number | null>(null);
+  const [actualOpex, setActualOpex] = useState<number | null>(null);
+  const [actualHours, setActualHours] = useState<number | null>(null);
+  const [savingActuals, setSavingActuals] = useState(false);
+  const [budgetVariance, setBudgetVariance] = useState<BudgetVariance | null>(null);
 
   const stats = useMemo(() => {
     const done = tasks.filter((t) => t.execution === 'DONE').length;
@@ -85,11 +96,43 @@ const AssigneeTasksPage: React.FC = () => {
   const open = (p: Proposal) => {
     setSel(p); setClarify(''); setNewDue(p.dueDate ? dayjs(parseRu(p.dueDate)) : null);
     setJustif(''); setHours(p.effortHours ?? null);
-    setPriceOfInaction(null); setPriceHorizon('current');
+    setPriceOfInaction(null); setPriceHistory(null); setPriceHorizon('current');
+    setActualCapex(p.actualCapex ?? null); setActualOpex(p.actualOpex ?? null); setActualHours(p.actualEffortHours ?? null);
+    setBudgetVariance(null);
     if (canSeeEconomics) {
       dispatch(fetchPriceOfInaction({ id: p.id })).unwrap()
-        .then((r) => setPriceOfInaction(r))
+        .then((r) => {
+          setPriceOfInaction(r);
+          if (r?.isOverdue) fetchPriceHistory(p.id, 'quarter').then(setPriceHistory).catch(() => setPriceHistory(null));
+        })
         .catch(() => setPriceOfInaction(null));
+      if (p.execution === 'DONE') {
+        fetchBudgetVariance(p.id).then(setBudgetVariance).catch(() => setBudgetVariance(null));
+      }
+    }
+  };
+
+  const submitActuals = async () => {
+    if (!sel) return;
+    if (actualCapex === null && actualOpex === null && actualHours === null) {
+      message.error('Укажите хотя бы одно значение факта (CAPEX, OPEX или часы)');
+      return;
+    }
+    setSavingActuals(true);
+    try {
+      const updated = await dispatch(setActuals({
+        id: sel.id,
+        capex: actualCapex ?? undefined,
+        opex: actualOpex ?? undefined,
+        effortHours: actualHours ?? undefined,
+      })).unwrap();
+      message.success('Факт по бюджету сохранён');
+      if (updated) setSel(updated);
+      fetchBudgetVariance(sel.id).then(setBudgetVariance).catch(() => setBudgetVariance(null));
+    } catch {
+      message.error('Не удалось сохранить факт по бюджету');
+    } finally {
+      setSavingActuals(false);
     }
   };
 
@@ -211,13 +254,15 @@ const AssigneeTasksPage: React.FC = () => {
                 message="Цена неисполнения (Ц_ОМ)"
                 description={
                   <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                    <Radio.Group size="small" value={priceHorizon} onChange={(e) => setPriceHorizon(e.target.value)}>
-                      <Radio.Button value="current">На сегодня</Radio.Button>
-                      <Radio.Button value="snapshot">На момент просрочки</Radio.Button>
-                    </Radio.Group>
+                    {priceHistory && (
+                      <Radio.Group size="small" value={priceHorizon} onChange={(e) => setPriceHorizon(e.target.value)}>
+                        <Radio.Button value="current">На сегодня</Radio.Button>
+                        <Radio.Button value="quarter">За квартал (среднее)</Radio.Button>
+                      </Radio.Group>
+                    )}
                     <Text strong style={{ fontSize: 18, color: RAG.bad.strong }}>
                       {(
-                        (priceHorizon === 'current' ? priceOfInaction.priceCurrent : priceOfInaction.priceSnapshot) ?? 0
+                        (priceHorizon === 'quarter' ? priceHistory?.periodAvg : priceOfInaction.priceCurrent) ?? 0
                       ).toLocaleString('ru-RU')} ₽
                     </Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>
@@ -226,6 +271,9 @@ const AssigneeTasksPage: React.FC = () => {
                         : 'Деньги под риском, которые остаются незакрытыми, пока мера не выполнена (§17.4).'}
                       {priceOfInaction.priceCurrentAt && priceHorizon === 'current' && (
                         <> Пересчитано: {dayjs(priceOfInaction.priceCurrentAt).format('DD.MM.YYYY')}.</>
+                      )}
+                      {priceHorizon === 'quarter' && priceHistory && (
+                        <> Среднее по {priceHistory.points.length} дн. текущего квартала.</>
                       )}
                     </Text>
                   </Space>
@@ -262,6 +310,50 @@ const AssigneeTasksPage: React.FC = () => {
                   <div style={{ fontSize: 11, color: BRAND.inkSoft, marginTop: 4 }}>
                     Оценено: {dayjs(sel.effortHoursSetAt).format('DD.MM.YYYY HH:mm')}
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* §17.7 (УК-57): факт по бюджету/трудоёмкости — вносит исполнитель после «выполнено»,
+                variance (факт − план) считает бэкенд, не дублируем арифметику на фронте. */}
+            {sel.execution === 'DONE' && canSeeEconomics && (
+              <div>
+                <Text type="secondary"><FieldTimeOutlined /> Факт по бюджету и трудоёмкости</Text>
+                <Row gutter={8} style={{ marginTop: 8 }}>
+                  <Col span={8}>
+                    <InputNumber<number> min={0} value={actualCapex} onChange={(v) => setActualCapex(typeof v === 'number' ? v : null)}
+                      placeholder="CAPEX, ₽" style={{ width: '100%' }} />
+                  </Col>
+                  <Col span={8}>
+                    <InputNumber<number> min={0} value={actualOpex} onChange={(v) => setActualOpex(typeof v === 'number' ? v : null)}
+                      placeholder="OPEX/год, ₽" style={{ width: '100%' }} />
+                  </Col>
+                  <Col span={8}>
+                    <InputNumber<number> min={0} step={0.5} value={actualHours} onChange={(v) => setActualHours(typeof v === 'number' ? v : null)}
+                      placeholder="Часы факт" style={{ width: '100%' }} />
+                  </Col>
+                </Row>
+                <Button style={{ marginTop: 8 }} type="primary" loading={savingActuals} onClick={submitActuals}>
+                  {sel.actualsSetAt ? 'Обновить факт' : 'Сохранить факт'}
+                </Button>
+                {budgetVariance && (budgetVariance.capexVariance != null || budgetVariance.opexVariance != null || budgetVariance.effortVariance != null) && (
+                  <Space direction="vertical" size={2} style={{ marginTop: 8, width: '100%' }}>
+                    {budgetVariance.capexVariance != null && (
+                      <Text style={{ fontSize: 12, color: budgetVariance.capexVariance > 0 ? RAG.bad.strong : RAG.good.strong }}>
+                        CAPEX: {budgetVariance.capexVariance > 0 ? 'перерасход' : 'экономия'} {Math.abs(budgetVariance.capexVariance).toLocaleString('ru-RU')} ₽
+                      </Text>
+                    )}
+                    {budgetVariance.opexVariance != null && (
+                      <Text style={{ fontSize: 12, color: budgetVariance.opexVariance > 0 ? RAG.bad.strong : RAG.good.strong }}>
+                        OPEX/год: {budgetVariance.opexVariance > 0 ? 'перерасход' : 'экономия'} {Math.abs(budgetVariance.opexVariance).toLocaleString('ru-RU')} ₽
+                      </Text>
+                    )}
+                    {budgetVariance.effortVariance != null && (
+                      <Text style={{ fontSize: 12, color: budgetVariance.effortVariance > 0 ? RAG.bad.strong : RAG.good.strong }}>
+                        Трудоёмкость: {budgetVariance.effortVariance > 0 ? 'перерасход' : 'экономия'} {Math.abs(budgetVariance.effortVariance)} ч
+                      </Text>
+                    )}
+                  </Space>
                 )}
               </div>
             )}
