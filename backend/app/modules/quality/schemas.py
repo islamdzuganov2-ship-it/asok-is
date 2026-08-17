@@ -1,5 +1,6 @@
 """Pydantic-схемы домена quality (каталог метрик), ТЗ v13."""
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
@@ -71,3 +72,46 @@ class WeightsOut(_CamelModel):
     total_weight: float
     subchar_weights: list[SubcharWeightOut]
     criticality_weights: dict[str, float]
+
+
+# ── Редактор весов (ТЗ v19 УК-04/05/07) ──
+class CharWeightRow(_CamelModel):
+    characteristic: str
+    weight: float  # u — вес характеристики в интегральном Q, Σ=100 по профилю
+
+
+class SubcharWithinRow(_CamelModel):
+    characteristic: str
+    subcharacteristic: str
+    weight: float  # w — вес подхарактеристики ВНУТРИ своей характеристики, Σ=100 на характеристику
+
+
+class WeightEditorOut(_CamelModel):
+    """Текущие u/w для правки — по выбранному профилю критичности (независимо от двух других)."""
+    profile: str
+    active_version_id: uuid.UUID
+    active_version_label: str
+    char_weights: list[CharWeightRow]
+    subchar_within: list[SubcharWithinRow]
+
+
+class WeightEditIn(_CamelModel):
+    profile: str
+    char_weights: list[CharWeightRow]
+    subchar_within: list[SubcharWithinRow]
+    note: str | None = None
+
+
+class WeightEditErrorsOut(_CamelModel):
+    """Отказ сохранения — список ошибок с указанием конкретной характеристики/строки, не
+    общее «данные некорректны» (критерий приёмки п.2)."""
+    errors: list[str]
+
+
+class WeightVersionSummaryOut(_CamelModel):
+    id: uuid.UUID
+    label: str
+    is_active: bool
+    created_by: uuid.UUID | None
+    created_at: datetime
+    note: str | None

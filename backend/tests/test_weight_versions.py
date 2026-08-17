@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
 from app.modules.quality import QUALITY_PAIRS, FormulaType, MetricCatalog, calculate_metric, map_to_level
+from app.modules.quality.models import WeightSetVersion
 from app.modules.quality.weight_versions import (
     ensure_active_version,
     get_active_version,
@@ -51,10 +52,37 @@ async def _period(db, system, metrics, quarter="Q2-2026", x=0.5) -> AssessmentPe
 
 
 async def test_ensure_active_version_creates_when_none_exists(db_session):
+    """ТЗ v19 УК-04/05: веса теперь по профилю критичности — версия несёт все 3 профиля,
+    31 строку (w) на каждый + 8 характеристик (u) на каждый, засеянные из одного файла заказчика."""
     assert await get_active_version(db_session) is None
     version = await ensure_active_version(db_session)
     assert version.is_active is True
-    assert len(version.subchar_weights) == 31
+    assert set(version.subchar_weights.keys()) == {"MISSION CRITICAL", "BUSINESS CRITICAL", "BUSINESS OPERATIONAL"}
+    for profile_rows in version.subchar_weights.values():
+        assert len(profile_rows) == 31
+    for profile_chars in version.char_weights.values():
+        assert len(profile_chars) == 8
+
+
+async def test_ensure_active_version_replaces_legacy_flat_shape_without_crashing(db_session):
+    """Регресс: строка, заведённая ДО УК-04/05 (subchar_weights — плоский список [[c,s,w],...],
+    не {profile: [...]}), не должна валить ensure_active_version() AttributeError'ом на .items() —
+    должна быть распознана как «другое содержимое» и переиздана в новой по-профильной форме."""
+    legacy = WeightSetVersion(
+        id=uuid.uuid4(), label="legacy-flat",
+        subchar_weights=[["Функциональная пригодность", "Функциональная полнота", 5]],
+        char_weights=None, criticality_weights={"MISSION CRITICAL": 3.0}, is_active=True,
+    )
+    db_session.add(legacy)
+    await db_session.flush()
+
+    version = await ensure_active_version(db_session)
+    assert version.id != legacy.id
+    assert version.is_active is True
+    assert isinstance(version.subchar_weights, dict)
+
+    legacy_reloaded = await db_session.get(WeightSetVersion, legacy.id)
+    assert legacy_reloaded.is_active is False
 
 
 async def test_ensure_active_version_is_idempotent(db_session):

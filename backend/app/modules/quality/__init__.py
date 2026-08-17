@@ -43,12 +43,26 @@ from app.modules.quality.scoring import (
 )
 from app.modules.quality.weight_versions import (
     DEFAULT_CRITICALITY_WEIGHTS,
+    PeriodScoreDelta,
     RecomputeReport,
+    combined_weights_for_version,
     ensure_active_version,
     get_active_version,
+    list_versions,
+    preview_weight_edit,
     recompute_and_snapshot,
+    save_weight_edit,
+    validate_weight_edit,
+    weight_for,
 )
-from app.modules.quality.weights import CHARACTERISTIC_WEIGHTS, SUBCHAR_WEIGHTS, subchar_weight
+from app.modules.quality.weights import (
+    CHARACTERISTIC_WEIGHTS,
+    CRITICALITY_PROFILES,
+    DEFAULT_CHAR_WEIGHTS,
+    DEFAULT_SUBCHAR_WITHIN_CHAR,
+    SUBCHAR_WEIGHTS,
+    subchar_weight,
+)
 
 __all__ = [
     "MetricCatalog",
@@ -90,9 +104,19 @@ __all__ = [
     "ScoreHistorySnapshot",
     "DEFAULT_CRITICALITY_WEIGHTS",
     "RecomputeReport",
+    "PeriodScoreDelta",
     "get_active_version",
     "ensure_active_version",
+    "list_versions",
     "recompute_and_snapshot",
+    "combined_weights_for_version",
+    "weight_for",
+    "validate_weight_edit",
+    "save_weight_edit",
+    "preview_weight_edit",
+    "CRITICALITY_PROFILES",
+    "DEFAULT_CHAR_WEIGHTS",
+    "DEFAULT_SUBCHAR_WITHIN_CHAR",
     # ТЗ v19 УК-13 (п.13): вес меры для нагрузки/балансировки исполнителей
     "measure_weight",
 ]

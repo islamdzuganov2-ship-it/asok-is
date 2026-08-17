@@ -52,8 +52,14 @@ class WeightSetVersion(Base, TimestampMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     label = Column(String(255), nullable=False)
-    subchar_weights = Column(JSONB, nullable=False)       # [["характеристика","подхар.",вес], ...]
-    criticality_weights = Column(JSONB, nullable=False)   # {"MISSION_CRITICAL": 3, ...}
+    # ТЗ v19 УК-04/05 (редактор весов): w-уровень (подхарактеристика → характеристика), теперь
+    # ПО ПРОФИЛЮ критичности — {"MISSION CRITICAL": [["характеристика","подхар.",вес_внутри_char], ...], ...},
+    # вес нормирован НА 100 ВНУТРИ каждой характеристики (не на всю модель, как раньше) — см. char_weights.
+    subchar_weights = Column(JSONB, nullable=False)
+    # u-уровень (характеристика → интегральный Q), по профилю — {"MISSION CRITICAL": {"Надёжность": 20, ...}, ...},
+    # Σ=100 по 8 характеристикам на каждый профиль. Итоговый вес подхарактеристики = u(char)×w(sub|char)/100.
+    char_weights = Column(JSONB, nullable=True)
+    criticality_weights = Column(JSONB, nullable=False)   # {"MISSION_CRITICAL": 3, ...} — ДРУГАЯ ось: вес класса ИС в портфеле, не путать с char_weights (вес характеристики внутри ИС)
     is_active = Column(Boolean, nullable=False, default=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     note = Column(Text, nullable=True)
