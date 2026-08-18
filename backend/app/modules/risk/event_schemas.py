@@ -151,3 +151,42 @@ class HeatmapMoneyCellOut(_CamelModel):
     total_ale: float          # деньги под риском (Σ ALE активных рисков ячейки, без дублей)
     total_delta_ale: float    # ΔALE, снимаемый привязанными мерами (Σ ale_avg × Σ ale_reduction_share)
     coverage_pct: float       # доля ALE рисков, у которых есть хотя бы одна привязанная мера
+
+
+# ── ТЗ v19 п.7 (УК-19/20): сквозная цепочка риск → мера → эффект + портфельный итог ──
+class RiskMeasureChainMeasureOut(_CamelModel):
+    proposal_id: uuid.UUID
+    title: str
+    status: str
+    execution: str | None
+    capex: float | None
+    opex_per_year: float | None
+    ale_reduction_share: float | None
+    delta_ale_cash: float | None
+    delta_ale_deferred: float | None
+    delta_ale_capacity: float | None
+    rosi: float | None
+    verdict: str | None
+    payback_months: float | None
+
+
+class RiskMeasureChainRowOut(_CamelModel):
+    risk_id: uuid.UUID
+    risk_code: str
+    risk_title: str
+    system_name: str | None
+    ale_avg: float | None
+    measures: list[RiskMeasureChainMeasureOut]
+
+
+class PortfolioRiskSummaryOut(_CamelModel):
+    """УК-20. «Обновление 17.08.2026»: covered_by_done_measures считает эффект ТОЛЬКО
+    выполненных (execution=DONE) мер — эффект невыполненной просроченной меры это Ц_ОМ
+    (§17.4), отдельная сущность, здесь не смешивается."""
+    total_at_risk: float
+    covered_by_done_measures: float
+    residual_risk: float
+    required_investment: float
+    expected_effect: float
+    risks_count: int
+    measures_count: int

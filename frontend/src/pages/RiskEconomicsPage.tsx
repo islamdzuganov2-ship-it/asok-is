@@ -73,6 +73,21 @@ interface CostDashboard {
   verdict: { eliminate: number; compensate: number; accept: number };
   topRisks: TopRisk[]; bySystem: { system: string; ale: number }[]; heatmap: HeatCell[];
 }
+// ТЗ v19 п.7 (УК-19/20): сквозная цепочка риск → мера → эффект + портфельный итог.
+interface PortfolioRiskSummary {
+  totalAtRisk: number; coveredByDoneMeasures: number; residualRisk: number;
+  requiredInvestment: number; expectedEffect: number; risksCount: number; measuresCount: number;
+}
+interface RiskMeasureChainMeasure {
+  proposalId: string; title: string; status: string; execution: string | null;
+  capex: number | null; opexPerYear: number | null; aleReductionShare: number | null;
+  deltaAleCash: number | null; deltaAleDeferred: number | null; deltaAleCapacity: number | null;
+  rosi: number | null; verdict: string | null; paybackMonths: number | null;
+}
+interface RiskMeasureChainRow {
+  riskId: string; riskCode: string; riskTitle: string; systemName: string | null;
+  aleAvg: number | null; measures: RiskMeasureChainMeasure[];
+}
 
 // ─── Подача ───
 const fmtMoney = (v?: number | null): string =>
@@ -157,6 +172,10 @@ const DashboardTab: React.FC = () => {
   const [d, setD] = useState<CostDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // ТЗ v19 п.7 (УК-19/20): портфельный итог + сквозная цепочка риск → мера → эффект.
+  const [summary, setSummary] = useState<PortfolioRiskSummary | null>(null);
+  const [chain, setChain] = useState<RiskMeasureChainRow[]>([]);
+  const [chainLoading, setChainLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
@@ -165,6 +184,19 @@ const DashboardTab: React.FC = () => {
       .then((r) => { if (alive) setD(r); })
       .catch((e: any) => { if (alive) setError(e.message); })
       .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    setChainLoading(true);
+    Promise.all([
+      api<PortfolioRiskSummary>('/risk-events/portfolio-summary'),
+      api<RiskMeasureChainRow[]>('/risk-events/chain'),
+    ])
+      .then(([s, c]) => { if (alive) { setSummary(s); setChain(c); } })
+      .catch(() => { if (alive) { setSummary(null); setChain([]); } })
+      .finally(() => { if (alive) setChainLoading(false); });
     return () => { alive = false; };
   }, []);
 
@@ -263,6 +295,69 @@ const DashboardTab: React.FC = () => {
           columns={topCols} dataSource={d?.topRisks ?? []} rowKey="code" loading={loading} size="small"
           pagination={false} scroll={{ x: 780 }}
           locale={{ emptyText: 'Нет рисковых событий с посчитанным ALE.' }}
+        />
+      </Card>
+
+      {/* ТЗ v19 п.7 (УК-20): портфельный итог — «под риском / покрыто / остаточный / вложения / эффект» */}
+      <div>
+        <Title level={5} style={{ margin: '0 0 8px' }}>Портфельный итог по мерам</Title>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: SPACE.base }}>
+          <KpiCard loading={chainLoading} title="Всего под риском, ₽/год" value={summary ? fmtMoney(summary.totalAtRisk) : '—'}
+            hint={summary ? `${summary.risksCount} рисковых событий` : undefined} />
+          <KpiCard loading={chainLoading} title="Покрыто выполненными мерами, ₽/год" value={summary ? fmtMoney(summary.coveredByDoneMeasures) : '—'}
+            color={summary && summary.coveredByDoneMeasures > 0 ? accentColorOf('sage') : undefined} />
+          <KpiCard loading={chainLoading} title="Остаточный риск, ₽/год" value={summary ? fmtMoney(summary.residualRisk) : '—'}
+            color={summary && summary.residualRisk > 0 ? accentColorOf('terracotta') : undefined} />
+          <KpiCard loading={chainLoading} title="Требуемые вложения, ₽" value={summary ? fmtMoney(summary.requiredInvestment) : '—'}
+            hint={summary ? `${summary.measuresCount} мер` : undefined} />
+          <KpiCard loading={chainLoading} title="Ожидаемый эффект, ₽/год" value={summary ? fmtMoney(summary.expectedEffect) : '—'}
+            hint="одобрены, ещё не выполнены" />
+        </div>
+      </div>
+
+      {/* ТЗ v19 п.7 (УК-19): сквозная таблица риск → мера → эффект, разворот по клику на риск */}
+      <Card {...premiumCard('ink')} title="Риск → мера → эффект" styles={{ body: { padding: 0 } }}>
+        <Table<RiskMeasureChainRow>
+          rowKey="riskId" loading={chainLoading} size="small" pagination={{ pageSize: 10, hideOnSinglePage: true }}
+          dataSource={chain}
+          locale={{ emptyText: 'Нет активных рисковых событий.' }}
+          expandable={{
+            rowExpandable: (r) => r.measures.length > 0,
+            expandedRowRender: (r) => (
+              <Table<RiskMeasureChainMeasure>
+                rowKey="proposalId" size="small" pagination={false} dataSource={r.measures}
+                columns={[
+                  { title: 'Мера', dataIndex: 'title' },
+                  { title: 'Статус', dataIndex: 'status', width: 130,
+                    render: (s: string, m) => (
+                      <Space size={4}>
+                        <Tag>{s}</Tag>
+                        {m.execution && <Tag color={m.execution === 'DONE' ? 'green' : 'red'}>{m.execution === 'DONE' ? 'выполнено' : 'не выполнено'}</Tag>}
+                      </Space>
+                    ) },
+                  numericColumn({ title: 'Доля снятия', dataIndex: 'aleReductionShare', width: 100,
+                    render: (v: number | null) => v == null ? '—' : `${Math.round(v * 100)}%` }),
+                  numericColumn({ title: 'ΔALE (деньги)', dataIndex: 'deltaAleCash', width: 130, render: (v: number | null) => fmtMoney(v) }),
+                  numericColumn({ title: 'CAPEX', dataIndex: 'capex', width: 120, render: (v: number | null) => fmtMoney(v) }),
+                  numericColumn({ title: 'OPEX/год', dataIndex: 'opexPerYear', width: 120, render: (v: number | null) => fmtMoney(v) }),
+                  numericColumn({ title: 'ROSI', dataIndex: 'rosi', width: 90, render: (v: number | null) => v == null ? '—' : fmtNum(v) }),
+                  numericColumn({ title: 'Окупаемость, мес.', dataIndex: 'paybackMonths', width: 130,
+                    render: (v: number | null) => v == null ? '—' : fmtNum(v, 1) }),
+                  { title: 'Вердикт', dataIndex: 'verdict', width: 110, render: (v: string | null) => v || '—' },
+                ]}
+              />
+            ),
+          }}
+          columns={[
+            { title: 'Риск', dataIndex: 'riskTitle', sorter: sorterFor((r: RiskMeasureChainRow) => r.riskTitle),
+              render: (t: string, r) => <Space size={4}><Text type="secondary" style={{ fontSize: 12 }}>{r.riskCode}</Text><Text strong>{t}</Text></Space> },
+            { title: 'ИС', dataIndex: 'systemName', width: 160, render: (s: string | null) => s || '—' },
+            numericColumn({ title: 'ALE, ₽/год', dataIndex: 'aleAvg', width: 150,
+              sorter: sorterFor((r: RiskMeasureChainRow) => r.aleAvg), render: (v: number | null) => fmtMoney(v) }),
+            numericColumn({ title: 'Мер привязано', key: 'measuresCount', width: 130,
+              sorter: sorterFor((r: RiskMeasureChainRow) => r.measures.length),
+              render: (_: unknown, r) => r.measures.length || <Text type="secondary">0</Text> }),
+          ]}
         />
       </Card>
     </Space>

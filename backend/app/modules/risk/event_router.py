@@ -23,9 +23,11 @@ from app.modules.risk.event_schemas import (
     IncidentLinkOut,
     MeasureLinkIn,
     MeasureLinkOut,
+    PortfolioRiskSummaryOut,
     RiskEventCreate,
     RiskEventOut,
     RiskEventUpdate,
+    RiskMeasureChainRowOut,
     SubcharLinkIn,
     SubcharLinkOut,
 )
@@ -76,6 +78,24 @@ async def get_heatmap_money_layer(
     _: dict = Depends(get_current_user),
 ):
     return await service.heatmap_money_layer(db)
+
+
+# ТЗ v19 п.7 (УК-19/20): сквозная цепочка риск → мера → эффект + портфельный итог — литеральные
+# пути ДО /{event_id} по той же причине, что /by-cell и /heatmap-money-layer выше.
+@router.get("/chain", response_model=list[RiskMeasureChainRowOut])
+async def get_risk_measure_chain(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    return await service.risk_measure_chain(db)
+
+
+@router.get("/portfolio-summary", response_model=PortfolioRiskSummaryOut)
+async def get_portfolio_risk_summary(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    return await service.portfolio_risk_summary(db)
 
 
 @router.get("/{event_id}", response_model=RiskEventOut)

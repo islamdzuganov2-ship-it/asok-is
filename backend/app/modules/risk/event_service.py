@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.econ import annual_loss_expectancy, compute_incident_cost, config_value
-from app.modules.governance import Proposal
+from app.modules.governance import STATUS_APPROVED, Proposal
 from app.modules.incidents import TechIncident
 from app.modules.risk.event_schemas import (
     AleResultOut,
@@ -23,8 +23,11 @@ from app.modules.risk.event_schemas import (
     HeatmapCellRiskOut,
     HeatmapMoneyCellOut,
     MeasureLinkIn,
+    PortfolioRiskSummaryOut,
     RiskEventCreate,
     RiskEventUpdate,
+    RiskMeasureChainMeasureOut,
+    RiskMeasureChainRowOut,
     SubcharLinkIn,
 )
 from app.modules.risk.models import (
@@ -324,3 +327,113 @@ async def heatmap_money_layer(db: AsyncSession) -> list[HeatmapMoneyCellOut]:
             coverage_pct=coverage_pct,
         ))
     return out
+
+
+# ── ТЗ v19 п.7 (УК-19/20): сквозная цепочка риск → мера → эффект + портфельный итог ──
+
+def _payback_months(p: Proposal) -> float | None:
+    """Срок окупаемости в месяцах — только по «живым деньгам» (delta_ale_cash): deferred и
+    capacity не возвращаются в бюджет, окупаемость на них не считается. None — не молчаливый 0,
+    а честное «не окупается / нет данных» (нет capex, нет эффекта, или чистый эффект ≤ 0)."""
+    if not p.capex or p.delta_ale_cash is None:
+        return None
+    net_monthly = float(p.delta_ale_cash) / 12.0 - float(p.opex_per_year or 0) / 12.0
+    if net_monthly <= 0:
+        return None
+    return round(float(p.capex) / net_monthly, 1)
+
+
+async def risk_measure_chain(db: AsyncSession) -> list[RiskMeasureChainRowOut]:
+    """УК-19: одна таблица сквозной цепочки риск → мера → эффект, по всем активным рискам сразу
+    (не по одной ИС/характеристике, как cell_detail/heatmap_money_layer — это управленческий
+    экран уровня портфеля, не теплокарты)."""
+    risk_rows = (await db.execute(
+        select(RiskEvent, System.name)
+        .outerjoin(System, System.id == RiskEvent.system_id)
+        .where(RiskEvent.status == RISK_EVENT_ACTIVE)
+        .order_by(RiskEvent.ale_avg.desc().nullslast())
+    )).all()
+    if not risk_rows:
+        return []
+
+    risk_ids = [ev.id for ev, _ in risk_rows]
+    measure_rows = (await db.execute(
+        select(RiskEventMeasure, Proposal)
+        .join(Proposal, Proposal.id == RiskEventMeasure.proposal_id)
+        .where(RiskEventMeasure.risk_event_id.in_(risk_ids))
+    )).all()
+    measures_by_risk: dict[uuid.UUID, list[RiskMeasureChainMeasureOut]] = defaultdict(list)
+    for link, proposal in measure_rows:
+        measures_by_risk[link.risk_event_id].append(RiskMeasureChainMeasureOut(
+            proposal_id=proposal.id,
+            title=proposal.risk_title or proposal.metric_name or "Мера",
+            status=proposal.status,
+            execution=proposal.execution,
+            capex=float(proposal.capex) if proposal.capex is not None else None,
+            opex_per_year=float(proposal.opex_per_year) if proposal.opex_per_year is not None else None,
+            ale_reduction_share=float(link.ale_reduction_share) if link.ale_reduction_share is not None else None,
+            delta_ale_cash=float(proposal.delta_ale_cash) if proposal.delta_ale_cash is not None else None,
+            delta_ale_deferred=float(proposal.delta_ale_deferred) if proposal.delta_ale_deferred is not None else None,
+            delta_ale_capacity=float(proposal.delta_ale_capacity) if proposal.delta_ale_capacity is not None else None,
+            rosi=float(proposal.rosi) if proposal.rosi is not None else None,
+            verdict=proposal.verdict,
+            payback_months=_payback_months(proposal),
+        ))
+
+    return [
+        RiskMeasureChainRowOut(
+            risk_id=ev.id, risk_code=ev.code, risk_title=ev.title, system_name=sys_name,
+            ale_avg=float(ev.ale_avg) if ev.ale_avg is not None else None,
+            measures=measures_by_risk.get(ev.id, []),
+        )
+        for ev, sys_name in risk_rows
+    ]
+
+
+async def portfolio_risk_summary(db: AsyncSession) -> PortfolioRiskSummaryOut:
+    """УК-20: «под риском / покрыто выполненными мерами / остаточный / вложения / ожидаемый
+    эффект». covered_by_done_measures — ТОЛЬКО execution=DONE (см. докстринг PortfolioRiskSummaryOut);
+    expected_effect — одобренные, но ещё не выполненные (эффект в будущем, не в прошлом)."""
+    risks = (await db.execute(
+        select(RiskEvent).where(RiskEvent.status == RISK_EVENT_ACTIVE)
+    )).scalars().all()
+    total_at_risk = round(sum(float(r.ale_avg or 0) for r in risks), 2)
+    if not risks:
+        return PortfolioRiskSummaryOut(
+            total_at_risk=0.0, covered_by_done_measures=0.0, residual_risk=0.0,
+            required_investment=0.0, expected_effect=0.0, risks_count=0, measures_count=0,
+        )
+
+    ale_by_risk = {r.id: float(r.ale_avg or 0) for r in risks}
+    measure_rows = (await db.execute(
+        select(RiskEventMeasure, Proposal)
+        .join(Proposal, Proposal.id == RiskEventMeasure.proposal_id)
+        .where(RiskEventMeasure.risk_event_id.in_(ale_by_risk.keys()), Proposal.status == STATUS_APPROVED)
+    )).all()
+
+    covered = 0.0
+    expected = 0.0
+    investment = 0.0
+    seen_proposals: set[uuid.UUID] = set()
+    for link, proposal in measure_rows:
+        share = float(link.ale_reduction_share or 0)
+        effect = ale_by_risk.get(link.risk_event_id, 0.0) * share
+        if proposal.execution == "DONE":
+            covered += effect
+        else:
+            expected += effect
+        if proposal.id not in seen_proposals:
+            # CAPEX/OPEX принадлежат МЕРЕ, не связи риск↔мера — считаем один раз на меру,
+            # даже если она закрывает несколько рисков (иначе задвоили бы вложения).
+            seen_proposals.add(proposal.id)
+            investment += float(proposal.capex or 0) + float(proposal.opex_per_year or 0)
+
+    return PortfolioRiskSummaryOut(
+        total_at_risk=total_at_risk,
+        covered_by_done_measures=round(covered, 2),
+        residual_risk=round(total_at_risk - covered, 2),
+        required_investment=round(investment, 2),
+        expected_effect=round(expected, 2),
+        risks_count=len(risks),
+        measures_count=len(seen_proposals),
+    )
