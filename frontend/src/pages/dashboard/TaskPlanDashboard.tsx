@@ -20,6 +20,7 @@ import { message } from '../../theme/appMessage';
 import {
   LinkOutlined, WarningOutlined, CheckOutlined, CloseOutlined, RiseOutlined, StopOutlined,
   ScheduleOutlined, DatabaseOutlined, DownOutlined, UnorderedListOutlined, FileTextOutlined, FlagOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector, shallowEqual } from 'react-redux';
@@ -44,6 +45,7 @@ const LABEL_W = 300;
 const RISK_DAYS = 14; // «зона риска» — до срока осталось ≤ 14 дней
 const ALL_SYS = '__ALL__';
 const ALL_CHAR = '__ALL__';
+const ALL_OWNER = '__ALL__';
 const parseRu = (d?: string): Date | null => {
   if (!d) return null;
   const m = /(\d{2})\.(\d{2})\.(\d{4})/.exec(d);
@@ -99,6 +101,8 @@ const TaskPlanDashboard: React.FC = () => {
   const [filter, setFilter] = useState<string>('Активные');
   const [sysFilter, setSysFilter] = useState<string>(ALL_SYS);
   const [charFilter, setCharFilter] = useState<string>(ALL_CHAR);
+  // ТЗ v19 п.5 (УК-14): разрез «по руководителю» — «руководитель» = «ответственный» (ОМ).
+  const [ownerFilter, setOwnerFilter] = useState<string>(ALL_OWNER);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // ТЗ v20 п.1: переход из «AI-аналитики по мерам» с ?characteristic=… — сразу фильтруем План
@@ -145,15 +149,21 @@ const TaskPlanDashboard: React.FC = () => {
     () => [...new Set(proposals.filter((p) => p.status !== 'REJECTED').map((p) => p.characteristic))].sort(),
     [proposals],
   );
+  // Список ответственных для фильтра (ТЗ v19 п.5, УК-14).
+  const owners = useMemo(
+    () => [...new Set(proposals.filter((p) => p.status !== 'REJECTED').map((p) => p.owner).filter(Boolean))].sort() as string[],
+    [proposals],
+  );
 
-  // База: не отклонённые задачи выбранной системы/характеристики, отсортированные по сроку.
+  // База: не отклонённые задачи выбранной системы/характеристики/ответственного, по сроку.
   const baseTasks = useMemo(
     () => proposals.filter((p) => p.status !== 'REJECTED')
       .filter((p) => sysFilter === ALL_SYS || p.systemName === sysFilter)
       .filter((p) => charFilter === ALL_CHAR || p.characteristic === charFilter)
+      .filter((p) => ownerFilter === ALL_OWNER || p.owner === ownerFilter)
       .map((p) => ({ p, kind: kindOf(p) }))
       .sort((a, b) => (dueDateOf(a.p)?.getTime() ?? Infinity) - (dueDateOf(b.p)?.getTime() ?? Infinity)),
-    [proposals, sysFilter, charFilter],
+    [proposals, sysFilter, charFilter, ownerFilter],
   );
   const counts = useMemo(() => {
     const c: Record<string, number> = { Все: baseTasks.length, Активные: 0, Просрочено: 0, Эскалация: 0, Выполнено: 0 };
@@ -307,6 +317,15 @@ const TaskPlanDashboard: React.FC = () => {
             showSearch
             optionFilterProp="label"
             options={[{ value: ALL_CHAR, label: '— Все характеристики —' }, ...characteristics.map((c) => ({ value: c, label: c }))]}
+          />
+          <Text type="secondary"><UserOutlined /> Ответственный:</Text>
+          <Select
+            value={ownerFilter}
+            onChange={setOwnerFilter}
+            style={{ minWidth: 210 }}
+            showSearch
+            optionFilterProp="label"
+            options={[{ value: ALL_OWNER, label: '— Все ответственные —' }, ...owners.map((o) => ({ value: o, label: o }))]}
           />
           <Segmented value={filter} onChange={(v) => setFilter(v as string)}
             options={filterKeys.map((k) => ({ label: `${k} (${counts[k] ?? 0})`, value: k }))} />

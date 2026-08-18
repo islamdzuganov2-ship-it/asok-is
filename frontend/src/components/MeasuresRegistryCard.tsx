@@ -47,6 +47,7 @@ interface Props {
 export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen, presetCharacteristic }) => {
   const [q, setQ] = useState('');
   const [system, setSystem] = useState<string | undefined>();
+  const [owner, setOwner] = useState<string | undefined>();
   const [status, setStatus] = useState<ProposalStatus | undefined>();
   const [exec, setExec] = useState<'DONE' | 'NOT_DONE' | 'AWAIT' | undefined>();
   const [due, setDue] = useState<string | undefined>();
@@ -66,6 +67,9 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen, prese
 
   const systems = useMemo(() => [...new Set(proposals.map((p) => p.systemName))].sort(), [proposals]);
   const characteristics = useMemo(() => [...new Set(proposals.map((p) => p.characteristic).filter(Boolean))].sort() as string[], [proposals]);
+  // ТЗ v19 п.5 (УК-14): разрез «по руководителю» — «руководитель» = «ответственный» (ОМ),
+  // отдельной оргструктуры нет (заказчик подтвердил 17.08.2026, см. Пункт 17.1).
+  const owners = useMemo(() => [...new Set(proposals.map((p) => p.owner).filter(Boolean))].sort() as string[], [proposals]);
   const dueDates = useMemo(() => [...new Set(proposals.map((p) => p.dueDate).filter(Boolean))] as string[], [proposals]);
 
   const isSoon = (p: Proposal) => {
@@ -84,6 +88,7 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen, prese
     const list = proposals.filter((p) => {
       if (ql && !`${p.riskTitle || ''} ${p.metricName} ${p.systemName}`.toLowerCase().includes(ql)) return false;
       if (system && p.systemName !== system) return false;
+      if (owner && p.owner !== owner) return false;
       if (characteristic && p.characteristic !== characteristic) return false;
       if (status && p.status !== status) return false;
       if (exec === 'DONE' && p.execution !== 'DONE') return false;
@@ -99,7 +104,7 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen, prese
       if (a.calculatedScore !== b.calculatedScore) return a.calculatedScore - b.calculatedScore; // критичнее = ниже %
       return (parseDue(a.dueDate) ?? Infinity) - (parseDue(b.dueDate) ?? Infinity);             // ближе срок
     });
-  }, [proposals, q, system, characteristic, status, exec, due, quick]);
+  }, [proposals, q, system, owner, characteristic, status, exec, due, quick]);
 
   const visible = showAll ? filtered : filtered.slice(0, 3);
 
@@ -146,6 +151,8 @@ export const MeasuresRegistryCard: React.FC<Props> = ({ proposals, onOpen, prese
         <Input.Search allowClear placeholder="Поиск: название / метрика / ИС" style={{ width: 240 }} onChange={(e) => setQ(e.target.value)} />
         <Select allowClear placeholder="Система" style={{ width: 200 }} value={system} onChange={setSystem}
           options={systems.map((s) => ({ value: s, label: s }))} showSearch optionFilterProp="label" />
+        <Select allowClear placeholder="Ответственный" style={{ width: 200 }} value={owner} onChange={setOwner}
+          options={owners.map((o) => ({ value: o, label: o }))} showSearch optionFilterProp="label" />
         <Select allowClear placeholder="Характеристика" style={{ width: 200 }} value={characteristic} onChange={setCharacteristic}
           options={characteristics.map((c) => ({ value: c, label: c }))} showSearch optionFilterProp="label" />
         <Select allowClear placeholder="Статус" style={{ width: 170 }} value={status} onChange={setStatus}
