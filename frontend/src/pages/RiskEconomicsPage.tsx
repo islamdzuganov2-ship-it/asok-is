@@ -88,6 +88,11 @@ interface RiskMeasureChainRow {
   riskId: string; riskCode: string; riskTitle: string; systemName: string | null;
   aleAvg: number | null; measures: RiskMeasureChainMeasure[];
 }
+// ТЗ v19 п.15 (УК-37): портфельная кривая эффекта во времени — «когда реально придут деньги».
+interface QuarterPortfolioPoint { quarterLabel: string; netCash: number; cumulative: number }
+interface PortfolioEffectCurve {
+  points: QuarterPortfolioPoint[]; measuresIncluded: number; measuresExcludedNoStartDate: number;
+}
 
 // ─── Подача ───
 const fmtMoney = (v?: number | null): string =>
@@ -176,6 +181,9 @@ const DashboardTab: React.FC = () => {
   const [summary, setSummary] = useState<PortfolioRiskSummary | null>(null);
   const [chain, setChain] = useState<RiskMeasureChainRow[]>([]);
   const [chainLoading, setChainLoading] = useState(true);
+  // ТЗ v19 п.15 (УК-37): портфельная кривая эффекта — суммарно по всем одобренным мерам.
+  const [curve, setCurve] = useState<PortfolioEffectCurve | null>(null);
+  const [curveLoading, setCurveLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
@@ -197,6 +205,16 @@ const DashboardTab: React.FC = () => {
       .then(([s, c]) => { if (alive) { setSummary(s); setChain(c); } })
       .catch(() => { if (alive) { setSummary(null); setChain([]); } })
       .finally(() => { if (alive) setChainLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    setCurveLoading(true);
+    api<PortfolioEffectCurve>('/governance/proposals/effect-curve')
+      .then((r) => { if (alive) setCurve(r); })
+      .catch(() => { if (alive) setCurve(null); })
+      .finally(() => { if (alive) setCurveLoading(false); });
     return () => { alive = false; };
   }, []);
 
@@ -359,6 +377,40 @@ const DashboardTab: React.FC = () => {
               render: (_: unknown, r) => r.measures.length || <Text type="secondary">0</Text> }),
           ]}
         />
+      </Card>
+
+      {/* ТЗ v19 п.15 (УК-37): портфельная кривая эффекта — «когда реально придут деньги»
+          по одобренным мерам, с учётом лага внедрения. Меры без решения (decided_at) не входят —
+          honestly считать для них нечего. */}
+      <Card {...premiumCard('sage')} title="Когда придут деньги: портфельный эффект по кварталам"
+        styles={{ body: { padding: SPACE.airy } }}>
+        {curveLoading ? (
+          <Text type="secondary">Загрузка…</Text>
+        ) : !curve || curve.points.length === 0 ? (
+          <Text type="secondary">Нет одобренных мер с посчитанной экономикой — кривую строить не из чего.</Text>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+              {curve.points.map((pt) => (
+                <div key={pt.quarterLabel} style={{
+                  minWidth: 100, padding: '6px 8px', borderRadius: 6, background: '#fff', border: '1px solid #E5E7EB',
+                }}>
+                  <Text style={{ fontSize: TYPE.micro.fontSize, display: 'block' }} type="secondary">{pt.quarterLabel}</Text>
+                  <Text style={{ fontSize: 12, display: 'block', color: pt.netCash > 0 ? RAG.good.strong : pt.netCash < 0 ? RAG.bad.strong : undefined }}>
+                    {pt.netCash > 0 ? '+' : ''}{fmtMoney(pt.netCash)}
+                  </Text>
+                  <Text style={{ fontSize: 12, display: 'block', color: pt.cumulative >= 0 ? RAG.good.strong : RAG.bad.strong }}>
+                    Σ {fmtMoney(pt.cumulative)}
+                  </Text>
+                </div>
+              ))}
+            </div>
+            <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block', marginTop: 8 }}>
+              Учтено мер: {curve.measuresIncluded}
+              {curve.measuresExcludedNoStartDate > 0 && <> · без решения (не входят в расчёт): {curve.measuresExcludedNoStartDate}</>}
+            </Text>
+          </>
+        )}
       </Card>
     </Space>
   );

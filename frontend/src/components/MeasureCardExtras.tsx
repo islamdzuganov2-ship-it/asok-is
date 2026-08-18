@@ -12,8 +12,9 @@ import { message } from '../theme/appMessage';
 import { PlusOutlined, DeleteOutlined, WarningOutlined, RobotOutlined } from '@ant-design/icons';
 import { useAppDispatch } from '../store/hooks';
 import {
-  fetchPriceOfInaction, fetchPriceHistory, fetchBudgetVariance, updateSystemicScope, updateAlternatives, reviewLlmMeasure,
-  type AlternativeSolution, type BudgetVariance, type PriceHistory, type PriceOfInaction, type Proposal,
+  fetchPriceOfInaction, fetchPriceHistory, fetchBudgetVariance, fetchEffectTimeline,
+  updateSystemicScope, updateAlternatives, reviewLlmMeasure,
+  type AlternativeSolution, type BudgetVariance, type EffectTimeline, type PriceHistory, type PriceOfInaction, type Proposal,
 } from '../store/slices/governanceSlice';
 import { RAG } from '../theme/ragPalette';
 import { TYPE } from '../theme/premium';
@@ -40,12 +41,14 @@ export const MeasureCardExtras: React.FC<Props> = ({ proposal: p, canManageCard,
   const [priceHorizon, setPriceHorizon] = useState<'current' | 'quarter'>('current');
   // §17.7 (УК-57): план/факт — читаем на карточке эскалации, вносит исполнитель на «Моих задачах».
   const [budgetVariance, setBudgetVariance] = useState<BudgetVariance | null>(null);
+  // ТЗ v19 п.15 (УК-37): эффект во времени — считается только после решения (decided_at).
+  const [effectTimeline, setEffectTimeline] = useState<EffectTimeline | null>(null);
 
   useEffect(() => {
     setScopeNote(p.systemicScopeNote || ''); setScopeEditing(false);
     setAltDraft(p.alternativeSolutions || []); setAltEditing(false);
     setPriceOfInaction(null); setPriceHistory(null); setPriceHorizon('current');
-    setBudgetVariance(null);
+    setBudgetVariance(null); setEffectTimeline(null);
     dispatch(fetchPriceOfInaction({ id: p.id })).unwrap()
       .then((r) => {
         setPriceOfInaction(r);
@@ -54,6 +57,9 @@ export const MeasureCardExtras: React.FC<Props> = ({ proposal: p, canManageCard,
       .catch(() => setPriceOfInaction(null));
     if (p.execution === 'DONE' && canManageCard) {
       fetchBudgetVariance(p.id).then(setBudgetVariance).catch(() => setBudgetVariance(null));
+    }
+    if (p.status === 'APPROVED') {
+      fetchEffectTimeline(p.id).then((t) => setEffectTimeline(t.computable ? t : null)).catch(() => setEffectTimeline(null));
     }
   }, [p.id]);
 
@@ -257,6 +263,40 @@ export const MeasureCardExtras: React.FC<Props> = ({ proposal: p, canManageCard,
               </Text>
             )}
           </Space>
+        </div>
+      )}
+
+      {/* ТЗ v19 п.15 (УК-37): эффект во времени по кварталам — когда реально придут деньги,
+          с учётом лага внедрения (implementation_months) и точки окупаемости. */}
+      {effectTimeline && effectTimeline.points.length > 0 && (
+        <div style={{ background: '#F5F6F8', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Эффект во времени (по кварталам)</Text>
+          <div style={{ marginTop: 4, marginBottom: 6 }}>
+            <Text style={{ fontSize: 13 }}>
+              Эффект начинается с {effectTimeline.effectStartDate ? new Date(effectTimeline.effectStartDate).toLocaleDateString('ru-RU') : '—'}
+              {effectTimeline.paybackQuarter ? <> · окупаемость: <Text strong>{effectTimeline.paybackQuarter}</Text></> : ' · окупаемость в пределах горизонта не наступает'}
+            </Text>
+          </div>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+            {effectTimeline.points.map((pt) => (
+              <div
+                key={pt.quarterLabel}
+                style={{
+                  minWidth: 92, padding: '6px 8px', borderRadius: 6,
+                  background: pt.quarterLabel === effectTimeline.paybackQuarter ? RAG.good.soft : '#fff',
+                  border: `1px solid ${pt.quarterLabel === effectTimeline.paybackQuarter ? RAG.good.strong : '#E5E7EB'}`,
+                }}
+              >
+                <Text style={{ fontSize: TYPE.micro.fontSize, display: 'block' }} type="secondary">{pt.quarterLabel}</Text>
+                <Text style={{ fontSize: 12, display: 'block', color: pt.netCash > 0 ? RAG.good.strong : pt.netCash < 0 ? RAG.bad.strong : undefined }}>
+                  {pt.netCash > 0 ? '+' : ''}{fmtMoney(pt.netCash)}
+                </Text>
+                <Text style={{ fontSize: 12, display: 'block', color: pt.cumulative >= 0 ? RAG.good.strong : RAG.bad.strong }}>
+                  Σ {fmtMoney(pt.cumulative)}
+                </Text>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </>

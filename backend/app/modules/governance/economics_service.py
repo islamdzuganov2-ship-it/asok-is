@@ -21,13 +21,28 @@ from app.modules.econ import (
     config_value,
     decide,
     measure_ale_risk,
+    measure_effect_timeline,
     price_of_inaction_compensating,
     price_of_inaction_eliminating,
     requires_escalation,
     rosi,
 )
-from app.modules.governance.models import MEASURE_COMPENSATING, MEASURE_TYPES, VERDICTS, Proposal
-from app.modules.governance.schemas import MeasureEconomicsIn, MeasureEconomicsResult, PriceOfInactionOut
+from app.modules.governance.models import (
+    MEASURE_COMPENSATING,
+    MEASURE_TYPES,
+    STATUS_APPROVED,
+    VERDICTS,
+    Proposal,
+)
+from app.modules.governance.schemas import (
+    EffectTimelineOut,
+    MeasureEconomicsIn,
+    MeasureEconomicsResult,
+    PortfolioEffectCurveOut,
+    PriceOfInactionOut,
+    QuarterEffectPointOut,
+    QuarterPortfolioPointOut,
+)
 from app.modules.incidents import TechIncident
 from app.modules.risk import RiskEvent, RiskEventIncident, RiskEventMeasure
 from app.modules.systems import System
@@ -337,4 +352,76 @@ async def price_history(db: AsyncSession, proposal_id, *, period: str = "quarter
         proposal_id=proposal_id, period=period,
         period_start=since, period_end=until,
         points=points, period_avg=avg,
+    )
+
+
+# ── ТЗ v19 п.15 (УК-37): эффект меры во времени ──
+
+def effect_timeline(p: Proposal, horizon_quarters: int = 8) -> EffectTimelineOut:
+    """Горизонт эффекта ОДНОЙ меры — дата старта берётся из decided_at (когда одобрена, можно
+    начинать внедрение), не из created_at/due_date (это дедлайн, не старт)."""
+    result = measure_effect_timeline(
+        p.decided_at,
+        float(p.implementation_months) if p.implementation_months is not None else None,
+        float(p.capex) if p.capex is not None else None,
+        float(p.opex_per_year) if p.opex_per_year is not None else None,
+        float(p.delta_ale_cash) if p.delta_ale_cash is not None else None,
+        horizon_quarters=horizon_quarters,
+    )
+    return EffectTimelineOut(
+        proposal_id=p.id, computable=result.computable, reason=result.reason,
+        start_date=result.start_date, effect_start_date=result.effect_start_date,
+        capex=result.capex,
+        points=[
+            QuarterEffectPointOut(quarter_label=pt.quarter_label, quarter_start=pt.quarter_start,
+                                  net_cash=pt.net_cash, cumulative=pt.cumulative)
+            for pt in result.points
+        ],
+        payback_quarter=result.payback_quarter,
+    )
+
+
+async def portfolio_effect_curve(db: AsyncSession, horizon_quarters: int = 8) -> PortfolioEffectCurveOut:
+    """Портфельно: «когда придут деньги» — Σ квартальных чистых эффектов по всем одобренным
+    мерам с определённой датой старта, накопительно. CAPEX меры учитывается один раз, в
+    квартале ЕЁ старта, не размазывается — иначе кривая соврала бы о том, когда деньги
+    ФАКТИЧЕСКИ уходят."""
+    proposals = (await db.execute(
+        select(Proposal).where(Proposal.status == STATUS_APPROVED)
+    )).scalars().all()
+
+    net_by_quarter: dict[str, float] = {}
+    included = 0
+    excluded = 0
+    for p in proposals:
+        timeline = measure_effect_timeline(
+            p.decided_at,
+            float(p.implementation_months) if p.implementation_months is not None else None,
+            float(p.capex) if p.capex is not None else None,
+            float(p.opex_per_year) if p.opex_per_year is not None else None,
+            float(p.delta_ale_cash) if p.delta_ale_cash is not None else None,
+            horizon_quarters=horizon_quarters,
+        )
+        if not timeline.computable:
+            excluded += 1
+            continue
+        included += 1
+        for pt in timeline.points:
+            net_by_quarter[pt.quarter_label] = net_by_quarter.get(pt.quarter_label, 0.0) + pt.net_cash
+        if timeline.capex:
+            start_label = f"{timeline.start_date.year}-Q{(timeline.start_date.month - 1) // 3 + 1}"
+            net_by_quarter[start_label] = net_by_quarter.get(start_label, 0.0) - timeline.capex
+
+    # Хронологический порядок: строки вида "ГГГГ-Qn" сортируются лексикографически ВЕРНО,
+    # пока год 4-значный и квартал однозначный (1-4) — это гарантировано форматом _quarter_label.
+    cumulative = 0.0
+    points_out: list[QuarterPortfolioPointOut] = []
+    for label in sorted(net_by_quarter.keys()):
+        cumulative = round(cumulative + net_by_quarter[label], 2)
+        points_out.append(QuarterPortfolioPointOut(
+            quarter_label=label, net_cash=round(net_by_quarter[label], 2), cumulative=cumulative,
+        ))
+
+    return PortfolioEffectCurveOut(
+        points=points_out, measures_included=included, measures_excluded_no_start_date=excluded,
     )

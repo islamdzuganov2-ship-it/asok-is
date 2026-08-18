@@ -15,7 +15,9 @@ from app.modules.econ.economics import (
 from app.modules.governance import service
 from app.modules.governance.economics_service import (
     _quarter_bounds,
+    effect_timeline,
     has_linked_risks,
+    portfolio_effect_curve,
     price_history,
     record_daily_price_snapshot,
 )
@@ -237,6 +239,74 @@ async def test_set_actuals_and_budget_variance(db_session):
     # его отсутствие в dict не ловится прямым вызовом сервиса, только валидацией схемы.
     from app.modules.governance.schemas import BudgetVarianceOut
     BudgetVarianceOut(**variance)
+
+
+# ── ТЗ v19 п.15 (УК-37): эффект меры во времени, на реальной Proposal ──
+
+async def test_effect_timeline_not_computable_before_decision(db_session):
+    p = await service.create(db_session, _new(is_process_measure=True), "manager")
+    result = effect_timeline(p)
+    assert result.computable is False
+    assert result.proposal_id == p.id
+
+
+async def test_effect_timeline_computable_after_decision_with_economics(db_session):
+    p = await service.create(db_session, _new(is_process_measure=True), "manager")
+    p = await service.decide(db_session, p, approve=True, comment=None, username="admin")
+    p.capex = 200000
+    p.opex_per_year = 20000
+    p.implementation_months = 1
+    p.delta_ale_cash = 400000
+    await db_session.commit()
+
+    result = effect_timeline(p)
+    assert result.computable is True
+    assert result.start_date == p.decided_at.date()
+    assert len(result.points) == 8  # горизонт по умолчанию
+    assert result.payback_quarter is not None
+
+
+async def test_portfolio_effect_curve_excludes_pending_and_uncomputable(db_session):
+    # Одобренная мера с решением — учитывается.
+    p1 = await service.create(db_session, _new(is_process_measure=True, characteristic="Надёжность"), "manager")
+    p1 = await service.decide(db_session, p1, approve=True, comment=None, username="admin")
+    p1.capex = 100000
+    p1.delta_ale_cash = 200000
+    await db_session.commit()
+
+    # Ещё не решена — не должна попасть в кривую (не в выборке status=APPROVED).
+    await service.create(db_session, _new(is_process_measure=True, characteristic="Защищённость"), "manager")
+
+    curve = await portfolio_effect_curve(db_session)
+    assert curve.measures_included == 1
+    assert curve.measures_excluded_no_start_date == 0
+    assert len(curve.points) > 0
+    # 100000 CAPEX списан в первом квартале, дальше растёт на 50000/квартал (200000/год / 4).
+    assert curve.points[0].cumulative == 50000.0 - 100000.0
+    assert curve.points[-1].cumulative > curve.points[0].cumulative
+
+
+async def test_portfolio_effect_curve_sums_across_measures_in_same_quarter(db_session):
+    p1 = await service.create(db_session, _new(is_process_measure=True, characteristic="Надёжность"), "manager")
+    p1 = await service.decide(db_session, p1, approve=True, comment=None, username="admin")
+    p1.capex = 0
+    p1.opex_per_year = 0
+    p1.implementation_months = 0
+    p1.delta_ale_cash = 400000  # 100000/квартал
+    await db_session.commit()
+
+    p2 = await service.create(db_session, _new(is_process_measure=True, characteristic="Защищённость"), "manager")
+    p2 = await service.decide(db_session, p2, approve=True, comment=None, username="admin")
+    p2.capex = 0
+    p2.opex_per_year = 0
+    p2.implementation_months = 0
+    p2.delta_ale_cash = 200000  # 50000/квартал
+    await db_session.commit()
+
+    curve = await portfolio_effect_curve(db_session)
+    # Обе меры решены «сейчас» — их первый квартал совпадает, суммарный net = 150000.
+    first_quarter_net = curve.points[0].net_cash
+    assert first_quarter_net == 150000.0
 
 
 def test_systemic_scope_note_falls_back_when_llm_unavailable(monkeypatch):

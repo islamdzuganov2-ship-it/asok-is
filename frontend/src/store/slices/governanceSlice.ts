@@ -127,6 +127,24 @@ export interface BudgetVariance {
   effortVariance?: number;
 }
 
+/** ТЗ v19 п.15 (УК-37) — эффект меры во времени, по кварталам. */
+export interface QuarterEffectPoint {
+  quarterLabel: string;
+  quarterStart: string;
+  netCash: number;
+  cumulative: number;
+}
+export interface EffectTimeline {
+  proposalId: string;
+  computable: boolean;
+  reason?: string;
+  startDate?: string;
+  effectStartDate?: string;
+  capex: number;
+  points: QuarterEffectPoint[];
+  paybackQuarter?: string;
+}
+
 /** Альтернативный вариант решения на карточке эскалации (§17.3). */
 export interface AlternativeSolution {
   title: string;
@@ -466,7 +484,7 @@ export const decideDueChange = createAsyncThunk<Proposal | null, { id: string; a
 export {
   fetchPriceOfInaction, updateSystemicScope, updateAlternatives, reviewLlmMeasure,
   fetchMeasureDepartments, upsertMeasureDepartment, fetchPriceHistory,
-  setActuals, fetchBudgetVariance,
+  setActuals, fetchBudgetVariance, fetchEffectTimeline,
 } from './governanceCardThunks';
 import { updateSystemicScope, updateAlternatives, reviewLlmMeasure, setActuals } from './governanceCardThunks';
 

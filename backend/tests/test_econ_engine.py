@@ -4,6 +4,8 @@
 §2–§3 ТЗ: C_ТС, ступенчатую деградацию, ALE (средний/P90/Max), ROSI с лагом внедрения и логику
 вето → вердикт (устранить/компенсировать/принять).
 """
+from datetime import date
+
 from app.modules.econ.economics import (
     DISCOUNT_RATE_ANNUAL,
     HORIZON_MONTHS,
@@ -18,6 +20,7 @@ from app.modules.econ.economics import (
     degradation_counts_as_downtime,
     k_functional_degradation,
     k_performance_degradation,
+    measure_effect_timeline,
     k_throughput_degradation,
     rosi,
 )
@@ -138,3 +141,52 @@ def test_negative_rosi_above_appetite_compensates():
 def test_negative_rosi_within_appetite_accepts():
     res = decide(DecisionInput(rosi=-0.2, ale=500_000, risk_appetite=1_000_000))
     assert res.verdict == "ACCEPT"
+
+
+# ── ТЗ v19 п.15 (УК-37): эффект меры во времени ──
+
+def test_effect_timeline_not_computable_without_start_date():
+    r = measure_effect_timeline(None, 2, 100_000, 10_000, 60_000)
+    assert r.computable is False
+    assert r.reason
+
+
+def test_effect_timeline_effect_starts_after_lag_not_immediately():
+    # старт 2026-01-15, лаг 2 мес → выход на эффект ~2026-03-15 (квартал Q1 всё ещё, т.к. март в Q1).
+    r = measure_effect_timeline(date(2026, 1, 15), 2, 0, 0, 400_000, horizon_quarters=4)
+    assert r.effect_start_date == date(2026, 3, 15)
+    # Первый квартал (Q1, содержит и старт, и дату выхода на эффект) — эффект уже активен,
+    # т.к. граница считается по КВАРТАЛУ, не по дню (В-48: гранулярность — квартал).
+    assert r.points[0].net_cash == 100_000.0  # 400000/4
+
+
+def test_effect_timeline_zero_before_effect_quarter_when_lag_crosses_quarter():
+    # старт 2026-01-15, лаг 5 мес → выход на эффект 2026-06-15 (Q2) — Q1 должен быть 0.
+    r = measure_effect_timeline(date(2026, 1, 15), 5, 0, 0, 400_000, horizon_quarters=3)
+    assert r.effect_start_date == date(2026, 6, 15)
+    assert r.points[0].quarter_label == "2026-Q1"
+    assert r.points[0].net_cash == 0.0
+    assert r.points[1].quarter_label == "2026-Q2"
+    assert r.points[1].net_cash == 100_000.0
+
+
+def test_effect_timeline_payback_accounts_for_lag_not_creation_date():
+    # CAPEX 100000, эффект 400000/год (100000/квартал), лаг 3 мес (выход в Q2) — окупаемость
+    # НЕ в Q1 (эффект ещё не начался), а в Q2 (первый квартал с ненулевым эффектом: -100000+100000=0).
+    r = measure_effect_timeline(date(2026, 1, 1), 3, 100_000, 0, 400_000, horizon_quarters=4)
+    assert r.points[0].net_cash == 0.0
+    assert r.points[0].cumulative == -100_000.0   # CAPEX списан сразу, эффекта ещё нет
+    assert r.payback_quarter == "2026-Q2"
+    assert r.points[1].cumulative == 0.0
+
+
+def test_effect_timeline_never_pays_back_when_no_effect():
+    r = measure_effect_timeline(date(2026, 1, 1), 0, 500_000, 0, 0, horizon_quarters=4)
+    assert r.payback_quarter is None
+    assert all(p.net_cash == 0.0 for p in r.points)
+
+
+def test_effect_timeline_opex_reduces_quarterly_net():
+    r = measure_effect_timeline(date(2026, 1, 1), 0, 0, 40_000, 200_000, horizon_quarters=1)
+    # (200000 - 40000) / 4 = 40000
+    assert r.points[0].net_cash == 40_000.0

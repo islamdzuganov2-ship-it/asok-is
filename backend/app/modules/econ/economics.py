@@ -12,7 +12,9 @@ ROSI — дисконтированная выгода меры против п�
 """
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
+from datetime import date, datetime
 
 # ── Значения по умолчанию (переопределяемы через EconConfig) ──
 DISCOUNT_RATE_ANNUAL = 0.20   # r годовая — ЗАГЛУШКА до ответа заказчика (§9 параметр 3)
@@ -290,3 +292,95 @@ def price_of_inaction_compensating(realized_incident_costs: list[float]) -> floa
     реализовавшийся ущерб (Σ C_ТС по инцидентам, связанным с риском, за период просрочки), а
     не доля ALE. Пустой список (пока не было инцидентов после просрочки) → 0.0, не ошибка."""
     return round(sum(c for c in realized_incident_costs if c), 2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ТЗ v19 п.15 (УК-37) — эффект меры во времени: горизонт по кварталам, точка окупаемости
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _add_months(d: date, months: int) -> date:
+    total = d.month - 1 + months
+    year = d.year + total // 12
+    month = total % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _quarter_start_of(d: date) -> date:
+    return date(d.year, ((d.month - 1) // 3) * 3 + 1, 1)
+
+
+def _next_quarter_start(q_start: date) -> date:
+    month = q_start.month + 3
+    year = q_start.year
+    if month > 12:
+        month -= 12
+        year += 1
+    return date(year, month, 1)
+
+
+def _quarter_label(d: date) -> str:
+    return f"{d.year}-Q{(d.month - 1) // 3 + 1}"
+
+
+@dataclass
+class QuarterEffectPoint:
+    quarter_label: str
+    quarter_start: date
+    net_cash: float    # чистый операционный эффект ЭТОГО квартала (0 до выхода на эффект)
+    cumulative: float  # накопленный эффект С УЧЁТОМ CAPEX как разового минуса в квартале старта
+
+
+@dataclass
+class MeasureEffectTimeline:
+    """Результат самодостаточен для карточки меры (пункт 15: «ни один эффект без периода»)."""
+    computable: bool
+    reason: str | None = None
+    start_date: date | None = None
+    effect_start_date: date | None = None
+    capex: float = 0.0
+    points: list[QuarterEffectPoint] = field(default_factory=list)
+    payback_quarter: str | None = None
+
+
+def measure_effect_timeline(
+    start_date: date | datetime | None,
+    implementation_months: float | None,
+    capex: float | None,
+    opex_per_year: float | None,
+    delta_ale_cash: float | None,
+    horizon_quarters: int = 8,
+) -> MeasureEffectTimeline:
+    """Горизонт эффекта меры по кварталам (В-48: гранулярность — квартал, рекомендация ТЗ).
+    Эффект наступает СТУПЕНЬКОЙ с даты выхода на эффект (старт + лаг внедрения), без плавного
+    ramp-up — заказчик не ответил на В-49, придумывать кривую без данных значит показывать
+    цифру, на вопрос «почему такая» о которой нечем ответить (§6 ТЗ). Точка окупаемости
+    учитывает лаг «бесплатно»: до effect_start_date квартальный чистый эффект = 0, cumulative
+    не растёт, окупаемость физически не может наступить раньше выхода на эффект."""
+    if start_date is None:
+        return MeasureEffectTimeline(computable=False, reason="мера не одобрена — дата старта не определена")
+    start = start_date.date() if isinstance(start_date, datetime) else start_date
+
+    lag_months = round(implementation_months or 0.0)
+    effect_start = _add_months(start, lag_months)
+    effect_start_q = _quarter_start_of(effect_start)
+    quarterly_net = (delta_ale_cash or 0.0) / 4.0 - (opex_per_year or 0.0) / 4.0
+
+    cumulative = -(capex or 0.0)
+    q_start = _quarter_start_of(start)
+    points: list[QuarterEffectPoint] = []
+    payback_quarter: str | None = None
+    for _ in range(horizon_quarters):
+        active = q_start >= effect_start_q
+        net_this = round(quarterly_net, 2) if active else 0.0
+        cumulative = round(cumulative + net_this, 2)
+        label = _quarter_label(q_start)
+        points.append(QuarterEffectPoint(quarter_label=label, quarter_start=q_start, net_cash=net_this, cumulative=cumulative))
+        if payback_quarter is None and cumulative >= 0:
+            payback_quarter = label
+        q_start = _next_quarter_start(q_start)
+
+    return MeasureEffectTimeline(
+        computable=True, start_date=start, effect_start_date=effect_start, capex=capex or 0.0,
+        points=points, payback_quarter=payback_quarter,
+    )
