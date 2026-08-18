@@ -212,3 +212,17 @@ async def compute_subchar_weights(db: AsyncSession, *, criticality: str = BUSINE
         alpha_min=alpha_min, n0=n0, total_ale=total_ale,
         dominant_source=dominant, weights=weights,
     )
+
+
+async def weight_by_characteristic(db: AsyncSession, *, criticality: str = BUSINESS_CRITICAL) -> dict[str, float]:
+    """Вес ХАРАКТЕРИСТИКИ — среднее её `final_weight` по подхарактеристикам (§17.5, УК-52/53).
+
+    Один источник для обоих потребителей: очередь мер по весу (governance/service.py) и
+    взвешенный порог эскалации (governance/economics_service.py) — `Proposal.characteristic`
+    хранит только характеристику, не конкретную подхарактеристику, поэтому оба усредняют
+    одинаково, а не считают вес дважды по-разному."""
+    result = await compute_subchar_weights(db, criticality=criticality)
+    by_char: dict[str, list[float]] = {}
+    for w in result.weights:
+        by_char.setdefault(w.characteristic, []).append(w.final_weight)
+    return {c: (sum(ws) / len(ws) if ws else 0.0) for c, ws in by_char.items()}

@@ -262,17 +262,24 @@ def requires_escalation(
     threshold_share: float,
     is_blocking: bool = False,
     regulatory: bool = False,
+    weight_ratio: float = 1.0,
 ) -> bool:
     """Маршрутизация минор/крит (§17.2). is_blocking (Mission Critical под угрозой) и
     regulatory (вето) переопределяют денежный порог — эскалация всегда, без исключений
     (§17.2, УК-44). Порог — доля `threshold_share` от риск-аппетита класса ИС (В-56); без
     аппетита (не задан для класса) — консервативно эскалируем любую меру с деньгами под ней,
-    чтобы отсутствие данных не маскировалось молчаливым авто-одобрением."""
+    чтобы отсутствие данных не маскировалось молчаливым авто-одобрением.
+
+    `weight_ratio` (§17.5, УК-53) — вес характеристики меры относительно среднепортфельного
+    (1.0 = средний). Выше среднего → порог ниже (легче эскалировать), ниже среднего → порог
+    выше — «один и тот же порог в рублях по факту неодинаков для разных характеристик» (ТЗ).
+    <=0 трактуется как отсутствие данных — порог не меняется, а не обнуляется молча."""
     if is_blocking or regulatory:
         return True
     if risk_appetite is None or risk_appetite <= 0:
         return ale_risk > 0
-    return ale_risk > (risk_appetite * threshold_share)
+    effective_share = threshold_share / weight_ratio if weight_ratio > 0 else threshold_share
+    return ale_risk > (risk_appetite * effective_share)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

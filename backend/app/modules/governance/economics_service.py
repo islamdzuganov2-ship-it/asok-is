@@ -173,21 +173,39 @@ async def _risk_appetite_for_system(db: AsyncSession, system_name: str | None) -
     return by_class.get(key) if key else None
 
 
+async def _characteristic_weight_ratio(db: AsyncSession, characteristic: str | None) -> float:
+    """§17.5 (УК-53): вес характеристики меры / среднепортфельный вес — тот же источник весов,
+    что и очередь мер (governance/service.py._priority_weight_lookup, УК-52). Неизвестная
+    характеристика или пустой портфель весов → 1.0 (порог не меняется — честное «нет данных»,
+    а не тихая просадка эскалации для мер вне модели)."""
+    from app.modules.econ.weights_service import weight_by_characteristic
+
+    weights = await weight_by_characteristic(db)
+    if not weights or not characteristic or characteristic not in weights:
+        return 1.0
+    avg = sum(weights.values()) / len(weights)
+    if avg <= 0:
+        return 1.0
+    return weights[characteristic] / avg
+
+
 async def route_measure(db: AsyncSession, p: Proposal) -> tuple[bool, float]:
     """Требуется ли эскалация к топ-менеджменту (§17.2, УК-43/44): (requires_escalation, ale_risk).
 
     is_blocking переопределяет порог через `Proposal.is_blocking_override` (денормализовано с
     Nonconformity.is_blocking при связывании, nonconformity/service.assign_measure — governance
     не импортирует nonconformity, см. models.py). regulatory берётся напрямую из связанных
-    RiskEvent (governance→risk — существующее направление зависимости)."""
+    RiskEvent (governance→risk — существующее направление зависимости). Порог взвешивается по
+    характеристике меры (§17.5, УК-53) — см. _characteristic_weight_ratio."""
     risks = await _linked_risks(db, p.id)
     ale_risk = measure_ale_risk([(float(r.ale_avg), share) for r, share in risks if r.ale_avg is not None])
     regulatory = any(bool(r.regulatory) for r, _ in risks)
     appetite = await _risk_appetite_for_system(db, p.system_name)
     threshold_share = float(await config_value(db, "measure_escalation_threshold_share", 0.10) or 0.10)
+    weight_ratio = await _characteristic_weight_ratio(db, p.characteristic)
     escalate = requires_escalation(
         ale_risk=ale_risk, risk_appetite=appetite, threshold_share=threshold_share,
-        is_blocking=bool(p.is_blocking_override), regulatory=regulatory,
+        is_blocking=bool(p.is_blocking_override), regulatory=regulatory, weight_ratio=weight_ratio,
     )
     return escalate, ale_risk
 

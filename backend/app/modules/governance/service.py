@@ -104,20 +104,17 @@ async def list_proposals(
 
 
 async def _priority_weight_lookup(db: AsyncSession) -> dict[str, float]:
-    """Вес ХАРАКТЕРИСТИКИ (§1.0 ГОСТ, через weights_service) — усреднение по её подхарактеристикам,
-    т.к. `Proposal.characteristic` хранит характеристику, не конкретную подхарактеристику.
+    """Вес ХАРАКТЕРИСТИКИ (§1.0 ГОСТ) — тот же источник, что и взвешенный порог эскалации
+    (economics_service._characteristic_weight_ratio, §17.5 УК-53), см. weights_service.
+    weight_by_characteristic.
 
     Импорт ОТЛОЖЕН (не на уровне модуля): weights_service тянет econ, а governance/__init__.py
     грузится из глубины цепочки econ.router→manager_metrics_service→governance.models — импорт
     econ.* на уровне модуля governance/service.py даёт циклический импорт при старте приложения
     (econ ещё не успел доопределить свои имена). На вызов функции (после старта) цикла уже нет."""
-    from app.modules.econ.weights_service import compute_subchar_weights
+    from app.modules.econ.weights_service import weight_by_characteristic
 
-    result = await compute_subchar_weights(db)
-    by_char: dict[str, list[float]] = {}
-    for w in result.weights:
-        by_char.setdefault(w.characteristic, []).append(w.final_weight)
-    return {c: (sum(ws) / len(ws) if ws else 0.0) for c, ws in by_char.items()}
+    return await weight_by_characteristic(db)
 
 
 async def _priority_components(

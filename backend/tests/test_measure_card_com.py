@@ -12,7 +12,8 @@ from app.modules.econ.economics import (
     price_of_inaction_eliminating,
     requires_escalation,
 )
-from app.modules.governance import service
+from app.modules.econ.service import set_config
+from app.modules.governance import economics_service, service
 from app.modules.governance.economics_service import (
     _quarter_bounds,
     effect_timeline,
@@ -27,6 +28,7 @@ from app.modules.llm import service as llm_service
 from app.modules.llm.service import _systemic_scope_fallback, generate_systemic_scope_note
 from app.modules.risk.event_schemas import MeasureLinkIn, RiskEventCreate
 from app.modules.risk.event_service import create_event, link_measure
+from app.modules.systems.models import CriticalityClass, System
 from app.shared.exceptions import ConflictError, ValidationError
 
 
@@ -69,6 +71,42 @@ def test_requires_escalation_no_appetite_conservative():
     # Без риск-аппетита для класса ИС — эскалируем консервативно любую меру с деньгами под ней.
     assert requires_escalation(ale_risk=1, risk_appetite=None, threshold_share=0.10) is True
     assert requires_escalation(ale_risk=0, risk_appetite=None, threshold_share=0.10) is False
+
+
+# ── requires_escalation: вес характеристики (§17.5, УК-53) ──
+
+def test_requires_escalation_weight_above_average_lowers_threshold():
+    # База: 150 000 ниже 20% от 1 000 000 (=200 000) → без веса не эскалируем.
+    assert requires_escalation(ale_risk=150_000, risk_appetite=1_000_000, threshold_share=0.20) is False
+    # Вес вдвое выше среднего (ratio=2.0) → эффективный порог вдвое ниже (=100 000) → эскалируем.
+    assert requires_escalation(
+        ale_risk=150_000, risk_appetite=1_000_000, threshold_share=0.20, weight_ratio=2.0,
+    ) is True
+
+
+def test_requires_escalation_weight_below_average_raises_threshold():
+    # База: 150 000 выше 10% от 1 000 000 (=100 000) → без веса эскалируем.
+    assert requires_escalation(ale_risk=150_000, risk_appetite=1_000_000, threshold_share=0.10) is True
+    # Вес вдвое ниже среднего (ratio=0.5) → эффективный порог вдвое выше (=200 000) → не эскалируем.
+    assert requires_escalation(
+        ale_risk=150_000, risk_appetite=1_000_000, threshold_share=0.10, weight_ratio=0.5,
+    ) is False
+
+
+def test_requires_escalation_zero_weight_ratio_falls_back_to_base_threshold():
+    # weight_ratio<=0 — «нет данных», порог не меняется (не эскалируем тихо-агрессивно).
+    assert requires_escalation(ale_risk=50_000, risk_appetite=1_000_000, threshold_share=0.10, weight_ratio=0.0) is False
+    assert requires_escalation(ale_risk=150_000, risk_appetite=1_000_000, threshold_share=0.10, weight_ratio=0.0) is True
+
+
+def test_requires_escalation_blocking_and_regulatory_ignore_weight():
+    # Вето по is_blocking/regulatory безусловно — даже с порогом, который вес сделал бы недостижимым.
+    assert requires_escalation(
+        ale_risk=0, risk_appetite=1_000_000, threshold_share=0.10, is_blocking=True, weight_ratio=0.01,
+    ) is True
+    assert requires_escalation(
+        ale_risk=0, risk_appetite=1_000_000, threshold_share=0.10, regulatory=True, weight_ratio=0.01,
+    ) is True
 
 
 # ── Ц_ОМ (§17.4, УК-49/50) ──
@@ -146,6 +184,74 @@ async def test_list_proposals_created_at_order_skips_priority_fields(db_session)
     await service.create(db_session, _new(), "manager")
     rows = await service.list_proposals(db_session, order_by="created_at")
     assert all(getattr(r, "priority_weight", None) is None for r in rows)
+
+
+# ── Взвешенный порог эскалации (§17.5, УК-53) ──
+
+async def test_characteristic_weight_ratio_direction_by_gost_profile(db_session):
+    """Без рисковых событий вес — чисто нормативный профиль ГОСТ (α=1, БТ-ветка factual=0):
+    у характеристики с малым числом подхарактеристик средний вес на подхарактеристику выше
+    (§4.3), поэтому «Функциональная пригодность» (3 подхарактеристики) должна оказаться выше
+    среднепортфельного веса, а «Удобство использования» (6 подхарактеристик) — ниже."""
+    high = await economics_service._characteristic_weight_ratio(db_session, "Функциональная пригодность")
+    low = await economics_service._characteristic_weight_ratio(db_session, "Удобство использования")
+    assert high > 1.0
+    assert low < 1.0
+    assert high > low
+
+
+async def test_characteristic_weight_ratio_unknown_characteristic_is_neutral(db_session):
+    # Нет данных по характеристике — порог не меняется (не 0, не бесконечность).
+    assert await economics_service._characteristic_weight_ratio(db_session, "НесуществующаяХарактеристика") == 1.0
+    assert await economics_service._characteristic_weight_ratio(db_session, None) == 1.0
+
+
+async def _system_with_appetite(db_session, *, appetite: float) -> None:
+    system = System(name="АБС Core", criticality_class=CriticalityClass.BUSINESS_CRITICAL)
+    db_session.add(system)
+    await set_config(db_session, "risk_appetite_by_class", {"Business Critical": appetite}, None)
+    await set_config(db_session, "measure_escalation_threshold_share", 0.10, None)
+    await db_session.commit()
+
+
+async def test_route_measure_high_weight_characteristic_escalates_below_base_threshold(db_session):
+    """Мера на весомой характеристике (ratio>1) эскалируется при ale_risk НИЖЕ базового порога
+    (10% × аппетит = 100 000) — доказывает, что именно вес, а не голый порог, решает (§17.5)."""
+    await _system_with_appetite(db_session, appetite=1_000_000)
+    ratio = await economics_service._characteristic_weight_ratio(db_session, "Функциональная пригодность")
+    assert ratio > 1.0
+    weighted_threshold = 100_000 / ratio
+    ale_between = (weighted_threshold + 100_000) / 2  # между взвешенным и базовым порогом
+
+    p = await service.create(db_session, _new(characteristic="Функциональная пригодность"), "manager")
+    ev = await create_event(db_session, RiskEventCreate(code=f"RE-TEST-{uuid.uuid4().hex[:8]}", title="Риск"), "risk_mgr")
+    ev.ale_avg = ale_between
+    await db_session.commit()
+    await link_measure(db_session, ev.id, MeasureLinkIn(proposal_id=p.id))
+
+    escalate, ale_risk = await economics_service.route_measure(db_session, p)
+    assert ale_risk < 100_000  # ниже базового порога...
+    assert escalate is True    # ...но эскалируем благодаря весу
+
+
+async def test_route_measure_low_weight_characteristic_does_not_escalate_above_base_threshold(db_session):
+    """Мера на маловесной характеристике (ratio<1) НЕ эскалируется при ale_risk ВЫШЕ базового
+    порога — симметричный случай: без веса эта же мера эскалировалась бы."""
+    await _system_with_appetite(db_session, appetite=1_000_000)
+    ratio = await economics_service._characteristic_weight_ratio(db_session, "Удобство использования")
+    assert ratio < 1.0
+    weighted_threshold = 100_000 / ratio
+    ale_between = (100_000 + weighted_threshold) / 2  # между базовым и взвешенным (выше) порогом
+
+    p = await service.create(db_session, _new(characteristic="Удобство использования"), "manager")
+    ev = await create_event(db_session, RiskEventCreate(code=f"RE-TEST-{uuid.uuid4().hex[:8]}", title="Риск"), "risk_mgr")
+    ev.ale_avg = ale_between
+    await db_session.commit()
+    await link_measure(db_session, ev.id, MeasureLinkIn(proposal_id=p.id))
+
+    escalate, ale_risk = await economics_service.route_measure(db_session, p)
+    assert ale_risk > 100_000  # выше базового порога...
+    assert escalate is False   # ...но НЕ эскалируем — вес поднял порог
 
 
 # ── generate_systemic_scope_note (§17.3, УК-46) — заземление на детерминированный список ──
