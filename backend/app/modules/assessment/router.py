@@ -22,15 +22,17 @@ from app.modules.quality import (
     DEFAULT_CRITICALITY_WEIGHTS,
     QUALITY_MODEL,
     QUALITY_PAIR_KEYS,
-    SUBCHAR_WEIGHTS,
     TOTAL_SUBS,
     FormulaType,
     MetricCatalog,
     SubcharScore,
     calculate_metric,
     canonical_characteristic,
+    combined_weights_for_version,
+    ensure_active_version,
     map_to_level,
     portfolio_score,
+    weight_for,
     weighted_system_score,
 )
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue, ProfessionalJudgment
@@ -126,6 +128,11 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     if not systems:
         return _empty_dashboard()
 
+    # ТЗ v19 УК-05: вес подхарактеристики зависит от профиля критичности ИС — один запрос
+    # активной версии на весь дашборд (не на каждую систему в цикле ниже).
+    active_weight_version = await ensure_active_version(db)
+    weights_by_profile = combined_weights_for_version(active_weight_version)
+
     values_result = await db.execute(
         select(AssessmentValue, AssessmentPeriod, System, MetricCatalog)
         .join(AssessmentPeriod, AssessmentValue.period_id == AssessmentPeriod.id)
@@ -203,7 +210,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
         subchar_scores = [
             SubcharScore(
                 characteristic=char_title, subcharacteristic=sub,
-                weight=SUBCHAR_WEIGHTS[(char_title, sub)],
+                weight=weight_for(weights_by_profile, crit_by_name.get(name), char_title, sub),
                 x=(None if tree[name].get(char_title, {}).get(sub, -1) < 0
                    else tree[name][char_title][sub]),
             )

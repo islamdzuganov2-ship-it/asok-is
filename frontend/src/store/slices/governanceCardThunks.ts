@@ -9,7 +9,7 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import type { RootState } from '../index';
 import { govApi } from '../api/govApi';
-import type { AlternativeSolution, BudgetVariance, MeasureDepartment, PriceHistory, PriceOfInaction, Proposal } from './governanceSlice';
+import type { AlternativeSolution, BudgetVariance, EffectTimeline, MeasureDepartment, PriceHistory, PriceOfInaction, Proposal } from './governanceSlice';
 
 const isLive = (s: RootState) => s.ui.dataMode === 'live';
 
@@ -127,4 +127,9 @@ export const setActuals = createAsyncThunk<
 /** План/факт (§17.7) — read-only, не мутирует Proposal (тот же паттерн, что fetchPriceHistory). */
 export async function fetchBudgetVariance(id: string): Promise<BudgetVariance> {
   return govApi(`/proposals/${id}/budget-variance`, 'GET');
+}
+
+/** Эффект меры во времени по кварталам (ТЗ v19 п.15, УК-37) — read-only. */
+export async function fetchEffectTimeline(id: string): Promise<EffectTimeline> {
+  return govApi(`/proposals/${id}/effect-timeline`, 'GET');
 }

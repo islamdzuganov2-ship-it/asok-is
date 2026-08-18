@@ -100,6 +100,22 @@ async def test_update_meta_only_before_decision(db_session):
         await service.update_meta(db_session, p, MetaIn(owner="Сидоров"), "admin")
 
 
+async def test_create_and_edit_keep_due_on_in_sync_with_due_date(db_session):
+    """ТЗ v19 УК-36: due_on — источник истины для сортировки/сравнения, не разовый backfill.
+    Должен считаться при создании и пересчитываться при каждой правке due_date, иначе разъезжается
+    с due_date молча после первого редактирования (см. backfill_due_dates.py — тот же разбор)."""
+    import datetime as dt
+
+    p = await service.create(db_session, _new(due_date="30.09.2026"), "manager")
+    assert p.due_on == dt.datetime(2026, 9, 30, tzinfo=dt.timezone.utc)
+
+    p = await service.update_meta(db_session, p, MetaIn(due_date="15.10.2026"), "admin")
+    assert p.due_on == dt.datetime(2026, 10, 15, tzinfo=dt.timezone.utc)
+
+    p = await service.edit(db_session, p, EditIn(due_date="01.11.2026"), "admin")
+    assert p.due_on == dt.datetime(2026, 11, 1, tzinfo=dt.timezone.utc)
+
+
 async def test_escalation_cycle(db_session):
     p = await service.create(db_session, _new(), "manager")
     await service.decide(db_session, p, approve=True, comment=None, username="admin")

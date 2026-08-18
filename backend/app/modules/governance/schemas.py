@@ -171,6 +171,41 @@ class PriceHistoryOut(_CamelModel):
     period_avg: float | None = None
 
 
+# ── ТЗ v19 п.15 (УК-37): эффект меры во времени ──
+class QuarterEffectPointOut(_CamelModel):
+    quarter_label: str
+    quarter_start: date
+    net_cash: float
+    cumulative: float
+
+
+class EffectTimelineOut(_CamelModel):
+    """Горизонт эффекта меры по кварталам — самодостаточен для карточки (пункт 15: «ни один
+    эффект без периода»)."""
+    proposal_id: uuid.UUID
+    computable: bool
+    reason: str | None = None
+    start_date: date | None = None
+    effect_start_date: date | None = None
+    capex: float = 0.0
+    points: list[QuarterEffectPointOut] = []
+    payback_quarter: str | None = None
+
+
+class QuarterPortfolioPointOut(_CamelModel):
+    quarter_label: str
+    net_cash: float
+    cumulative: float
+
+
+class PortfolioEffectCurveOut(_CamelModel):
+    """Портфельно: «когда придут деньги» — Σ квартальных эффектов по всем одобренным мерам
+    с определённой датой старта (УК-37)."""
+    points: list[QuarterPortfolioPointOut]
+    measures_included: int
+    measures_excluded_no_start_date: int
+
+
 class ActualsIn(_CamelModel):
     """Факт по бюджету/трудоёмкости меры (§17.7, УК-57) — исполнитель вносит по завершении.
     Хотя бы одно поле обязательно (проверяется в сервисе) — пустой вызов бессмыслен."""

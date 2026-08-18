@@ -29,10 +29,12 @@ from app.modules.quality import (
     CHARACTERISTICS,
     DEFAULT_CRITICALITY_WEIGHTS,
     QUALITY_MODEL,
-    SUBCHAR_WEIGHTS,
     SubcharScore,
     canonical_characteristic,
+    combined_weights_for_version,
+    ensure_active_version,
     portfolio_score,
+    weight_for,
     weighted_system_score,
 )
 from app.modules.reporting.models import DefectMatrix, QualityPlanMatrix, RiskMatrix
@@ -510,12 +512,16 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
         s.name: (s.criticality_class.value if hasattr(s.criticality_class, "value") else str(s.criticality_class))
         for s in systems_by_id.values()
     }
+    # ТЗ v19 УК-05: вес подхарактеристики — по профилю критичности КАЖДОЙ ИС, не одна таблица
+    # на всех (согласованность с /assessments/dashboard требует ту же активную версию весов).
+    active_weight_version = await ensure_active_version(db)
+    weights_by_profile = combined_weights_for_version(active_weight_version)
     system_scores: dict[str, float | None] = {}
     for name in system_names:
         subchar_scores = [
             SubcharScore(
                 characteristic=char_title, subcharacteristic=sub,
-                weight=SUBCHAR_WEIGHTS[(char_title, sub)],
+                weight=weight_for(weights_by_profile, crit_by_name.get(name), char_title, sub),
                 x=subchar_x.get(name, {}).get((char_title, sub)),
             )
             for char_title, subs_def in QUALITY_MODEL

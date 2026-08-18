@@ -22,6 +22,7 @@ from app.modules.governance.schemas import (
     BudgetVarianceOut,
     DecisionIn,
     EditIn,
+    EffectTimelineOut,
     EffortHoursIn,
     EscalateIn,
     EscalationDecisionIn,
@@ -32,6 +33,7 @@ from app.modules.governance.schemas import (
     MeasureEconomicsIn,
     MeasureEconomicsResult,
     MetaIn,
+    PortfolioEffectCurveOut,
     PriceHistoryOut,
     PriceOfInactionOut,
     ProposalCreate,
@@ -76,6 +78,17 @@ async def create_proposal(
     user: dict = Depends(require_permission("governance.propose")),
 ):
     return await service.create(db, payload, _username(user))
+
+
+# ТЗ v19 п.15 (УК-37): портфельная кривая эффекта — литеральный путь ДО /proposals/{pid}/...,
+# иначе FastAPI попытается разобрать «effect-curve» как UUID (порядок регистрации маршрутов
+# имеет значение для литеральных путей против path-параметров, см. risk/event_router.py /by-cell).
+@router.get("/proposals/effect-curve", response_model=PortfolioEffectCurveOut)
+async def get_portfolio_effect_curve(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("view.risk_economics")),
+):
+    return await economics_service.portfolio_effect_curve(db)
 
 
 @router.post("/proposals/{pid}/approve", response_model=ProposalOut)
@@ -266,6 +279,18 @@ async def get_price_of_inaction_history(
     if period not in ("day", "quarter"):
         raise HTTPException(status_code=422, detail="period должен быть 'day' или 'quarter'")
     return await economics_service.price_history(db, pid, period=period)
+
+
+@router.get("/proposals/{pid}/effect-timeline", response_model=EffectTimelineOut)
+async def get_effect_timeline(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("view.risk_economics")),
+):
+    """Горизонт эффекта меры по кварталам (§15, УК-37): дата старта, лаг, дата выхода на
+    эффект, накопленный эффект, точка окупаемости."""
+    p = await service.get_or_404(db, pid)
+    return economics_service.effect_timeline(p)
 
 
 @router.patch("/proposals/{pid}/systemic-scope", response_model=ProposalOut)

@@ -81,6 +81,9 @@ PERMISSIONS: list[Permission] = [
     Permission("admin.permissions.manage", "Администрирование", "Раздавать права ролям"),
     Permission("admin.mandatory_sections.manage", "Администрирование", "Фиксировать обязательные дашборды",
                "Разделы, обязательные для всех пользователей — их нельзя скрыть в персональных настройках"),
+    Permission("quality.weights.edit", "Администрирование", "Редактировать веса ГОСТ 25010",
+               "ТЗ v19 УК-07: правка u/w-весов по профилям критичности — влияет на Score КАЖДОЙ "
+               "оценённой ИС немедленно. Решение по открытому вопросу В-9: только суперадминистратор"),
 ]
 
 ALL_PERMISSION_KEYS: frozenset[str] = frozenset(p.key for p in PERMISSIONS)
@@ -94,6 +97,7 @@ PROTECTED_SUPERADMIN_PERMISSIONS: frozenset[str] = frozenset({
     "admin.users.manage", "admin.permissions.manage",
     "view.admin.llm_quality", "llm.quality.run",
     "admin.mandatory_sections.manage",
+    "quality.weights.edit",
 })
 
 # Встроенные роли — их права ФИКСИРОВАНЫ в коде (не редактируются матрицей):

@@ -21,6 +21,7 @@ import {
     ExperimentOutlined,
     SafetyCertificateOutlined,
     ApartmentOutlined,
+    SlidersOutlined,
     // ExperimentOutlined — под развитие: иконка пункта «Оценка СИИ» (пока не выведен в меню).
 } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
@@ -194,6 +195,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ...(has('view.admin.permissions') ? [mi('/admin/permissions', <SafetyOutlined />, 'Права')] : []),
         // ТЗ v19 §17.3 (УК-47): справочник направлений — тот же уровень доступа, что и правка прав (В-58).
         ...(has('admin.permissions.manage') ? [mi('/admin/measure-departments', <ApartmentOutlined />, 'Направления')] : []),
+        // ТЗ v19 УК-07: редактор весов — исключительное право (В-9), матрицей не выдаётся, только SUPER_ADMIN.
+        ...(has('quality.weights.edit') ? [mi('/admin/weights', <SlidersOutlined />, 'Веса ГОСТ 25010')] : []),
         // Пункт виден только суперадминистратору: право view.admin.llm_quality исключительное
         // и матрицей другим ролям не выдаётся (ТЗ v18 п.10).
         ...(has('view.admin.llm_quality') ? [mi('/admin/llm-quality', <ExperimentOutlined />, 'Качество LLM')] : []),

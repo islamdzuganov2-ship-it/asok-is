@@ -14,16 +14,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.econ import annual_loss_expectancy, compute_incident_cost, config_value
-from app.modules.governance import Proposal
+from app.modules.governance import STATUS_APPROVED, Proposal
 from app.modules.incidents import TechIncident
 from app.modules.risk.event_schemas import (
     AleResultOut,
     HeatmapCellDetailOut,
     HeatmapCellMeasureOut,
     HeatmapCellRiskOut,
+    HeatmapMoneyCellOut,
     MeasureLinkIn,
+    PortfolioRiskSummaryOut,
     RiskEventCreate,
     RiskEventUpdate,
+    RiskMeasureChainMeasureOut,
+    RiskMeasureChainRowOut,
     SubcharLinkIn,
 )
 from app.modules.risk.models import (
@@ -273,4 +277,163 @@ async def cell_detail(db: AsyncSession, system_name: str, characteristic: str) -
 
     return HeatmapCellDetailOut(
         system_name=system.name, characteristic=characteristic, total_ale=total_ale, risks=risks_out,
+    )
+
+
+async def heatmap_money_layer(db: AsyncSession) -> list[HeatmapMoneyCellOut]:
+    """УК-11: денежный слой ВСЕЙ теплокарты за один запрос — та же агрегация, что cell_detail(),
+    по всем ячейкам (ИС × характеристика) сразу вместо N×M отдельных вызовов на весь грид.
+
+    Оговорка: если риск привязан к подхарактеристикам ДВУХ разных характеристик (RiskEventSubchar
+    допускает M:N), его ALE войдёт в обе ячейки — то же допущение, что уже принято в cell_detail()
+    (сумма по одной ячейке не защищена от риска, распределённого по нескольким характеристикам)."""
+    rows = (await db.execute(
+        select(RiskEvent, RiskEventSubchar.characteristic, System.name)
+        .join(RiskEventSubchar, RiskEventSubchar.risk_event_id == RiskEvent.id)
+        .join(System, System.id == RiskEvent.system_id)
+        .where(RiskEvent.status == RISK_EVENT_ACTIVE)
+    )).all()
+
+    # Дедуп риска в рамках ОДНОЙ ячейки — риск, привязанный к нескольким подхарактеристикам
+    # ОДНОЙ характеристики, не должен удваивать свой ALE (тот же принцип, что risks_by_id выше).
+    cell_risks: dict[tuple[str, str], dict[uuid.UUID, RiskEvent]] = defaultdict(dict)
+    for ev, characteristic, system_name in rows:
+        cell_risks[(system_name, characteristic)][ev.id] = ev
+
+    if not cell_risks:
+        return []
+
+    all_risk_ids = {ev.id for risks in cell_risks.values() for ev in risks.values()}
+    measure_links = (await db.execute(
+        select(RiskEventMeasure).where(RiskEventMeasure.risk_event_id.in_(all_risk_ids))
+    )).scalars().all()
+    shares_by_risk: dict[uuid.UUID, list[float]] = defaultdict(list)
+    for link in measure_links:
+        shares_by_risk[link.risk_event_id].append(
+            float(link.ale_reduction_share) if link.ale_reduction_share is not None else 0.0
+        )
+
+    out: list[HeatmapMoneyCellOut] = []
+    for (system_name, characteristic), risks in cell_risks.items():
+        total_ale = sum(float(ev.ale_avg or 0) for ev in risks.values())
+        total_delta_ale = sum(
+            float(ev.ale_avg or 0) * sum(shares_by_risk.get(ev.id, [])) for ev in risks.values()
+        )
+        covered_ale = sum(float(ev.ale_avg or 0) for ev in risks.values() if shares_by_risk.get(ev.id))
+        coverage_pct = round(covered_ale / total_ale * 100, 1) if total_ale > 0 else 0.0
+        out.append(HeatmapMoneyCellOut(
+            system_name=system_name, characteristic=characteristic,
+            total_ale=round(total_ale, 2), total_delta_ale=round(total_delta_ale, 2),
+            coverage_pct=coverage_pct,
+        ))
+    return out
+
+
+# ── ТЗ v19 п.7 (УК-19/20): сквозная цепочка риск → мера → эффект + портфельный итог ──
+
+def _payback_months(p: Proposal) -> float | None:
+    """Срок окупаемости в месяцах — только по «живым деньгам» (delta_ale_cash): deferred и
+    capacity не возвращаются в бюджет, окупаемость на них не считается. None — не молчаливый 0,
+    а честное «не окупается / нет данных» (нет capex, нет эффекта, или чистый эффект ≤ 0)."""
+    if not p.capex or p.delta_ale_cash is None:
+        return None
+    net_monthly = float(p.delta_ale_cash) / 12.0 - float(p.opex_per_year or 0) / 12.0
+    if net_monthly <= 0:
+        return None
+    return round(float(p.capex) / net_monthly, 1)
+
+
+async def risk_measure_chain(db: AsyncSession) -> list[RiskMeasureChainRowOut]:
+    """УК-19: одна таблица сквозной цепочки риск → мера → эффект, по всем активным рискам сразу
+    (не по одной ИС/характеристике, как cell_detail/heatmap_money_layer — это управленческий
+    экран уровня портфеля, не теплокарты)."""
+    risk_rows = (await db.execute(
+        select(RiskEvent, System.name)
+        .outerjoin(System, System.id == RiskEvent.system_id)
+        .where(RiskEvent.status == RISK_EVENT_ACTIVE)
+        .order_by(RiskEvent.ale_avg.desc().nullslast())
+    )).all()
+    if not risk_rows:
+        return []
+
+    risk_ids = [ev.id for ev, _ in risk_rows]
+    measure_rows = (await db.execute(
+        select(RiskEventMeasure, Proposal)
+        .join(Proposal, Proposal.id == RiskEventMeasure.proposal_id)
+        .where(RiskEventMeasure.risk_event_id.in_(risk_ids))
+    )).all()
+    measures_by_risk: dict[uuid.UUID, list[RiskMeasureChainMeasureOut]] = defaultdict(list)
+    for link, proposal in measure_rows:
+        measures_by_risk[link.risk_event_id].append(RiskMeasureChainMeasureOut(
+            proposal_id=proposal.id,
+            title=proposal.risk_title or proposal.metric_name or "Мера",
+            status=proposal.status,
+            execution=proposal.execution,
+            capex=float(proposal.capex) if proposal.capex is not None else None,
+            opex_per_year=float(proposal.opex_per_year) if proposal.opex_per_year is not None else None,
+            ale_reduction_share=float(link.ale_reduction_share) if link.ale_reduction_share is not None else None,
+            delta_ale_cash=float(proposal.delta_ale_cash) if proposal.delta_ale_cash is not None else None,
+            delta_ale_deferred=float(proposal.delta_ale_deferred) if proposal.delta_ale_deferred is not None else None,
+            delta_ale_capacity=float(proposal.delta_ale_capacity) if proposal.delta_ale_capacity is not None else None,
+            rosi=float(proposal.rosi) if proposal.rosi is not None else None,
+            verdict=proposal.verdict,
+            payback_months=_payback_months(proposal),
+        ))
+
+    return [
+        RiskMeasureChainRowOut(
+            risk_id=ev.id, risk_code=ev.code, risk_title=ev.title, system_name=sys_name,
+            ale_avg=float(ev.ale_avg) if ev.ale_avg is not None else None,
+            measures=measures_by_risk.get(ev.id, []),
+        )
+        for ev, sys_name in risk_rows
+    ]
+
+
+async def portfolio_risk_summary(db: AsyncSession) -> PortfolioRiskSummaryOut:
+    """УК-20: «под риском / покрыто выполненными мерами / остаточный / вложения / ожидаемый
+    эффект». covered_by_done_measures — ТОЛЬКО execution=DONE (см. докстринг PortfolioRiskSummaryOut);
+    expected_effect — одобренные, но ещё не выполненные (эффект в будущем, не в прошлом)."""
+    risks = (await db.execute(
+        select(RiskEvent).where(RiskEvent.status == RISK_EVENT_ACTIVE)
+    )).scalars().all()
+    total_at_risk = round(sum(float(r.ale_avg or 0) for r in risks), 2)
+    if not risks:
+        return PortfolioRiskSummaryOut(
+            total_at_risk=0.0, covered_by_done_measures=0.0, residual_risk=0.0,
+            required_investment=0.0, expected_effect=0.0, risks_count=0, measures_count=0,
+        )
+
+    ale_by_risk = {r.id: float(r.ale_avg or 0) for r in risks}
+    measure_rows = (await db.execute(
+        select(RiskEventMeasure, Proposal)
+        .join(Proposal, Proposal.id == RiskEventMeasure.proposal_id)
+        .where(RiskEventMeasure.risk_event_id.in_(ale_by_risk.keys()), Proposal.status == STATUS_APPROVED)
+    )).all()
+
+    covered = 0.0
+    expected = 0.0
+    investment = 0.0
+    seen_proposals: set[uuid.UUID] = set()
+    for link, proposal in measure_rows:
+        share = float(link.ale_reduction_share or 0)
+        effect = ale_by_risk.get(link.risk_event_id, 0.0) * share
+        if proposal.execution == "DONE":
+            covered += effect
+        else:
+            expected += effect
+        if proposal.id not in seen_proposals:
+            # CAPEX/OPEX принадлежат МЕРЕ, не связи риск↔мера — считаем один раз на меру,
+            # даже если она закрывает несколько рисков (иначе задвоили бы вложения).
+            seen_proposals.add(proposal.id)
+            investment += float(proposal.capex or 0) + float(proposal.opex_per_year or 0)
+
+    return PortfolioRiskSummaryOut(
+        total_at_risk=total_at_risk,
+        covered_by_done_measures=round(covered, 2),
+        residual_risk=round(total_at_risk - covered, 2),
+        required_investment=round(investment, 2),
+        expected_effect=round(expected, 2),
+        risks_count=len(risks),
+        measures_count=len(seen_proposals),
     )

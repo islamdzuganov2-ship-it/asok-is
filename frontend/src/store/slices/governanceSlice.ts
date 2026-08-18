@@ -31,6 +31,9 @@ export interface Proposal {
   owner?: string;
   ownerRole?: string;
   dueDate?: string;
+  /** ТЗ v19 УК-36: реальный тип даты (ISO), источник истины для сортировки/сравнения — `dueDate`
+   * остаётся строкой для обратной совместимости и ручного ввода, но не пересчитывается из dueOn. */
+  dueOn?: string;
   /** Что ожидается от ЛПР и почему — для понятности топ-менеджменту (R2.5). */
   expectation: string;
   createdBy: string;
@@ -122,6 +125,24 @@ export interface BudgetVariance {
   plannedEffortHours?: number;
   actualEffortHours?: number;
   effortVariance?: number;
+}
+
+/** ТЗ v19 п.15 (УК-37) — эффект меры во времени, по кварталам. */
+export interface QuarterEffectPoint {
+  quarterLabel: string;
+  quarterStart: string;
+  netCash: number;
+  cumulative: number;
+}
+export interface EffectTimeline {
+  proposalId: string;
+  computable: boolean;
+  reason?: string;
+  startDate?: string;
+  effectStartDate?: string;
+  capex: number;
+  points: QuarterEffectPoint[];
+  paybackQuarter?: string;
 }
 
 /** Альтернативный вариант решения на карточке эскалации (§17.3). */
@@ -463,7 +484,7 @@ export const decideDueChange = createAsyncThunk<Proposal | null, { id: string; a
 export {
   fetchPriceOfInaction, updateSystemicScope, updateAlternatives, reviewLlmMeasure,
   fetchMeasureDepartments, upsertMeasureDepartment, fetchPriceHistory,
-  setActuals, fetchBudgetVariance,
+  setActuals, fetchBudgetVariance, fetchEffectTimeline,
 } from './governanceCardThunks';
 import { updateSystemicScope, updateAlternatives, reviewLlmMeasure, setActuals } from './governanceCardThunks';
 

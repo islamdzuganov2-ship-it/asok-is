@@ -10,7 +10,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography } from 'antd';
 import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
-import { PlusOutlined, ReloadOutlined, InboxOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, InboxOutlined, SwapOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import KpiCard from '../components/KpiCard';
 import { premiumCard, accentDot, accentColorOf, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
@@ -42,6 +42,12 @@ interface MarketBenchmark {
   id: string; kind: string; dimension: string; companySizeClass?: string | null;
   value: number; unit: string; source: string; observedOn: string; note?: string | null;
 }
+// ТЗ v19 п.9-10 (УК-24): сравнение «мы/рынок» — бэкенд считает (econ/service.py compare_business_process/
+// compare_support_rate), эндпоинты уже были, просто не вызывались с фронта.
+interface BenchmarkComparison {
+  ownValue: number | null; ownUnit: string; benchmark?: MarketBenchmark | null;
+  deltaPct?: number | null; note: string;
+}
 interface Nonconformity {
   id: string; code?: string | null; systemName: string; characteristic: string;
   subcharacteristic: string; level: string; status: string; owner: string;
@@ -66,6 +72,26 @@ interface CostDashboard {
   nonconformitiesTotal: number; verified: number; closureRate: number; blockingCount: number;
   verdict: { eliminate: number; compensate: number; accept: number };
   topRisks: TopRisk[]; bySystem: { system: string; ale: number }[]; heatmap: HeatCell[];
+}
+// ТЗ v19 п.7 (УК-19/20): сквозная цепочка риск → мера → эффект + портфельный итог.
+interface PortfolioRiskSummary {
+  totalAtRisk: number; coveredByDoneMeasures: number; residualRisk: number;
+  requiredInvestment: number; expectedEffect: number; risksCount: number; measuresCount: number;
+}
+interface RiskMeasureChainMeasure {
+  proposalId: string; title: string; status: string; execution: string | null;
+  capex: number | null; opexPerYear: number | null; aleReductionShare: number | null;
+  deltaAleCash: number | null; deltaAleDeferred: number | null; deltaAleCapacity: number | null;
+  rosi: number | null; verdict: string | null; paybackMonths: number | null;
+}
+interface RiskMeasureChainRow {
+  riskId: string; riskCode: string; riskTitle: string; systemName: string | null;
+  aleAvg: number | null; measures: RiskMeasureChainMeasure[];
+}
+// ТЗ v19 п.15 (УК-37): портфельная кривая эффекта во времени — «когда реально придут деньги».
+interface QuarterPortfolioPoint { quarterLabel: string; netCash: number; cumulative: number }
+interface PortfolioEffectCurve {
+  points: QuarterPortfolioPoint[]; measuresIncluded: number; measuresExcludedNoStartDate: number;
 }
 
 // ─── Подача ───
@@ -151,6 +177,13 @@ const DashboardTab: React.FC = () => {
   const [d, setD] = useState<CostDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // ТЗ v19 п.7 (УК-19/20): портфельный итог + сквозная цепочка риск → мера → эффект.
+  const [summary, setSummary] = useState<PortfolioRiskSummary | null>(null);
+  const [chain, setChain] = useState<RiskMeasureChainRow[]>([]);
+  const [chainLoading, setChainLoading] = useState(true);
+  // ТЗ v19 п.15 (УК-37): портфельная кривая эффекта — суммарно по всем одобренным мерам.
+  const [curve, setCurve] = useState<PortfolioEffectCurve | null>(null);
+  const [curveLoading, setCurveLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
@@ -159,6 +192,29 @@ const DashboardTab: React.FC = () => {
       .then((r) => { if (alive) setD(r); })
       .catch((e: any) => { if (alive) setError(e.message); })
       .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    setChainLoading(true);
+    Promise.all([
+      api<PortfolioRiskSummary>('/risk-events/portfolio-summary'),
+      api<RiskMeasureChainRow[]>('/risk-events/chain'),
+    ])
+      .then(([s, c]) => { if (alive) { setSummary(s); setChain(c); } })
+      .catch(() => { if (alive) { setSummary(null); setChain([]); } })
+      .finally(() => { if (alive) setChainLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    setCurveLoading(true);
+    api<PortfolioEffectCurve>('/governance/proposals/effect-curve')
+      .then((r) => { if (alive) setCurve(r); })
+      .catch(() => { if (alive) setCurve(null); })
+      .finally(() => { if (alive) setCurveLoading(false); });
     return () => { alive = false; };
   }, []);
 
@@ -258,6 +314,103 @@ const DashboardTab: React.FC = () => {
           pagination={false} scroll={{ x: 780 }}
           locale={{ emptyText: 'Нет рисковых событий с посчитанным ALE.' }}
         />
+      </Card>
+
+      {/* ТЗ v19 п.7 (УК-20): портфельный итог — «под риском / покрыто / остаточный / вложения / эффект» */}
+      <div>
+        <Title level={5} style={{ margin: '0 0 8px' }}>Портфельный итог по мерам</Title>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: SPACE.base }}>
+          <KpiCard loading={chainLoading} title="Всего под риском, ₽/год" value={summary ? fmtMoney(summary.totalAtRisk) : '—'}
+            hint={summary ? `${summary.risksCount} рисковых событий` : undefined} />
+          <KpiCard loading={chainLoading} title="Покрыто выполненными мерами, ₽/год" value={summary ? fmtMoney(summary.coveredByDoneMeasures) : '—'}
+            color={summary && summary.coveredByDoneMeasures > 0 ? accentColorOf('sage') : undefined} />
+          <KpiCard loading={chainLoading} title="Остаточный риск, ₽/год" value={summary ? fmtMoney(summary.residualRisk) : '—'}
+            color={summary && summary.residualRisk > 0 ? accentColorOf('terracotta') : undefined} />
+          <KpiCard loading={chainLoading} title="Требуемые вложения, ₽" value={summary ? fmtMoney(summary.requiredInvestment) : '—'}
+            hint={summary ? `${summary.measuresCount} мер` : undefined} />
+          <KpiCard loading={chainLoading} title="Ожидаемый эффект, ₽/год" value={summary ? fmtMoney(summary.expectedEffect) : '—'}
+            hint="одобрены, ещё не выполнены" />
+        </div>
+      </div>
+
+      {/* ТЗ v19 п.7 (УК-19): сквозная таблица риск → мера → эффект, разворот по клику на риск */}
+      <Card {...premiumCard('ink')} title="Риск → мера → эффект" styles={{ body: { padding: 0 } }}>
+        <Table<RiskMeasureChainRow>
+          rowKey="riskId" loading={chainLoading} size="small" pagination={{ pageSize: 10, hideOnSinglePage: true }}
+          dataSource={chain}
+          locale={{ emptyText: 'Нет активных рисковых событий.' }}
+          expandable={{
+            rowExpandable: (r) => r.measures.length > 0,
+            expandedRowRender: (r) => (
+              <Table<RiskMeasureChainMeasure>
+                rowKey="proposalId" size="small" pagination={false} dataSource={r.measures}
+                columns={[
+                  { title: 'Мера', dataIndex: 'title' },
+                  { title: 'Статус', dataIndex: 'status', width: 130,
+                    render: (s: string, m) => (
+                      <Space size={4}>
+                        <Tag>{s}</Tag>
+                        {m.execution && <Tag color={m.execution === 'DONE' ? 'green' : 'red'}>{m.execution === 'DONE' ? 'выполнено' : 'не выполнено'}</Tag>}
+                      </Space>
+                    ) },
+                  numericColumn({ title: 'Доля снятия', dataIndex: 'aleReductionShare', width: 100,
+                    render: (v: number | null) => v == null ? '—' : `${Math.round(v * 100)}%` }),
+                  numericColumn({ title: 'ΔALE (деньги)', dataIndex: 'deltaAleCash', width: 130, render: (v: number | null) => fmtMoney(v) }),
+                  numericColumn({ title: 'CAPEX', dataIndex: 'capex', width: 120, render: (v: number | null) => fmtMoney(v) }),
+                  numericColumn({ title: 'OPEX/год', dataIndex: 'opexPerYear', width: 120, render: (v: number | null) => fmtMoney(v) }),
+                  numericColumn({ title: 'ROSI', dataIndex: 'rosi', width: 90, render: (v: number | null) => v == null ? '—' : fmtNum(v) }),
+                  numericColumn({ title: 'Окупаемость, мес.', dataIndex: 'paybackMonths', width: 130,
+                    render: (v: number | null) => v == null ? '—' : fmtNum(v, 1) }),
+                  { title: 'Вердикт', dataIndex: 'verdict', width: 110, render: (v: string | null) => v || '—' },
+                ]}
+              />
+            ),
+          }}
+          columns={[
+            { title: 'Риск', dataIndex: 'riskTitle', sorter: sorterFor((r: RiskMeasureChainRow) => r.riskTitle),
+              render: (t: string, r) => <Space size={4}><Text type="secondary" style={{ fontSize: 12 }}>{r.riskCode}</Text><Text strong>{t}</Text></Space> },
+            { title: 'ИС', dataIndex: 'systemName', width: 160, render: (s: string | null) => s || '—' },
+            numericColumn({ title: 'ALE, ₽/год', dataIndex: 'aleAvg', width: 150,
+              sorter: sorterFor((r: RiskMeasureChainRow) => r.aleAvg), render: (v: number | null) => fmtMoney(v) }),
+            numericColumn({ title: 'Мер привязано', key: 'measuresCount', width: 130,
+              sorter: sorterFor((r: RiskMeasureChainRow) => r.measures.length),
+              render: (_: unknown, r) => r.measures.length || <Text type="secondary">0</Text> }),
+          ]}
+        />
+      </Card>
+
+      {/* ТЗ v19 п.15 (УК-37): портфельная кривая эффекта — «когда реально придут деньги»
+          по одобренным мерам, с учётом лага внедрения. Меры без решения (decided_at) не входят —
+          honestly считать для них нечего. */}
+      <Card {...premiumCard('sage')} title="Когда придут деньги: портфельный эффект по кварталам"
+        styles={{ body: { padding: SPACE.airy } }}>
+        {curveLoading ? (
+          <Text type="secondary">Загрузка…</Text>
+        ) : !curve || curve.points.length === 0 ? (
+          <Text type="secondary">Нет одобренных мер с посчитанной экономикой — кривую строить не из чего.</Text>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+              {curve.points.map((pt) => (
+                <div key={pt.quarterLabel} style={{
+                  minWidth: 100, padding: '6px 8px', borderRadius: 6, background: '#fff', border: '1px solid #E5E7EB',
+                }}>
+                  <Text style={{ fontSize: TYPE.micro.fontSize, display: 'block' }} type="secondary">{pt.quarterLabel}</Text>
+                  <Text style={{ fontSize: 12, display: 'block', color: pt.netCash > 0 ? RAG.good.strong : pt.netCash < 0 ? RAG.bad.strong : undefined }}>
+                    {pt.netCash > 0 ? '+' : ''}{fmtMoney(pt.netCash)}
+                  </Text>
+                  <Text style={{ fontSize: 12, display: 'block', color: pt.cumulative >= 0 ? RAG.good.strong : RAG.bad.strong }}>
+                    Σ {fmtMoney(pt.cumulative)}
+                  </Text>
+                </div>
+              ))}
+            </div>
+            <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block', marginTop: 8 }}>
+              Учтено мер: {curve.measuresIncluded}
+              {curve.measuresExcludedNoStartDate > 0 && <> · без решения (не входят в расчёт): {curve.measuresExcludedNoStartDate}</>}
+            </Text>
+          </>
+        )}
       </Card>
     </Space>
   );
@@ -439,6 +592,10 @@ const ReferencesTab: React.FC = () => {
   const [rateForm] = Form.useForm();
   const [bpForm] = Form.useForm();
   const [benchmarkForm] = Form.useForm();
+  // ТЗ v19 УК-24: сравнение «мы/рынок» — по клику, не пересчитывается фоном (рынок обновляется
+  // редко, и результат зависит от того, что именно вносили в last-load costs/rates).
+  const [compareOpen, setCompareOpen] = useState<{ title: string; data: BenchmarkComparison } | null>(null);
+  const [comparing, setComparing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -486,6 +643,24 @@ const ReferencesTab: React.FC = () => {
     finally { setSaving(false); }
   };
 
+  const compareRate = async (rate: SupportRate) => {
+    setComparing(rate.id);
+    try {
+      const data = await api<BenchmarkComparison>(`/econ/rates/${rate.id}/benchmark`);
+      setCompareOpen({ title: `Ставка ${rate.executorType === 'VENDOR' ? 'вендора' : 'внутренняя'} · линия ${rate.line}`, data });
+    } catch (e: any) { message.error(`Ошибка сравнения: ${e.message}`); }
+    finally { setComparing(null); }
+  };
+
+  const compareBp = async (bp: BusinessProcess) => {
+    setComparing(bp.id);
+    try {
+      const data = await api<BenchmarkComparison>(`/econ/business-processes/${bp.id}/benchmark`);
+      setCompareOpen({ title: `${bp.name} (${bp.code})`, data });
+    } catch (e: any) { message.error(`Ошибка сравнения: ${e.message}`); }
+    finally { setComparing(null); }
+  };
+
   const createBenchmark = async () => {
     try {
       const v = await benchmarkForm.validateFields();
@@ -515,6 +690,14 @@ const ReferencesTab: React.FC = () => {
       sorter: sorterFor((r: SupportRate) => r.systemId),
       render: (s?: string | null) => <Tag>{s ? 'Для ИС' : 'Глобальная'}</Tag>,
     },
+    {
+      title: '', key: 'compare', width: 130, fixed: 'right',
+      render: (_: unknown, r: SupportRate) => (
+        <Button size="small" icon={<SwapOutlined />} loading={comparing === r.id} onClick={() => compareRate(r)}>
+          С рынком
+        </Button>
+      ),
+    },
   ];
 
   const bpCols: ColumnsType<BusinessProcess> = [
@@ -529,6 +712,14 @@ const ReferencesTab: React.FC = () => {
       sorter: sorterFor((bp: BusinessProcess) => costs[bp.id]),
       render: (_: unknown, bp: BusinessProcess) => fmtMoney(costs[bp.id]),
     }),
+    {
+      title: '', key: 'compare', width: 130, fixed: 'right',
+      render: (_: unknown, bp: BusinessProcess) => (
+        <Button size="small" icon={<SwapOutlined />} loading={comparing === bp.id} onClick={() => compareBp(bp)}>
+          С рынком
+        </Button>
+      ),
+    },
   ];
 
   const benchmarkCols: ColumnsType<MarketBenchmark> = [
@@ -557,7 +748,7 @@ const ReferencesTab: React.FC = () => {
       >
         <Table<SupportRate>
           columns={rateCols} dataSource={rates} rowKey="id" loading={loading} size="small"
-          scroll={{ x: 820 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
+          scroll={{ x: 950 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
           locale={{ emptyText: 'Ставок нет. Внутренняя = (ФОТ×K_накладных)/фонд; вендорская — из контракта.' }}
         />
       </Card>
@@ -570,7 +761,7 @@ const ReferencesTab: React.FC = () => {
       >
         <Table<BusinessProcess>
           columns={bpCols} dataSource={bps} rowKey="id" loading={loading} size="small"
-          scroll={{ x: 700 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
+          scroll={{ x: 830 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
           locale={{ emptyText: 'БП нет. Стоимость минуты — атрибут процесса: фронтальные считаются транзакционно, бэк-офис ресурсно.' }}
         />
       </Card>
@@ -674,6 +865,40 @@ const ReferencesTab: React.FC = () => {
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* ТЗ v19 УК-24: результат сравнения «мы/рынок» — по клику из строки ставки/БП. */}
+      <Modal
+        title={compareOpen ? `Сравнение с рынком · ${compareOpen.title}` : ''}
+        open={!!compareOpen}
+        onCancel={() => setCompareOpen(null)}
+        footer={<Button onClick={() => setCompareOpen(null)}>Закрыть</Button>}
+      >
+        {compareOpen && (
+          compareOpen.data.ownValue === null ? (
+            <Text type="secondary">{compareOpen.data.note}</Text>
+          ) : (
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Space size="large">
+                <Statistic title="У нас" value={compareOpen.data.ownValue} suffix={compareOpen.data.ownUnit} precision={2} />
+                {compareOpen.data.benchmark && (
+                  <Statistic title="Рынок" value={compareOpen.data.benchmark.value} suffix={compareOpen.data.benchmark.unit} precision={2} />
+                )}
+              </Space>
+              {compareOpen.data.deltaPct != null && (
+                <Text strong style={{ color: compareOpen.data.deltaPct > 0 ? RAG.bad.strong : RAG.good.strong }}>
+                  {compareOpen.data.note}
+                </Text>
+              )}
+              {compareOpen.data.deltaPct == null && <Text type="secondary">{compareOpen.data.note}</Text>}
+              {compareOpen.data.benchmark && (
+                <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                  Источник: {compareOpen.data.benchmark.source} · на {compareOpen.data.benchmark.observedOn}
+                </Text>
+              )}
+            </Space>
+          )
+        )}
       </Modal>
     </Space>
   );

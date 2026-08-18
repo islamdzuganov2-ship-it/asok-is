@@ -9,7 +9,7 @@
 import_models(); сервисные функции доступны соседним доменам (напр. reporting/LLM — как источник
 фактов о мерах) через этот фасад.
 """
-from app.modules.governance.models import MeasureDepartment, Proposal
+from app.modules.governance.models import STATUS_APPROVED, MeasureDepartment, Proposal
 from app.modules.governance.service import list_proposals
 
-__all__ = ["Proposal", "MeasureDepartment", "list_proposals"]
+__all__ = ["Proposal", "MeasureDepartment", "list_proposals", "STATUS_APPROVED"]

@@ -13,30 +13,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import re
-from datetime import datetime, timezone
 
 from sqlalchemy import select
 
 from app.infrastructure.database import AsyncSessionLocal
 from app.modules.governance import Proposal
-
-_RU_DATE_RE = re.compile(r"^(\d{2})\.(\d{2})\.(\d{4})$")
-
-
-def parse_ru_date(raw: str | None) -> datetime | None:
-    """«30.09.2026» → datetime(2026, 9, 30, tzinfo=UTC). None для пустых/нераспознанных строк —
-    чистая функция, тестируется без БД (test_backfill_due_dates.py)."""
-    if not raw:
-        return None
-    m = _RU_DATE_RE.match(raw.strip())
-    if not m:
-        return None
-    day, month, year = (int(x) for x in m.groups())
-    try:
-        return datetime(year, month, day, tzinfo=timezone.utc)
-    except ValueError:
-        return None
+from app.shared.dates import parse_ru_date  # реэкспорт: test_backfill_due_dates.py импортирует отсюда
 
 
 async def run(apply: bool) -> None:

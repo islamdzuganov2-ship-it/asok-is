@@ -39,6 +39,7 @@ from app.modules.governance.schemas import (
 from app.infrastructure.integrations.notifications import get_notification_port
 from app.modules.iam import get_role_permissions, resolve_user_id
 from app.modules.llm import generate_executor_brief
+from app.shared.dates import parse_ru_date
 from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
 from app.shared.notification_events import (
     EVENT_MEASURE_APPROVED,
@@ -103,20 +104,17 @@ async def list_proposals(
 
 
 async def _priority_weight_lookup(db: AsyncSession) -> dict[str, float]:
-    """Вес ХАРАКТЕРИСТИКИ (§1.0 ГОСТ, через weights_service) — усреднение по её подхарактеристикам,
-    т.к. `Proposal.characteristic` хранит характеристику, не конкретную подхарактеристику.
+    """Вес ХАРАКТЕРИСТИКИ (§1.0 ГОСТ) — тот же источник, что и взвешенный порог эскалации
+    (economics_service._characteristic_weight_ratio, §17.5 УК-53), см. weights_service.
+    weight_by_characteristic.
 
     Импорт ОТЛОЖЕН (не на уровне модуля): weights_service тянет econ, а governance/__init__.py
     грузится из глубины цепочки econ.router→manager_metrics_service→governance.models — импорт
     econ.* на уровне модуля governance/service.py даёт циклический импорт при старте приложения
     (econ ещё не успел доопределить свои имена). На вызов функции (после старта) цикла уже нет."""
-    from app.modules.econ.weights_service import compute_subchar_weights
+    from app.modules.econ.weights_service import weight_by_characteristic
 
-    result = await compute_subchar_weights(db)
-    by_char: dict[str, list[float]] = {}
-    for w in result.weights:
-        by_char.setdefault(w.characteristic, []).append(w.final_weight)
-    return {c: (sum(ws) / len(ws) if ws else 0.0) for c, ws in by_char.items()}
+    return await weight_by_characteristic(db)
 
 
 async def _priority_components(
@@ -168,6 +166,9 @@ async def create(db: AsyncSession, data: ProposalCreate, username: str) -> Propo
         **data.model_dump(exclude_none=False),
         status=STATUS_PENDING,
         created_by=username,
+        # ТЗ v19 УК-36: due_on — источник истины, считается от due_date сразу при создании
+        # (не только разовым backfill-скриптом), иначе новые меры навсегда остаются без due_on.
+        due_on=parse_ru_date(data.due_date),
     )
     db.add(p)
     await db.commit()
@@ -292,6 +293,11 @@ def _apply_with_history(p: Proposal, patch: dict, username: str) -> int:
         })
         setattr(p, field, value)
         changed += 1
+        # ТЗ v19 УК-36: due_date правится и топ-менеджментом (MetaIn), и аудитом (EditIn) —
+        # due_on должен пересчитываться при каждой правке, иначе разъезжается с due_date молча
+        # после первого редактирования (backfill_due_dates.py закрывает это только один раз).
+        if field == "due_date":
+            p.due_on = parse_ru_date(value)
     if changed:
         p.history = history
     return changed
