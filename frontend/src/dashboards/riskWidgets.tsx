@@ -16,7 +16,7 @@ import {
   type IncidentCategoryStat, type IncidentSystemStat,
 } from '../store/api/apiSlice';
 import type { RootState } from '../store';
-import { MOCK_INCIDENTS, computeIncidentAnalytics } from '../data/mockIncidents';
+import { MOCK_INCIDENTS, computeIncidentAnalytics, computeTriggeredRisks } from '../data/mockIncidents';
 import { RAG, BRAND, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
 import { sorterFor } from '../theme/table';
@@ -35,6 +35,16 @@ function useIncidentAnalytics() {
   const isLive = dataMode === 'live';
   const live = useGetIncidentAnalyticsQuery(undefined, { skip: !isLive });
   const data = isLive ? live.data : computeIncidentAnalytics(MOCK_INCIDENTS);
+  return { data, isLoading: isLive && live.isLoading };
+}
+
+/** Тот же принцип для риск-триггеров (T-16) — раньше RiskTriggersWidget тоже всегда ходил в
+ * реальную БД независимо от переключателя Демо/LLM. */
+function useTriggeredRisks() {
+  const dataMode = useSelector((s: RootState) => s.ui.dataMode);
+  const isLive = dataMode === 'live';
+  const live = useGetTriggeredRisksQuery(undefined, { skip: !isLive });
+  const data = isLive ? (live.data ?? []) : computeTriggeredRisks(MOCK_INCIDENTS);
   return { data, isLoading: isLive && live.isLoading };
 }
 
@@ -76,7 +86,7 @@ const RiskKpiWidget: React.FC = () => {
 
 const RiskTriggersWidget: React.FC = () => {
   const navigate = useNavigate();
-  const { data: triggered, isLoading } = useGetTriggeredRisksQuery();
+  const { data: triggered, isLoading } = useTriggeredRisks();
   const top = (triggered ?? []).slice(0, 6);
   return (
     <Card

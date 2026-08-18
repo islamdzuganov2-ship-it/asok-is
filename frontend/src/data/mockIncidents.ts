@@ -4,7 +4,7 @@
  * 4 демо-ИС, все 5 первопричин, часть открыта. Аналитика вычисляется тем же способом,
  * что и на бэкенде (computeIncidentAnalytics), чтобы Демо и LLM выглядели одинаково.
  */
-import type { IncidentAnalytics, TechIncidentDto } from '../store/api/apiSlice';
+import type { IncidentAnalytics, TechIncidentDto, TriggeredRisk } from '../store/api/apiSlice';
 
 const H = 3600_000;
 const iso = (s: string) => new Date(s).toISOString();
@@ -86,4 +86,69 @@ export function computeIncidentAnalytics(rows: TechIncidentDto[], system?: strin
         byCategory,
         topSystems,
     };
+}
+
+/**
+ * Риск-триггеры (T-16) для демо-режима — зеркало backend `incidents/models.py`
+ * (CATEGORY_TO_CHARACTERISTIC/CATEGORY_LABELS) и `risk/router.py:triggered_risks` +
+ * `risk/service.py:triggering_characteristics`. Раньше RiskTriggersWidget/RiskRadarPage
+ * всегда ходили в реальную БД, игнорируя переключатель Демо/LLM (как и остальная аналитика
+ * сбоев чинилась отдельно) — этот фоллбэк даёт то же поведение, что и остальной Демо-режим.
+ */
+const CATEGORY_TO_CHARACTERISTIC: Record<string, string> = {
+    RELEASE: 'Сопровождаемость',
+    INFRASTRUCTURE: 'Надёжность',
+    PERFORMANCE: 'Производительность',
+    NETWORK: 'Надёжность',
+    POWER: 'Надёжность',
+    OTHER: 'Надёжность',
+};
+const CATEGORY_LABELS: Record<string, string> = {
+    RELEASE: 'релиз',
+    INFRASTRUCTURE: 'инфраструктура',
+    PERFORMANCE: 'производительность',
+    NETWORK: 'сеть',
+    POWER: 'электроснабжение',
+    OTHER: 'другое',
+};
+
+/**
+ * Тот же реальный сид, что backend/app/scripts/seed_risk_base.py — не выдуманные записи:
+ * иначе демо-триггеры «находили» бы риски, которых нет в реальной базе, и разошлись бы с
+ * live-режимом на той же странице (проект прямо требует не выдавать выдуманное за реальное,
+ * см. правило про источник у рыночных бенчмарков в риск-экономике).
+ */
+const MOCK_RISK_BASE: Omit<TriggeredRisk, 'triggered_by'>[] = [
+    { id: 'R-TEST-001', code: 'R-TEST-001', title: 'Низкая автоматизация регрессионного тестирования', category: 'тестируемость', characteristic: 'Тестируемость', severity: 'high', likelihood: 'high', consequence: 'Рост числа необнаруженных дефектов, удлинение релизного цикла.', mitigation: 'Выделить ресурс QA-автоматизации, приоритизировать критические сценарии, включить контроль покрытия в релизный гейт.' },
+    { id: 'R-REL-001', code: 'R-REL-001', title: 'Просадка по надёжности и сопровождаемости', category: 'надёжность', characteristic: 'Надежность', severity: 'critical', likelihood: 'medium', consequence: 'Нарушение SLA, репутационные и финансовые потери.', mitigation: 'Заморозить рискованные релизы, запустить программу стабилизации, усилить мониторинг.' },
+    { id: 'R-DATA-001', code: 'R-DATA-001', title: 'Недостаточный контроль качества данных', category: 'данные', characteristic: 'Тестируемость', severity: 'high', likelihood: 'medium', consequence: 'Дефекты данных доходят до продуктива, недостоверная отчётность.', mitigation: 'Приоритизировать покрытие критических витрин, включить контроль качества данных в релизный гейт.' },
+    { id: 'R-SEC-001', code: 'R-SEC-001', title: 'Неполная реализация ролевой модели (RBAC)', category: 'безопасность', characteristic: 'Безопасность', severity: 'high', likelihood: 'low', consequence: 'Риск несанкционированного доступа, замечания регулятора.', mitigation: 'Провести ревизию ролей, внедрить принцип минимальных привилегий, регулярный аудит доступов.' },
+];
+
+const normChar = (s: string) => (s || '').toLowerCase().replace(/ё/g, 'е').trim();
+
+export function computeTriggeredRisks(incidents: TechIncidentDto[], system?: string): TriggeredRisk[] {
+    const items = system ? incidents.filter((r) => r.systemName === system) : incidents;
+    const catCount = new Map<string, number>();
+    items.forEach((r) => catCount.set(r.category, (catCount.get(r.category) ?? 0) + 1));
+
+    const charTriggers = new Map<string, [string, number][]>();
+    [...catCount.entries()].sort((a, b) => b[1] - a[1]).forEach(([cat, cnt]) => {
+        const char = CATEGORY_TO_CHARACTERISTIC[cat];
+        if (!char) return;
+        const list = charTriggers.get(char) ?? [];
+        list.push([CATEGORY_LABELS[cat] ?? cat, cnt]);
+        charTriggers.set(char, list);
+    });
+    if (!charTriggers.size) return [];
+
+    const normReasons = new Map<string, string>();
+    charTriggers.forEach((cats, char) => {
+        normReasons.set(normChar(char), 'техсбои: ' + cats.map(([lbl, cnt]) => `${lbl} (${cnt})`).join(', '));
+    });
+
+    return MOCK_RISK_BASE
+        .filter((r) => normReasons.has(normChar(r.characteristic ?? '')))
+        .slice(0, 20)
+        .map((r) => ({ ...r, triggered_by: normReasons.get(normChar(r.characteristic ?? '')) ?? 'связанный риск' }));
 }

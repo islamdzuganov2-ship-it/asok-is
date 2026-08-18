@@ -279,7 +279,27 @@ const DashboardPage: React.FC = () => {
       description={`${error}. Проверьте подключение к backend.`} style={{ margin: 24 }} />;
   }
 
-  const healthPct = data ? Math.round(data.globalHealthScore * 100) : 0;
+  // П.11: в демо-режиме globalHealthScore — статичное невзвешенное среднее, запечённое в
+  // mockScaleData.ts, и не реагирует на смену весов ГОСТ 25010 (тот же класс бага, что уже
+  // чинили в ExecutiveDashboard.tsx). Пересчитываем как среднее по ИС из их взвешенных по
+  // характеристикам баллов — то же самое взвешивание, что уже используется чуть выше для
+  // severity «Проблемных ИС» (systemsWithSeverity), просто без второго уровня свёртки по
+  // критичности (systemDetails критичность не несёт — расширять DashboardData ради этого
+  // отдельная задача, а не часть текущего фикса).
+  const healthPct = (() => {
+    if (!data) return 0;
+    if (!isMock || !data.systemDetails?.length) return Math.round(data.globalHealthScore * 100);
+    const perSystem = data.systemDetails.map((sd) => {
+      const measured = sd.chars.filter((c) => c.score >= 0);
+      const w = measured.reduce((a, c) => a + (charWeights[c.title] ?? 0), 0);
+      return w > 0
+        ? measured.reduce((a, c) => a + c.score * (charWeights[c.title] ?? 0), 0) / w
+        : (measured.length ? measured.reduce((a, c) => a + c.score, 0) / measured.length : 0);
+    });
+    return perSystem.length
+      ? Math.round(perSystem.reduce((a, b) => a + b, 0) / perSystem.length)
+      : Math.round(data.globalHealthScore * 100);
+  })();
   // Крупная цифра KPI — это ТЕКСТ, поэтому берём глубокие тона (пастель давала 1.81:1).
   const healthColor = ragToken(healthPct).strong;
   const lowTotal = data?.problematicSystems.reduce((s, p) => s + p.lowMetricsCount, 0) ?? 0;
