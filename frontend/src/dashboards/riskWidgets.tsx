@@ -59,7 +59,12 @@ const sevToken = (s: string) => {
 const RiskKpiWidget: React.FC = () => {
   const { data: a, isLoading } = useIncidentAnalytics();
   if (isLoading) return <div><Spin /> <Text type="secondary">Загрузка показателей…</Text></div>;
-  const releaseShare = a ? Math.round((a.releaseInducedShare || 0) * 100) : 0;
+  // Найдено при проверке п.12: releaseInducedShare уже в процентах (0..100, см.
+  // computeIncidentAnalytics/backend service.analytics — как на «Аналитике сбоев»,
+  // IncidentsAnalyticsPage.tsx показывает то же поле без домножения). Здесь было лишнее
+  // «* 100» — тайл «Доля релизных, %» показывал 2220% вместо 22.2%, причём и в live-режиме
+  // тоже (виджет тянул реальную БД и до этой правки, просто в демо оставался пустым).
+  const releaseShare = a ? Math.round(a.releaseInducedShare || 0) : 0;
   const tile = (title: string, value: React.ReactNode, icon: React.ReactNode, tone: string) => (
     <Col xs={12} md={6}>
       <Card {...premiumCard('ink')} styles={{ body: { padding: SPACE.base } }}>
