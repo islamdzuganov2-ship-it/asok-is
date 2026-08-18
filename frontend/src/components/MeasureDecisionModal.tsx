@@ -26,6 +26,7 @@ import { ragToken, solidTagStyle, RAG, ACCENT } from '../theme/ragPalette';
 import { SPACE, TYPE } from '../theme/premium';
 import { fmtMoney, fmtNum } from '../utils/money';
 import { MeasureCardExtras } from './MeasureCardExtras';
+import FieldHint from './FieldHint';
 
 // ТЗ v19 п.14: карточка меры на языке топ-менеджмента (что не так → деньги/срок → решение →
 // стоимость → результат → ответственный), ≤80 слов, без формул — считает бэкенд
@@ -97,7 +98,7 @@ interface Props {
   onClose: () => void;
 }
 
-const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+const Field: React.FC<{ label: React.ReactNode; children: React.ReactNode }> = ({ label, children }) => (
   <div style={{ marginBottom: SPACE.cozy }}>
     <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{label}</Text>
     <div>{children}</div>
@@ -344,16 +345,16 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
 
       {editing ? (
         <>
-          <Field label="Название меры/риска">
+          <Field label={<FieldHint title="Краткая формулировка меры или риска, к которому она относится.">Название меры/риска</FieldHint>}>
             <Input value={draft.riskTitle} onChange={setD('riskTitle')} />
           </Field>
-          <Field label="Обоснование (профессиональное суждение)">
+          <Field label={<FieldHint title="Почему нужна эта мера: факт → причина → влияние на качество.">Обоснование (профессиональное суждение)</FieldHint>}>
             <Input.TextArea rows={3} value={draft.rationale} onChange={setD('rationale')} />
           </Field>
-          <Field label="Что ожидается от ЛПР и почему">
+          <Field label={<FieldHint title="Что конкретно должен сделать/решить ЛПР (топ-менеджмент) по этой мере и почему это важно.">Что ожидается от ЛПР и почему</FieldHint>}>
             <Input.TextArea rows={2} value={draft.expectation} onChange={setD('expectation')} />
           </Field>
-          <Field label="Ответственный / должность / срок">
+          <Field label={<FieldHint title="Кто исполняет меру, в какой должности и к какому сроку — попадает в «Мои задачи» и на диаграмму Ганта.">Ответственный / должность / срок</FieldHint>}>
             <Space direction="vertical" size={6} style={{ width: '100%' }}>
               <Input value={draft.owner} onChange={setD('owner')} placeholder="ФИО ответственного" />
               <Input value={draft.ownerRole} onChange={setD('ownerRole')} placeholder="Должность ответственного" />

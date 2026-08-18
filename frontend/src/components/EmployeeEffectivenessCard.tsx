@@ -57,9 +57,15 @@ interface Props {
   proposals: Proposal[];
   /** style/props прокидываются в Card (например marginTop). */
   style?: React.CSSProperties;
+  /**
+   * Клик по ФИО или по числу в строке — переход к задачам этого сотрудника (План задач/Гант),
+   * `statusFilter` — один из ключей Segmented-фильтра «Плана задач» ('Все'/'Выполнено'/
+   * 'Просрочено'/'Активные'), не задан при клике на ФИО или на «Назначено».
+   */
+  onSelectOwner?: (owner: string, statusFilter?: string) => void;
 }
 
-export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style }) => {
+export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style, onSelectOwner }) => {
   const [quarter, setQuarter] = useState<string | undefined>();
   const { weights: charWeights } = useCharacteristicWeights();
   // Вес меры для взвешенной эффективности — по её характеристике (ГОСТ 25010, ТЗ v20 п.3).
@@ -115,10 +121,21 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
     return out.sort((a, b) => (b.total - a.total) || (b.effectiveness - a.effectiveness));
   }, [scoped, charWeights]);
 
+  // Числа кликабельны, только если родитель дал обработчик (карточка переиспользуется в местах
+  // без перехода к «Плану задач», например — если понадобится встроить её в отчёт).
+  const STATUS_OF: Record<Bucket, string> = { done: 'Выполнено', awaiting: 'Активные', overdue: 'Просрочено' };
   const numCol = (title: string, key: Bucket, color: string): ColumnsType<Row>[number] => ({
     title, dataIndex: key, key, width: 104, align: 'center' as const,
     sorter: (a: Row, b: Row) => a[key] - b[key],
-    render: (n: number) => <Text strong style={{ color: n ? color : BRAND.inkSoft }}>{n}</Text>,
+    render: (n: number, r) => (
+      <Text
+        strong
+        style={{ color: n ? color : BRAND.inkSoft, cursor: onSelectOwner ? 'pointer' : undefined }}
+        onClick={onSelectOwner ? (e) => { e.stopPropagation(); onSelectOwner(r.owner, STATUS_OF[key]); } : undefined}
+      >
+        {n}
+      </Text>
+    ),
   });
 
   const columns: ColumnsType<Row> = [
@@ -126,8 +143,13 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
       title: 'Сотрудник', dataIndex: 'owner', key: 'owner',
       sorter: sorterFor((r: Row) => r.owner),
       render: (owner: string, r) => (
-        <div>
-          <Text strong style={{ color: BRAND.ink }}>{owner}</Text>
+        <div
+          style={{ cursor: onSelectOwner ? 'pointer' : undefined }}
+          onClick={onSelectOwner ? (e) => { e.stopPropagation(); onSelectOwner(owner); } : undefined}
+        >
+          <Text strong style={onSelectOwner ? { color: BRAND.ink, textDecoration: 'underline', textDecorationColor: BRAND.divider } : { color: BRAND.ink }}>
+            {owner}
+          </Text>
           {r.role && <div style={{ ...TYPE.caption, color: BRAND.inkSoft }}>{r.role}</div>}
         </div>
       ),
@@ -150,7 +172,19 @@ export const EmployeeEffectivenessCard: React.FC<Props> = ({ proposals, style })
         </Space>
       ),
     },
-    { title: 'Назначено', dataIndex: 'total', key: 'total', width: 96, align: 'center', sorter: (a, b) => a.total - b.total, render: (n: number) => <Text strong>{n}</Text> },
+    {
+      title: 'Назначено', dataIndex: 'total', key: 'total', width: 96, align: 'center',
+      sorter: (a, b) => a.total - b.total,
+      render: (n: number, r) => (
+        <Text
+          strong
+          style={{ cursor: onSelectOwner ? 'pointer' : undefined }}
+          onClick={onSelectOwner ? (e) => { e.stopPropagation(); onSelectOwner(r.owner, 'Все'); } : undefined}
+        >
+          {n}
+        </Text>
+      ),
+    },
     numCol('Выполнено', 'done', RAG.good.strong),
     numCol('Ожидает', 'awaiting', '#50749B'),
     numCol('Просрочено', 'overdue', RAG.bad.strong),

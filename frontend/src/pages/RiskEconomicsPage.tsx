@@ -15,6 +15,7 @@ import dayjs from 'dayjs';
 import KpiCard from '../components/KpiCard';
 import { premiumCard, accentDot, accentColorOf, pageContainer, pageTitle, GOLD, PREMIUM, SPACE, TYPE } from '../theme/premium';
 import { numericColumn, numericText, sorterFor } from '../theme/table';
+import FieldHint from '../components/FieldHint';
 import { BRAND, RAG } from '../theme/ragPalette';
 import { OwnerLink } from '../components/OwnerLink';
 
@@ -512,40 +513,40 @@ const RiskEventsTab: React.FC = () => {
         onCancel={() => setOpen(false)} okText="Сохранить" cancelText="Отмена" width={640}>
         <Form form={form} layout="vertical" initialValues={{ aroIsExpert: false, regulatory: false }}>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="code" label="Код" rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
+            <Form.Item name="code" label={<FieldHint title="Уникальный код рискового события для ссылок из мер, отчётов и цепочки «риск → мера → эффект».">Код</FieldHint>} rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
               <Input placeholder="RE-2026-001" />
             </Form.Item>
-            <Form.Item name="category" label="Категория" style={{ flex: 1, minWidth: 180 }}>
+            <Form.Item name="category" label={<FieldHint title="Смысловая группа события — для фильтрации и группировки в реестре и на дашборде стоимости.">Категория</FieldHint>} style={{ flex: 1, minWidth: 180 }}>
               <Input placeholder="отказоустойчивость" />
             </Form.Item>
           </Space>
-          <Form.Item name="title" label="Название" rules={[{ required: true }]}>
+          <Form.Item name="title" label={<FieldHint title="Краткая формулировка события: что происходит и к чему приводит.">Название</FieldHint>} rules={[{ required: true }]}>
             <Input placeholder="Отказ узла кластера → простой" />
           </Form.Item>
-          <Form.Item name="description" label="Описание">
+          <Form.Item name="description" label={<FieldHint title="Подробности события: условия возникновения, затронутые компоненты, что уже известно.">Описание</FieldHint>}>
             <Input.TextArea rows={2} />
           </Form.Item>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="owner" label="Владелец риска" style={{ flex: 1, minWidth: 180 }}>
+            <Form.Item name="owner" label={<FieldHint title="Кто отвечает за это рисковое событие — ведёт его в реестре и согласовывает меры по нему.">Владелец риска</FieldHint>} style={{ flex: 1, minWidth: 180 }}>
               <Input placeholder="ФИО риск-менеджера" />
             </Form.Item>
-            <Form.Item name="aro" label="ARO (частота/год)" style={{ flex: 1, minWidth: 160 }}>
+            <Form.Item name="aro" label={<FieldHint title="Annualized Rate of Occurrence — сколько раз в год ожидается реализация события. Можно оставить пустым и посчитать по истории техсбоев (кнопка «Пересчитать ALE»).">ARO (частота/год)</FieldHint>} style={{ flex: 1, minWidth: 160 }}>
               <InputNumber style={{ width: '100%' }} min={0} step={0.1} />
             </Form.Item>
           </Space>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="sleExpert" label="SLE экспертный, ₽" style={{ flex: 1, minWidth: 160 }}>
+            <Form.Item name="sleExpert" label={<FieldHint title="Single Loss Expectancy — ущерб от одной реализации события в рублях, если задаёте его экспертно (не по формуле восстановления/простоя). Используется вместо расчётного SLE, когда указан.">SLE экспертный, ₽</FieldHint>} style={{ flex: 1, minWidth: 160 }}>
               <InputNumber style={{ width: '100%' }} min={0} step={100000} />
             </Form.Item>
-            <Form.Item name="riskAppetite" label="Риск-аппетит, ₽/год" style={{ flex: 1, minWidth: 160 }}>
+            <Form.Item name="riskAppetite" label={<FieldHint title="Порог ALE в рублях в год, выше которого риск считается неприемлемым для организации — используется для приоритизации мер.">Риск-аппетит, ₽/год</FieldHint>} style={{ flex: 1, minWidth: 160 }}>
               <InputNumber style={{ width: '100%' }} min={0} step={100000} />
             </Form.Item>
           </Space>
           <Space size="large">
-            <Form.Item name="aroIsExpert" label="ARO задан экспертно" valuePropName="checked">
+            <Form.Item name="aroIsExpert" label={<FieldHint title="Включите, если ARO выше задано экспертной оценкой, а не рассчитано по истории инцидентов — влияет на то, что покажет «Пересчитать ALE».">ARO задан экспертно</FieldHint>} valuePropName="checked">
               <Switch />
             </Form.Item>
-            <Form.Item name="regulatory" label="Регуляторное вето" valuePropName="checked">
+            <Form.Item name="regulatory" label={<FieldHint title="Пометьте, если риск связан с обязательным регуляторным требованием — такие риски нельзя закрыть решением «Принять», только устранить или компенсировать.">Регуляторное вето</FieldHint>} valuePropName="checked">
               <Switch />
             </Form.Item>
           </Space>
@@ -784,24 +785,24 @@ const ReferencesTab: React.FC = () => {
         <Form form={rateForm} layout="vertical"
           initialValues={{ line: 'L2', executorType: 'INTERNAL', kEvening: 1.5, kWeekend: 2.0 }}>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="line" label="Линия" style={{ flex: 1, minWidth: 120 }}>
+            <Form.Item name="line" label={<FieldHint title="Линия поддержки (L1/L2/L3) — влияет на то, какая ставка попадёт в расчёт стоимости устранения (C_ТС) для событий этой линии.">Линия</FieldHint>} style={{ flex: 1, minWidth: 120 }}>
               <Select options={LINES.map((v) => ({ value: v, label: v }))} />
             </Form.Item>
-            <Form.Item name="executorType" label="Исполнитель" style={{ flex: 1, minWidth: 160 }}>
+            <Form.Item name="executorType" label={<FieldHint title="Кто фактически устраняет инциденты на этой линии — свой персонал или подрядчик.">Исполнитель</FieldHint>} style={{ flex: 1, minWidth: 160 }}>
               <Select options={[{ value: 'INTERNAL', label: 'Внутренний' }, { value: 'VENDOR', label: 'Вендор' }]} />
             </Form.Item>
           </Space>
-          <Form.Item name="vendor" label="Вендор (если внешний)">
+          <Form.Item name="vendor" label={<FieldHint title="Заполняйте, только если исполнитель — «Вендор»: название подрядной организации.">Вендор (если внешний)</FieldHint>}>
             <Input placeholder="Наименование поставщика" />
           </Form.Item>
-          <Form.Item name="ratePerHour" label="Ставка, ₽/час" rules={[{ required: true }]}>
+          <Form.Item name="ratePerHour" label={<FieldHint title="Базовая почасовая ставка исполнителя — основа расчёта стоимости восстановления (C_восстановление) при инциденте.">Ставка, ₽/час</FieldHint>} rules={[{ required: true }]}>
             <InputNumber style={{ width: '100%' }} min={0} step={500} />
           </Form.Item>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="kEvening" label="K вечер/ночь" style={{ flex: 1, minWidth: 140 }}>
+            <Form.Item name="kEvening" label={<FieldHint title="Множитель к базовой ставке, если устранение шло вечером/ночью.">K вечер/ночь</FieldHint>} style={{ flex: 1, minWidth: 140 }}>
               <InputNumber style={{ width: '100%' }} min={1} step={0.1} />
             </Form.Item>
-            <Form.Item name="kWeekend" label="K выходные" style={{ flex: 1, minWidth: 140 }}>
+            <Form.Item name="kWeekend" label={<FieldHint title="Множитель к базовой ставке, если устранение шло в выходной день.">K выходные</FieldHint>} style={{ flex: 1, minWidth: 140 }}>
               <InputNumber style={{ width: '100%' }} min={1} step={0.1} />
             </Form.Item>
           </Space>
@@ -812,17 +813,17 @@ const ReferencesTab: React.FC = () => {
         onCancel={() => setBpOpen(false)} okText="Сохранить" cancelText="Отмена">
         <Form form={bpForm} layout="vertical" initialValues={{ kind: 'BACKOFFICE', method: 'RESOURCE' }}>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="code" label="Код" rules={[{ required: true }]} style={{ flex: 1, minWidth: 140 }}>
+            <Form.Item name="code" label={<FieldHint title="Уникальный код процесса для ссылок из рисковых событий и расчёта стоимости простоя.">Код</FieldHint>} rules={[{ required: true }]} style={{ flex: 1, minWidth: 140 }}>
               <Input placeholder="BP-001" />
             </Form.Item>
-            <Form.Item name="kind" label="Тип" style={{ flex: 1, minWidth: 220 }}>
+            <Form.Item name="kind" label={<FieldHint title="Тип бизнес-процесса — влияет на то, какой профиль стоимости простоя к нему применим.">Тип</FieldHint>} style={{ flex: 1, minWidth: 220 }}>
               <Select options={BP_KINDS} />
             </Form.Item>
           </Space>
-          <Form.Item name="name" label="Название" rules={[{ required: true }]}>
+          <Form.Item name="name" label={<FieldHint title="Название бизнес-процесса, который останавливается или деградирует при инциденте.">Название</FieldHint>} rules={[{ required: true }]}>
             <Input placeholder="Приём платежей" />
           </Form.Item>
-          <Form.Item name="costPerMinBase" label="Стоимость минуты простоя, ₽ (базовая)">
+          <Form.Item name="costPerMinBase" label={<FieldHint title="Сколько теряет организация за минуту простоя этого процесса — основа расчёта стоимости простоя (C_простой) при инциденте.">Стоимость минуты простоя, ₽ (базовая)</FieldHint>}>
             <InputNumber style={{ width: '100%' }} min={0} step={100} />
           </Form.Item>
         </Form>
@@ -834,34 +835,34 @@ const ReferencesTab: React.FC = () => {
           onValuesChange={(changed) => { if (changed.kind) benchmarkForm.setFieldValue('dimension', undefined); }}>
           <Alert type="info" showIcon style={{ marginBottom: 12 }}
             message="Источник и дата обязательны — без них рыночная цифра неотличима от выдуманной." />
-          <Form.Item name="kind" label="Показатель" rules={[{ required: true }]}>
+          <Form.Item name="kind" label={<FieldHint title="Какой именно рыночный показатель вносите — ставку сопровождения или стоимость простоя процесса.">Показатель</FieldHint>} rules={[{ required: true }]}>
             <Select options={BENCHMARK_KINDS} />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(prev, cur) => prev.kind !== cur.kind}>
             {({ getFieldValue }) => (
-              <Form.Item name="dimension" label="Разрез" rules={[{ required: true }]}>
+              <Form.Item name="dimension" label={<FieldHint title="К какому конкретно разрезу относится значение (линия поддержки, тип процесса и т.п.) — по нему бенчмарк сравнивается со «своим» значением.">Разрез</FieldHint>} rules={[{ required: true }]}>
                 <Select options={BENCHMARK_DIMENSIONS[getFieldValue('kind') ?? 'BP_COST_PER_MIN']} />
               </Form.Item>
             )}
           </Form.Item>
-          <Form.Item name="companySizeClass" label="Размер компании (для ставок — п.10; необязательно)">
+          <Form.Item name="companySizeClass" label={<FieldHint title="Сегмент компаний, к которому относится рыночное значение — сравнение точнее, когда размер совпадает с вашей организацией. Необязательно.">Размер компании (для ставок — п.10; необязательно)</FieldHint>}>
             <Select allowClear options={COMPANY_SIZE_CLASSES} placeholder="Любой размер" />
           </Form.Item>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="value" label="Значение" rules={[{ required: true }]} style={{ flex: 1, minWidth: 140 }}>
+            <Form.Item name="value" label={<FieldHint title="Числовое значение рыночного бенчмарка в выбранной единице.">Значение</FieldHint>} rules={[{ required: true }]} style={{ flex: 1, minWidth: 140 }}>
               <InputNumber style={{ width: '100%' }} min={0} step={10} />
             </Form.Item>
-            <Form.Item name="unit" label="Единица" rules={[{ required: true }]} style={{ flex: 1, minWidth: 140 }}>
+            <Form.Item name="unit" label={<FieldHint title="Единица измерения значения — должна совпадать по смыслу со «своим» показателем, с которым будет сравниваться.">Единица</FieldHint>} rules={[{ required: true }]} style={{ flex: 1, minWidth: 140 }}>
               <Input placeholder="₽/мин или ₽/час" />
             </Form.Item>
           </Space>
-          <Form.Item name="source" label="Источник" rules={[{ required: true, message: 'Источник обязателен' }]}>
+          <Form.Item name="source" label={<FieldHint title="Название или ссылка на открытый источник данных — обязательно: без источника рыночная цифра неотличима от выдуманной.">Источник</FieldHint>} rules={[{ required: true, message: 'Источник обязателен' }]}>
             <Input.TextArea rows={2} placeholder="Название/ссылка на открытый источник" />
           </Form.Item>
-          <Form.Item name="observedOn" label="Актуально на дату" rules={[{ required: true, message: 'Дата обязательна' }]}>
+          <Form.Item name="observedOn" label={<FieldHint title="На какую дату действительно это рыночное значение — источники устаревают, дата нужна для актуальности сравнения.">Актуально на дату</FieldHint>} rules={[{ required: true, message: 'Дата обязательна' }]}>
             <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" defaultPickerValue={dayjs()} />
           </Form.Item>
-          <Form.Item name="note" label="Примечание (необязательно)">
+          <Form.Item name="note" label={<FieldHint title="Любой дополнительный контекст по значению — оговорки источника, методика расчёта и т.п.">Примечание (необязательно)</FieldHint>}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
@@ -989,26 +990,26 @@ const ClosureTab: React.FC = () => {
       <Modal title="Новое несоответствие" open={open} onOk={create} confirmLoading={saving}
         onCancel={() => setOpen(false)} okText="Сохранить" cancelText="Отмена" width={620}>
         <Form form={form} layout="vertical" initialValues={{ level: 'MAJOR' }}>
-          <Form.Item name="systemName" label="Система" rules={[{ required: true }]}>
+          <Form.Item name="systemName" label={<FieldHint title="ИС, в которой выявлено несоответствие требованиям качества.">Система</FieldHint>} rules={[{ required: true }]}>
             <Input placeholder="АБС Core" />
           </Form.Item>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="characteristic" label="Характеристика" rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
+            <Form.Item name="characteristic" label={<FieldHint title="Характеристика качества ГОСТ 25010, по которой выявлено несоответствие.">Характеристика</FieldHint>} rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
               <Input placeholder="Надёжность" />
             </Form.Item>
-            <Form.Item name="subcharacteristic" label="Подхарактеристика" rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
+            <Form.Item name="subcharacteristic" label={<FieldHint title="Конкретная подхарактеристика — по ней несоответствие свяжется с оценкой и метриками.">Подхарактеристика</FieldHint>} rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
               <Input placeholder="Отказоустойчивость" />
             </Form.Item>
           </Space>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="owner" label="Владелец" rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
+            <Form.Item name="owner" label={<FieldHint title="Кто ведёт несоответствие по циклу «Выявлено → … → Верифицировано» — не может сам же его верифицировать (разделение обязанностей).">Владелец</FieldHint>} rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
               <Input placeholder="ФИО ответственного" />
             </Form.Item>
-            <Form.Item name="level" label="Уровень" style={{ flex: 1, minWidth: 180 }}>
+            <Form.Item name="level" label={<FieldHint title="Тяжесть несоответствия — влияет на срок реагирования (SLA) до автоэскалации.">Уровень</FieldHint>} style={{ flex: 1, minWidth: 180 }}>
               <Select options={Object.entries(NC_LEVEL).map(([v, m]) => ({ value: v, label: m.label }))} />
             </Form.Item>
           </Space>
-          <Form.Item name="evidenceType" label="Тип доказательства">
+          <Form.Item name="evidenceType" label={<FieldHint title="Чем подтверждается несоответствие — от инструментального измерения (самое надёжное) до экспертной оценки.">Тип доказательства</FieldHint>}>
             <Select allowClear options={[
               { value: 'A', label: 'A — инструментальное измерение' },
               { value: 'B', label: 'B — инцидентная статистика' },
@@ -1017,7 +1018,7 @@ const ClosureTab: React.FC = () => {
               { value: 'E', label: 'E — экспертная оценка' },
             ]} />
           </Form.Item>
-          <Form.Item name="description" label="Описание">
+          <Form.Item name="description" label={<FieldHint title="Подробности несоответствия: что именно не соответствует требованиям и как это обнаружено.">Описание</FieldHint>}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>

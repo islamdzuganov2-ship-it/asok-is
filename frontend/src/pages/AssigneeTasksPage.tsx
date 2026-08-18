@@ -27,7 +27,7 @@ import {
 } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, SPACE } from '../theme/premium';
-import { sorterFor } from '../theme/table';
+import { numericColumn, sorterFor } from '../theme/table';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -177,9 +177,9 @@ const AssigneeTasksPage: React.FC = () => {
         <div style={{ fontSize: 12, color: BRAND.inkSoft }}>{r.systemName} · {r.characteristic}</div>
       </div>
     ) },
-    { title: 'Балл', dataIndex: 'calculatedScore', width: 76, align: 'center',
+    numericColumn<Proposal>({ title: 'Балл', dataIndex: 'calculatedScore', width: 76,
       sorter: sorterFor((r: Proposal) => r.calculatedScore),
-      render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> },
+      render: (v: number) => <Tag style={solidTagStyle(ragToken(v).strong)}>{v}%</Tag> }),
     { title: 'Срок', dataIndex: 'dueDate', width: 116,
       sorter: sorterFor((r: Proposal) => parseRu(r.dueDate)?.getTime() ?? null),
       render: (v: string, r) => (
@@ -192,11 +192,12 @@ const AssigneeTasksPage: React.FC = () => {
     ) },
     { title: 'Статус', key: 'status', width: 130, sorter: sorterFor((r: Proposal) => statusRank(r)),
       render: (_: unknown, r) => statusTag(r) },
-    { title: 'Часы', dataIndex: 'effortHours', width: 84, align: 'center',
+    numericColumn<Proposal>({ title: 'Часы', dataIndex: 'effortHours', width: 84,
       sorter: sorterFor((r: Proposal) => r.effortHours),
-      render: (v: number | undefined) => (v ? <Text>{v} ч</Text> : <Text type="secondary">без оценки</Text>) },
-    { title: 'Уточнения', key: 'clar', width: 96, align: 'center',
-      render: (_: unknown, r) => (r.clarifications?.length ? <Tag icon={<CommentOutlined />}>{r.clarifications.length}</Tag> : <Text type="secondary">—</Text>) },
+      render: (v: number | undefined) => (v ? <Text>{v} ч</Text> : <Text type="secondary">—</Text>) }),
+    numericColumn<Proposal>({ title: 'Уточнения', key: 'clar', width: 96,
+      sorter: sorterFor((r: Proposal) => r.clarifications?.length ?? 0),
+      render: (_: unknown, r) => (r.clarifications?.length ? <Tag icon={<CommentOutlined />}>{r.clarifications.length}</Tag> : <Text type="secondary">—</Text>) }),
   ];
 
   return (

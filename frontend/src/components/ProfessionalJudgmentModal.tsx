@@ -15,6 +15,7 @@ import { addProposal } from '../store/slices/governanceSlice';
 import { RootState } from '../store';
 import { ragToken, levelLabel, solidTagStyle } from '../theme/ragPalette';
 import { TYPE } from '../theme/premium';
+import FieldHint from './FieldHint';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -124,7 +125,7 @@ export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClo
       <Form form={form} layout="vertical" requiredMark={false}>
         <Form.Item
           name="rationale"
-          label="Комментарий (обоснование)"
+          label={<FieldHint title="Почему вы вносите это профессиональное суждение: факт → причина → влияние на качество. Минимум 10 символов, уходит топ-менеджменту вместе с мерой.">Комментарий (обоснование)</FieldHint>}
           rules={[{ required: true, min: 10, message: 'Укажите обоснование не короче 10 символов' }]}
         >
           <TextArea
@@ -133,7 +134,7 @@ export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClo
           />
         </Form.Item>
 
-        <Form.Item name="adjustedLevel" label="Ручная корректировка уровня (необязательно)">
+        <Form.Item name="adjustedLevel" label={<FieldHint title="Заполняйте, только если экспертно не согласны с расчётным уровнем метрики. Пусто — уровень остаётся расчётным.">Ручная корректировка уровня (необязательно)</FieldHint>}>
           <Select allowClear placeholder="Оставить расчётный уровень" options={LEVELS.map((l) => ({ value: l, label: l }))} />
         </Form.Item>
 
@@ -143,16 +144,16 @@ export const ProfessionalJudgmentModal: React.FC<Props> = ({ open, target, onClo
 
         {createRisk && (
           <>
-            <Form.Item name="riskTitle" label="Риск" rules={[{ required: true, message: 'Укажите формулировку риска' }]}>
+            <Form.Item name="riskTitle" label={<FieldHint title="Краткая формулировка риска, к которому приведёт текущая просадка, если её не устранить.">Риск</FieldHint>} rules={[{ required: true, message: 'Укажите формулировку риска' }]}>
               <Input placeholder="Напр.: Нарушение непрерывности предоставления данных" />
             </Form.Item>
-            <Form.Item name="owner" label="Ответственный (ФИО)" rules={[{ required: true, message: 'Укажите ответственного' }]}>
+            <Form.Item name="owner" label={<FieldHint title="Кто будет исполнять меру по этому риску — попадёт в «Мои задачи» этого сотрудника и в карточку «Эффективность сотрудников».">Ответственный (ФИО)</FieldHint>} rules={[{ required: true, message: 'Укажите ответственного' }]}>
               <Input placeholder="Иванов И.И." />
             </Form.Item>
-            <Form.Item name="ownerRole" label="Должность ответственного" rules={[{ required: true, message: 'Укажите должность' }]}>
+            <Form.Item name="ownerRole" label={<FieldHint title="Должность ответственного — для контекста топ-менеджменту при одобрении меры.">Должность ответственного</FieldHint>} rules={[{ required: true, message: 'Укажите должность' }]}>
               <Input placeholder="Напр.: Руководитель ИТ-блока" />
             </Form.Item>
-            <Form.Item name="dueDate" label="Срок">
+            <Form.Item name="dueDate" label={<FieldHint title="Плановый срок исполнения меры. Необязательно, но без срока задача не попадёт на диаграмму Ганта в «Плане задач».">Срок</FieldHint>}>
               <DatePicker format="DD.MM.YYYY" style={{ width: '100%' }} />
             </Form.Item>
           </>

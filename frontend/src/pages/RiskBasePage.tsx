@@ -13,6 +13,7 @@ import { PlusOutlined, InboxOutlined } from '@ant-design/icons';
 import { Card } from 'antd';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE } from '../theme/premium';
 import { sorterFor } from '../theme/table';
+import FieldHint from '../components/FieldHint';
 
 const { Title, Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -188,37 +189,37 @@ const RiskBasePage: React.FC = () => {
         </Paragraph>
         <Form form={form} layout="vertical" initialValues={{ severity: 'medium', likelihood: 'medium', category: 'общее' }}>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="code" label="Код" rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
+            <Form.Item name="code" label={<FieldHint title="Уникальный код риска для ссылок из мер и отчётов — латиница/цифры, без пробелов.">Код</FieldHint>} rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
               <Input placeholder="R-TEST-001" />
             </Form.Item>
-            <Form.Item name="category" label="Категория" rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
+            <Form.Item name="category" label={<FieldHint title="Смысловая группа риска (например, по характеристике ГОСТ 25010 или предметной области) — используется для фильтрации реестра.">Категория</FieldHint>} rules={[{ required: true }]} style={{ flex: 1, minWidth: 180 }}>
               <Input placeholder="тестируемость" />
             </Form.Item>
           </Space>
-          <Form.Item name="title" label="Название" rules={[{ required: true }]}>
+          <Form.Item name="title" label={<FieldHint title="Краткая формулировка риска — что именно может произойти.">Название</FieldHint>} rules={[{ required: true }]}>
             <Input placeholder="Недостаточное покрытие автотестами" />
           </Form.Item>
-          <Form.Item name="characteristic" label="Характеристика">
+          <Form.Item name="characteristic" label={<FieldHint title="Характеристика качества ГОСТ 25010, к которой относится риск — по ней риск попадёт в теплокарту и связанные меры.">Характеристика</FieldHint>}>
             <Input placeholder="Сопровождаемость" />
           </Form.Item>
-          <Form.Item name="description" label="Описание риска" rules={[{ required: true }]}>
+          <Form.Item name="description" label={<FieldHint title="Подробное описание сути риска: что происходит, при каких условиях, что уже известно.">Описание риска</FieldHint>} rules={[{ required: true }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="consequence" label="Последствие">
+          <Form.Item name="consequence" label={<FieldHint title="Что произойдёт, если риск реализуется — влияние на систему, процесс или бизнес.">Последствие</FieldHint>}>
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="mitigation" label="Меры минимизации">
+          <Form.Item name="mitigation" label={<FieldHint title="Какие меры уже приняты или предлагаются для снижения риска.">Меры минимизации</FieldHint>}>
             <Input.TextArea rows={2} />
           </Form.Item>
           <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="severity" label="Критичность" style={{ flex: 1, minWidth: 160 }}>
+            <Form.Item name="severity" label={<FieldHint title="Тяжесть последствий при реализации риска (не путать с вероятностью).">Критичность</FieldHint>} style={{ flex: 1, minWidth: 160 }}>
               <Select options={['low', 'medium', 'high', 'critical'].map((v) => ({ value: v, label: v }))} />
             </Form.Item>
-            <Form.Item name="likelihood" label="Вероятность" style={{ flex: 1, minWidth: 160 }}>
+            <Form.Item name="likelihood" label={<FieldHint title="Насколько вероятна реализация риска при текущем состоянии системы.">Вероятность</FieldHint>} style={{ flex: 1, minWidth: 160 }}>
               <Select options={['low', 'medium', 'high'].map((v) => ({ value: v, label: v }))} />
             </Form.Item>
           </Space>
-          <Form.Item name="keywords" label="Ключевые слова (через запятую, для LLM)">
+          <Form.Item name="keywords" label={<FieldHint title="Слова через запятую, по которым LLM сопоставляет этот риск с техническими сбоями и просевшими метриками при обосновании выводов (grounding).">Ключевые слова (через запятую, для LLM)</FieldHint>}>
             <Input placeholder="автотесты, регресс, покрытие" />
           </Form.Item>
         </Form>
