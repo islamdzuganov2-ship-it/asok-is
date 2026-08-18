@@ -35,6 +35,7 @@ import { subArtifacts, subDescription } from '../constants/subDescriptions';
 import ProfessionalJudgmentsPanel from '../components/ProfessionalJudgmentsPanel';
 import { premiumCard, accentDot, accentColorOf, GOLD, SPACE, TYPE } from '../theme/premium';
 import { numericColumn, sorterFor } from '../theme/table';
+import FieldHint from '../components/FieldHint';
 import { BRAND } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
@@ -502,13 +503,13 @@ export const NewAssessmentPage: React.FC = () => {
                     layout="vertical"
                     initialValues={{ status_lc: 'ОЭ', criticality_class: 'BUSINESS_OPERATIONAL', system_kind: 'CLASSIC', is_active: true }}
                 >
-                    <Form.Item name="name" label="Название" rules={[{ required: true, message: 'Введите название системы' }]}>
+                    <Form.Item name="name" label={<FieldHint title="Полное название информационной системы — отображается на всех дашбордах и в отчётах.">Название</FieldHint>} rules={[{ required: true, message: 'Введите название системы' }]}>
                         <Input />
                     </Form.Item>
-                    <Form.Item name="code" label="Код" rules={[{ required: true, message: 'Введите уникальный код' }]}>
+                    <Form.Item name="code" label={<FieldHint title="Короткий уникальный код системы для ссылок и интеграций. Изменить после создания сложно — выбирайте осмысленно.">Код</FieldHint>} rules={[{ required: true, message: 'Введите уникальный код' }]}>
                         <Input />
                     </Form.Item>
-                    <Form.Item name="status_lc" label="Статус жизненного цикла">
+                    <Form.Item name="status_lc" label={<FieldHint title="Стадия жизненного цикла системы: ОЭ — опытная эксплуатация, ПЭ — промышленная эксплуатация.">Статус жизненного цикла</FieldHint>}>
                         <Select
                             options={[
                                 { value: 'ОЭ', label: 'ОЭ' },
@@ -517,7 +518,7 @@ export const NewAssessmentPage: React.FC = () => {
                             ]}
                         />
                     </Form.Item>
-                    <Form.Item name="criticality_class" label="Критичность" rules={[{ required: true }]}>
+                    <Form.Item name="criticality_class" label={<FieldHint title="Класс критичности системы — определяет вес системы при свёртке портфельного балла качества (MISSION CRITICAL весит больше всего).">Критичность</FieldHint>} rules={[{ required: true }]}>
                         <Select
                             options={[
                                 { value: 'MISSION CRITICAL', label: 'MISSION CRITICAL' },
@@ -542,7 +543,7 @@ export const NewAssessmentPage: React.FC = () => {
                             ]}
                         />
                     </Form.Item> */}
-                    <Form.Item name="owner" label="Владелец">
+                    <Form.Item name="owner" label={<FieldHint title="ФИО ответственного за систему — попадает в карточку ИС на управленческом дашборде.">Владелец</FieldHint>}>
                         <Input />
                     </Form.Item>
                 </Form>
@@ -562,7 +563,7 @@ export const NewAssessmentPage: React.FC = () => {
                 <Form form={valueForm} layout="vertical">
                     <Form.Item
                         name="characteristic"
-                        label="Характеристика"
+                        label={<FieldHint title="Характеристика качества ГОСТ 25010, к которой относится оценка (список сужается — уже заполненные для этой ИС/периода не предлагаются).">Характеристика</FieldHint>}
                         rules={[{ required: true, message: 'Выберите характеристику' }]}
                     >
                         <Select
@@ -576,7 +577,7 @@ export const NewAssessmentPage: React.FC = () => {
                     </Form.Item>
                     <Form.Item
                         name="subcharacteristic"
-                        label="Подхарактеристика"
+                        label={<FieldHint title="Конкретная подхарактеристика внутри выбранной характеристики — по ней вносится метрика (A/B) или отметка «невозможно измерить».">Подхарактеристика</FieldHint>}
                         rules={[{ required: true, message: 'Выберите подхарактеристику' }]}
                     >
                         <Select
@@ -635,7 +636,13 @@ export const NewAssessmentPage: React.FC = () => {
                     </Space>
                     <Form.Item
                         name="expert_comment"
-                        label={unmeasurable ? 'Причина: почему нельзя измерить (обязательно)' : 'Комментарий / экспертное мнение'}
+                        label={(
+                            <FieldHint title={unmeasurable
+                                ? 'Обязательно при «невозможно измерить»: конкретная причина отсутствия данных — какого инструмента/доступа/процесса не хватает.'
+                                : 'Необязательный контекст к оценке: пояснение к цифрам A/B, оговорки, ссылка на обсуждение.'}>
+                                {unmeasurable ? 'Причина: почему нельзя измерить (обязательно)' : 'Комментарий / экспертное мнение'}
+                            </FieldHint>
+                        )}
                         rules={unmeasurable ? [{ required: true, message: 'Укажите причину, почему нет возможности собрать данные' }] : []}
                     >
                         <Input.TextArea rows={3} placeholder={unmeasurable ? 'Нет доступа к данным мониторинга / нет инструментов измерения …' : ''} />

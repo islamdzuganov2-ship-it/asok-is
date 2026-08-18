@@ -469,10 +469,7 @@ const DashboardPage: React.FC = () => {
                   { title: 'Критичность', dataIndex: 'criticality',
                     sorter: sorterFor((r: any) => CRIT_RANK[r.criticality] ?? -1), render: critTag },
                   numericColumn({ title: 'Низких метрик', dataIndex: 'lowMetricsCount', width: 110,
-                    sorter: sorterFor((r: any) => r.lowMetricsCount),
-                    render: (v: number) => <Text type="secondary">{v}</Text> }),
-                  numericColumn({ title: 'Вес просадки', dataIndex: 'severity', width: 120,
-                    sorter: sorterFor((r: any) => r.severity), defaultSortOrder: 'descend',
+                    sorter: sorterFor((r: any) => r.lowMetricsCount), defaultSortOrder: 'descend',
                     render: (v: number) => <Text type="danger" strong>{v}</Text> }),
                 ]}
               />

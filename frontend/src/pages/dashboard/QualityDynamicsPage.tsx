@@ -38,6 +38,32 @@ const LINE_COLORS = [RAG.good.color, RAG.medium.color, RAG.bad.color, ACCENT.sla
 const ALL_SYSTEMS = '__ALL__';
 const ANOMALY_COLOR = RAG.bad.color;
 
+// П.6: вертикальная «сегодня» — та же красная линия, что уже есть на диаграмме Ганта в «Плане
+// задач». Ось категориальная (по кварталам), не по реальным датам, поэтому кладём линию на
+// индекс ТЕКУЩЕГО квартала. Если текущий квартал ещё не наступил в загруженном горизонте
+// демо-данных (QUARTERS кончается раньше календаря), честнее прижать линию к последней
+// доступной точке, чем не показывать её вовсе или подписать несуществующий квартал.
+const CURRENT_QUARTER = (() => {
+  const now = new Date();
+  return `Q${Math.floor(now.getMonth() / 3) + 1}-${now.getFullYear()}`;
+})();
+function todayMarkLine() {
+  const found = QUARTERS.indexOf(CURRENT_QUARTER);
+  const idx = found >= 0 ? found : QUARTERS.length - 1;
+  return {
+    symbol: 'none' as const,
+    silent: true,
+    animation: false,
+    z: 10,
+    lineStyle: { color: RAG.bad.strong, type: 'dashed' as const, width: 2 },
+    label: {
+      formatter: found >= 0 ? 'сегодня' : 'сегодня →',
+      position: 'insideEndTop' as const, color: RAG.bad.strong, fontSize: TYPE.micro.fontSize, fontWeight: 600,
+    },
+    data: [{ xAxis: idx }],
+  };
+}
+
 const lastValue = (series: number[]) => {
   for (let i = series.length - 1; i >= 0; i -= 1) if (series[i] >= 0) return series[i];
   return -1;
@@ -149,12 +175,13 @@ const QualityDynamicsPage: React.FC = () => {
         yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%', color: cbase.axisLabel.color }, splitLine: cbase.splitLine },
         color: LINE_COLORS,
         // ТЗ v20 п.6.1: системы с самыми сильными колебаниями — первыми (порядок отрисовки/легенды).
-        series: SYSTEMS_BY_VOLATILITY.map((s) => ({
+        series: SYSTEMS_BY_VOLATILITY.map((s, i) => ({
           name: s.name, type: 'line', smooth: true, connectNulls: false,
           triggerLineEvent: true,
           emphasis: { focus: 'series', lineStyle: { width: 4 } },
           lineStyle: { width: 1.5 },
           data: seriesPoints(DYNAMICS[s.name].system.series),
+          ...(i === 0 ? { markLine: todayMarkLine() } : {}),
         })),
       };
     }
@@ -180,6 +207,7 @@ const QualityDynamicsPage: React.FC = () => {
         lineStyle: { width: 2.5, color: LINE_COLORS[0] },
         itemStyle: { color: LINE_COLORS[0] },
         data: seriesPoints(s.series),
+        markLine: todayMarkLine(),
       }],
     };
   }, [isAll, dyn, system.name, reasons, cbase]);
@@ -195,13 +223,14 @@ const QualityDynamicsPage: React.FC = () => {
     xAxis: { type: 'category', data: QUARTERS, boundaryGap: false, axisLabel: cbase.axisLabel, axisLine: cbase.axisLine },
     yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%', color: cbase.axisLabel.color }, splitLine: cbase.splitLine },
     color: LINE_COLORS,
-    series: dyn.chars.filter((c) => shownDynChars.includes(c.char)).map((c) => ({
+    series: dyn.chars.filter((c) => shownDynChars.includes(c.char)).map((c, i) => ({
       name: c.name, type: 'line', smooth: true, connectNulls: false,
       // Кликабельна вся ЛИНИЯ, а не только точки квартала.
       triggerLineEvent: true,
       emphasis: { focus: 'series', lineStyle: { width: 4 } },
       lineStyle: { width: 2 },
       data: seriesPoints(c.series),
+      ...(i === 0 ? { markLine: todayMarkLine() } : {}),
     })),
   }), [dyn, cbase, shownDynChars]);
 

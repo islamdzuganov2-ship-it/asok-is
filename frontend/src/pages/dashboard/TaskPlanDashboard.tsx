@@ -105,19 +105,26 @@ const TaskPlanDashboard: React.FC = () => {
   const [ownerFilter, setOwnerFilter] = useState<string>(ALL_OWNER);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // ТЗ v20 п.1: переход из «AI-аналитики по мерам» с ?characteristic=… — сразу фильтруем План
-  // задач по этой характеристике; параметр одноразовый, дальше фильтр — обычный Select-стейт.
+  // ТЗ v20 п.1: переход из «AI-аналитики по мерам» с ?characteristic=…, и из «Эффективности
+  // сотрудников» с ?owner=&status= — сразу фильтруем План задач; параметры одноразовые,
+  // дальше фильтры — обычный Select/Segmented-стейт.
   useEffect(() => {
     const c = searchParams.get('characteristic');
-    if (c) {
-      setCharFilter(c);
-      setSearchParams((sp) => { sp.delete('characteristic'); return sp; }, { replace: true });
+    const o = searchParams.get('owner');
+    const st = searchParams.get('status');
+    if (c || o || st) {
+      if (c) setCharFilter(c);
+      if (o) setOwnerFilter(o);
+      if (st) setFilter(st);
+      setSearchParams((sp) => { sp.delete('characteristic'); sp.delete('owner'); sp.delete('status'); return sp; }, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [rewriting, setRewriting] = useState(false);
-  // Все сворачиваемые блоки изначально свёрнуты (по требованию).
+  // Все сворачиваемые блоки изначально свёрнуты (по требованию) — кроме диаграммы Ганта, если
+  // на страницу пришли по ссылке из «Эффективности сотрудников» (?owner=): тогда сразу раскрыта.
   const [listOpen, setListOpen] = useState(false);
+  const [ganttOpen, setGanttOpen] = useState(() => searchParams.has('owner'));
 
   const now = Date.now();
   const kindOf = (t: Proposal): Kind => {
@@ -336,7 +343,11 @@ const TaskPlanDashboard: React.FC = () => {
           ТЗ v20: та же выборка (по системе/характеристике), что и у Ганта/пузырьковой карты ниже —
           раньше карточка получала необработанный `proposals` и не реагировала на переход с
           характеристикой из «Топ проблемных ИС», хотя фильтры в шапке были применены. */}
-      <EmployeeEffectivenessCard proposals={baseTasks.map(({ p }) => p)} style={{ marginTop: 16 }} />
+      <EmployeeEffectivenessCard
+        proposals={baseTasks.map(({ p }) => p)}
+        style={{ marginTop: 16 }}
+        onSelectOwner={(o, status) => { setOwnerFilter(o); if (status) setFilter(status); setGanttOpen(true); }}
+      />
 
       {/* 1. Читаемая временная диаграмма (Ганта) */}
       <CollapsibleCard
@@ -345,6 +356,8 @@ const TaskPlanDashboard: React.FC = () => {
         title="Временная диаграмма"
         subtitle="сроки и статусы задач по времени"
         bodyStyle={{ overflowX: 'auto' }}
+        open={ganttOpen}
+        onToggle={setGanttOpen}
       >
         {tasks.length === 0 ? <Empty description="Нет задач в выбранном фильтре." /> : (
           <div style={{ minWidth: 900 }}>

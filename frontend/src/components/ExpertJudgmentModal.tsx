@@ -2,6 +2,7 @@ import React from 'react';
 import { Form, Input, Modal, Select } from 'antd';
 import { message } from '../theme/appMessage';
 import { ExpertJudgmentDto, useSubmitExpertJudgmentMutation } from '../store/api/apiSlice';
+import FieldHint from './FieldHint';
 
 interface ExpertJudgmentModalProps {
     isOpen: boolean;
@@ -49,10 +50,10 @@ export const ExpertJudgmentModal: React.FC<ExpertJudgmentModalProps> = ({
             cancelText="Отмена"
         >
             <Form form={form} layout="vertical" onFinish={handleFinish}>
-                <Form.Item label="Расчетный уровень">
+                <Form.Item label={<FieldHint title="Уровень, автоматически рассчитанный системой по формуле метрики — до вашей корректировки.">Расчетный уровень</FieldHint>}>
                     <Input disabled value={calculatedLevel} />
                 </Form.Item>
-                <Form.Item name="adjustedLevel" label="Ручная корректировка">
+                <Form.Item name="adjustedLevel" label={<FieldHint title="Заполняйте, только если экспертно не согласны с расчётным уровнем. Пусто — остаётся расчётный уровень без изменений.">Ручная корректировка</FieldHint>}>
                     <Select
                         allowClear
                         placeholder="Выберите новый уровень"
@@ -68,12 +69,12 @@ export const ExpertJudgmentModal: React.FC<ExpertJudgmentModalProps> = ({
                 </Form.Item>
                 <Form.Item
                     name="justificationText"
-                    label="Обоснование"
+                    label={<FieldHint title="Обязательно: почему расчётный уровень скорректирован (или подтверждён) экспертно — минимум 10 символов, это остаётся в истории оценки.">Обоснование</FieldHint>}
                     rules={[{ required: true, min: 10, message: 'Укажите обоснование не короче 10 символов' }]}
                 >
                     <TextArea rows={4} />
                 </Form.Item>
-                <Form.Item name="linkedRiskTask" label="Ссылка на задачу">
+                <Form.Item name="linkedRiskTask" label={<FieldHint title="Необязательно: ссылка на задачу в трекере (Jira/СУЗ), если корректировка связана с уже заведённым риском или инцидентом.">Ссылка на задачу</FieldHint>}>
                     <Input placeholder="https://jira.domain.local/browse/TASK-123" />
                 </Form.Item>
             </Form>

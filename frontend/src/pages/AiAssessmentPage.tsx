@@ -22,6 +22,7 @@ import {
 import { ragToken, solidTagStyle, BRAND } from '../theme/ragPalette';
 import { SPACE, premiumCard, accentDot, GOLD, TYPE } from '../theme/premium';
 import { numericColumn, numericText, sorterFor } from '../theme/table';
+import FieldHint from '../components/FieldHint';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -397,16 +398,16 @@ const AiAssessmentPage: React.FC = () => {
       >
         <Form form={form} layout="vertical">
           <Space size="middle" style={{ display: 'flex' }} align="start">
-            <Form.Item name="group" label="Группа" style={{ minWidth: 190 }} rules={[{ required: true, message: 'Выберите группу' }]}>
+            <Form.Item name="group" label={<FieldHint title="Группа модели качества по ГОСТ Р 59898-2021 — сужает список характеристик ниже.">Группа</FieldHint>} style={{ minWidth: 190 }} rules={[{ required: true, message: 'Выберите группу' }]}>
               <Select options={model.map((g) => ({ value: g.group, label: g.group }))}
                 onChange={() => form.setFieldsValue({ characteristic: undefined, subcharacteristic: undefined })} />
             </Form.Item>
-            <Form.Item name="characteristic" label="Характеристика" style={{ minWidth: 210 }} rules={[{ required: true, message: 'Выберите характеристику' }]}>
+            <Form.Item name="characteristic" label={<FieldHint title="Характеристика качества СИИ в выбранной группе.">Характеристика</FieldHint>} style={{ minWidth: 210 }} rules={[{ required: true, message: 'Выберите характеристику' }]}>
               <Select disabled={!selGroup} options={charsOf(selGroup).map((c) => ({ value: c.title, label: c.title }))}
                 onChange={() => form.setFieldsValue({ subcharacteristic: undefined })} />
             </Form.Item>
           </Space>
-          <Form.Item name="subcharacteristic" label="Субхарактеристика" rules={[{ required: true, message: 'Выберите субхарактеристику' }]}>
+          <Form.Item name="subcharacteristic" label={<FieldHint title="Конкретная субхарактеристика, для которой вносится оценка — определяет вид метрики и формулу по каталогу (ГОСТ 59898).">Субхарактеристика</FieldHint>} rules={[{ required: true, message: 'Выберите субхарактеристику' }]}>
             <Select
               disabled={!selChar} showSearch optionFilterProp="label"
               options={subsOf(selGroup, selChar).map((s) => ({
@@ -444,14 +445,16 @@ const AiAssessmentPage: React.FC = () => {
               <Space wrap size="middle" style={{ width: '100%' }}>
                 {effectiveSchema.map((k) => (
                   ARRAY_FIELDS.has(k) || CURVE_FIELDS.has(k) ? (
-                    <Form.Item key={`${effectiveKind}-${k}`} name={`in_${k}`} label={INPUT_LABEL[k] ?? k}
+                    <Form.Item key={`${effectiveKind}-${k}`} name={`in_${k}`}
+                      label={<FieldHint title={CURVE_FIELDS.has(k) ? 'Точки кривой «x,y» через запятую внутри пары и «;» между парами — параметр формулы метрики, см. подсказку по метрике выше.' : 'Список чисел через запятую — параметр формулы метрики, см. подсказку по метрике выше.'}>{INPUT_LABEL[k] ?? k}</FieldHint>}
                       style={{ minWidth: 300, flex: 1 }}
                       rules={[{ required: true, message: 'Обязательное поле' }]}>
                       <Input.TextArea rows={2}
                         placeholder={CURVE_FIELDS.has(k) ? '0,0; 0.2,0.7; 1,1' : '1.2, 3.4, 5.6, …'} />
                     </Form.Item>
                   ) : (
-                    <Form.Item key={`${effectiveKind}-${k}`} name={`in_${k}`} label={INPUT_LABEL[k] ?? k}
+                    <Form.Item key={`${effectiveKind}-${k}`} name={`in_${k}`}
+                      label={<FieldHint title={k === 'max_i' ? 'Необязательно: верхняя граница шкалы, если она не 255 по умолчанию.' : 'Параметр формулы метрики — единицы и смысл зависят от вида метрики, см. подсказку по метрике выше.'}>{INPUT_LABEL[k] ?? k}</FieldHint>}
                       rules={k === 'max_i' ? [] : [{ required: true, message: 'Обязательное поле' }]}>
                       <InputNumber min={0} style={{ width: 150 }} placeholder={k === 'max_i' ? '255' : undefined} />
                     </Form.Item>
@@ -462,10 +465,10 @@ const AiAssessmentPage: React.FC = () => {
                 <Form.Item name="baseline" label={<Tooltip title="Базовое (эталонное) значение mₗ — критерий соответствия ГОСТ 59898, п. 7.1.3">Эталон (baseline)</Tooltip>}>
                   <InputNumber min={0} max={1} step={0.01} style={{ width: 150 }} placeholder="напр. 0.95" />
                 </Form.Item>
-                <Form.Item name="tol_low" label="Допуск ε⁻ (вниз)">
+                <Form.Item name="tol_low" label={<FieldHint title="Допустимое отклонение от эталона вниз — при выходе за эту границу X начинает снижаться от 1.">Допуск ε⁻ (вниз)</FieldHint>}>
                   <InputNumber min={0} max={1} step={0.01} style={{ width: 140 }} placeholder="0.03" />
                 </Form.Item>
-                <Form.Item name="tol_high" label="Допуск ε⁺ (вверх)">
+                <Form.Item name="tol_high" label={<FieldHint title="Допустимое отклонение от эталона вверх — при выходе за эту границу X начинает снижаться от 1.">Допуск ε⁺ (вверх)</FieldHint>}>
                   <InputNumber min={0} max={1} step={0.01} style={{ width: 140 }} placeholder="0.05" />
                 </Form.Item>
               </Space>
@@ -476,7 +479,14 @@ const AiAssessmentPage: React.FC = () => {
           )}
 
           <Form.Item
-            name="expert_comment" label="Комментарий"
+            name="expert_comment"
+            label={(
+              <FieldHint title={unmeasurable
+                ? 'Обязательно: почему нет возможности собрать данные по этой субхарактеристике.'
+                : 'Необязательно: источник данных, оговорки, ссылка на артефакты.'}>
+                Комментарий
+              </FieldHint>
+            )}
             rules={unmeasurable ? [{ required: true, message: 'Опишите, почему нет возможности собрать данные' }] : []}
           >
             <Input.TextArea rows={2}

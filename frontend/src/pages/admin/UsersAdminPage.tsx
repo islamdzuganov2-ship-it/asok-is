@@ -17,6 +17,7 @@ import { roleLabel } from '../../constants/roles';
 import { pageContainer, pageTitle, GOLD, premiumCard, TYPE } from '../../theme/premium';
 import { RAG, BRAND, solidTagStyle } from '../../theme/ragPalette';
 import { sorterFor } from '../../theme/table';
+import FieldHint from '../../components/FieldHint';
 
 const { Title, Text } = Typography;
 
@@ -145,14 +146,14 @@ const UsersAdminPage: React.FC = () => {
       <Modal title="Новый пользователь" open={createOpen} onOk={submitCreate}
         confirmLoading={createState.isLoading} onCancel={() => setCreateOpen(false)} okText="Создать" cancelText="Отмена">
         <Form form={createForm} layout="vertical" requiredMark={false}>
-          <Form.Item name="username" label="Логин" rules={[{ required: true, message: 'Укажите логин' }]}>
+          <Form.Item name="username" label={<FieldHint title="Уникальный логин для входа в систему — латиницей, без пробелов. Изменить после создания нельзя.">Логин</FieldHint>} rules={[{ required: true, message: 'Укажите логин' }]}>
             <Input autoComplete="off" />
           </Form.Item>
-          <Form.Item name="full_name" label="Имя"><Input autoComplete="off" /></Form.Item>
-          <Form.Item name="role" label="Роль" rules={[{ required: true, message: 'Выберите роль' }]}>
+          <Form.Item name="full_name" label={<FieldHint title="ФИО сотрудника — отображается в карточках «Эффективность сотрудников», «Мои задачи» и как ответственный за меры.">Имя</FieldHint>}><Input autoComplete="off" /></Form.Item>
+          <Form.Item name="role" label={<FieldHint title="Определяет набор прав и состав дашбордов, доступных пользователю после входа.">Роль</FieldHint>} rules={[{ required: true, message: 'Выберите роль' }]}>
             <Select options={roleOptions} placeholder="Роль" />
           </Form.Item>
-          <Form.Item name="password" label="Пароль" rules={[{ required: true, min: 6, message: 'Минимум 6 символов' }]}>
+          <Form.Item name="password" label={<FieldHint title="Минимум 6 символов. Пользователь сможет сменить пароль сам после первого входа.">Пароль</FieldHint>} rules={[{ required: true, min: 6, message: 'Минимум 6 символов' }]}>
             <Input.Password autoComplete="new-password" />
           </Form.Item>
         </Form>
@@ -162,11 +163,11 @@ const UsersAdminPage: React.FC = () => {
       <Modal title={`Пользователь: ${editing?.username ?? ''}`} open={!!editing} onOk={submitEdit}
         onCancel={() => setEditing(null)} okText="Сохранить" cancelText="Отмена">
         <Form form={editForm} layout="vertical" requiredMark={false}>
-          <Form.Item name="full_name" label="Имя"><Input /></Form.Item>
-          <Form.Item name="role" label="Роль" rules={[{ required: true }]}>
+          <Form.Item name="full_name" label={<FieldHint title="ФИО сотрудника — отображается в карточках «Эффективность сотрудников», «Мои задачи» и как ответственный за меры.">Имя</FieldHint>}><Input /></Form.Item>
+          <Form.Item name="role" label={<FieldHint title="Определяет набор прав и состав дашбордов, доступных пользователю после входа.">Роль</FieldHint>} rules={[{ required: true }]}>
             <Select options={roleOptions} />
           </Form.Item>
-          <Form.Item name="is_active" label="Активен" valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item name="is_active" label={<FieldHint title="Отключённый пользователь не может войти в систему; учётная запись и её история сохраняются.">Активен</FieldHint>} valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
 
@@ -176,7 +177,7 @@ const UsersAdminPage: React.FC = () => {
         <Alert type="info" showIcon style={{ marginBottom: 12 }}
           message="Новый пароль сообщите пользователю по защищённому каналу." />
         <Form form={pwdForm} layout="vertical" requiredMark={false}>
-          <Form.Item name="password" label="Новый пароль" rules={[{ required: true, min: 6, message: 'Минимум 6 символов' }]}>
+          <Form.Item name="password" label={<FieldHint title="Минимум 6 символов. Действующий пароль пользователя перестанет работать сразу после сброса.">Новый пароль</FieldHint>} rules={[{ required: true, min: 6, message: 'Минимум 6 символов' }]}>
             <Input.Password autoComplete="new-password" />
           </Form.Item>
         </Form>

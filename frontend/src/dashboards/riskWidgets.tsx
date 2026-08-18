@@ -10,16 +10,33 @@ import {
   SafetyCertificateOutlined, ThunderboltOutlined, AlertOutlined, AppstoreOutlined, PartitionOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import {
   useGetIncidentAnalyticsQuery, useGetTriggeredRisksQuery,
   type IncidentCategoryStat, type IncidentSystemStat,
 } from '../store/api/apiSlice';
+import type { RootState } from '../store';
+import { MOCK_INCIDENTS, computeIncidentAnalytics } from '../data/mockIncidents';
 import { RAG, BRAND, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
 import { sorterFor } from '../theme/table';
 import type { WidgetDef } from './DashboardShell';
 
 const { Text } = Typography;
+
+/**
+ * Аналитика сбоев с учётом переключателя Демо/LLM (BL-006) — как на «Аналитике сбоев»,
+ * управленческом и других дашбордах. До этого виджеты дашборда владельца риска всегда ходили
+ * в реальную БД напрямую и оставались пустыми в демо-режиме (дефолтном), даже когда остальной
+ * АСОК ИС уже показывал сценарные демо-данные — выглядело так, будто аналитика сбоев «не тянется».
+ */
+function useIncidentAnalytics() {
+  const dataMode = useSelector((s: RootState) => s.ui.dataMode);
+  const isLive = dataMode === 'live';
+  const live = useGetIncidentAnalyticsQuery(undefined, { skip: !isLive });
+  const data = isLive ? live.data : computeIncidentAnalytics(MOCK_INCIDENTS);
+  return { data, isLoading: isLive && live.isLoading };
+}
 
 const sevToken = (s: string) => {
   const v = (s || '').toUpperCase();
@@ -30,7 +47,7 @@ const sevToken = (s: string) => {
 };
 
 const RiskKpiWidget: React.FC = () => {
-  const { data: a, isLoading } = useGetIncidentAnalyticsQuery();
+  const { data: a, isLoading } = useIncidentAnalytics();
   if (isLoading) return <div><Spin /> <Text type="secondary">Загрузка показателей…</Text></div>;
   const releaseShare = a ? Math.round((a.releaseInducedShare || 0) * 100) : 0;
   const tile = (title: string, value: React.ReactNode, icon: React.ReactNode, tone: string) => (
@@ -96,7 +113,7 @@ const RiskTriggersWidget: React.FC = () => {
 };
 
 const IncidentsByCategoryWidget: React.FC = () => {
-  const { data: a, isLoading } = useGetIncidentAnalyticsQuery();
+  const { data: a, isLoading } = useIncidentAnalytics();
   const cols: ColumnsType<IncidentCategoryStat> = [
     { title: 'Первопричина', dataIndex: 'category', key: 'category', sorter: sorterFor((r: IncidentCategoryStat) => r.category) },
     { title: 'Сбоев', dataIndex: 'count', key: 'count', width: 90, align: 'right', sorter: sorterFor((r: IncidentCategoryStat) => r.count) },
@@ -117,7 +134,7 @@ const IncidentsByCategoryWidget: React.FC = () => {
 };
 
 const TopSystemsWidget: React.FC = () => {
-  const { data: a, isLoading } = useGetIncidentAnalyticsQuery();
+  const { data: a, isLoading } = useIncidentAnalytics();
   return (
     <Card {...premiumCard('terracotta')} title={<Space><AppstoreOutlined style={{ color: GOLD.base }} /><span style={{ color: BRAND.ink }}>Нестабильные ИС (по числу сбоев)</span></Space>}>
       {isLoading ? <Spin /> : (

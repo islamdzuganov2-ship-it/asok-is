@@ -262,7 +262,8 @@ const AssessmentCorrectionPanel: React.FC = () => {
       ),
     },
     {
-      title: 'Комментарий', dataIndex: 'expert_comment', width: 240,
+      title: <Tooltip title="Пояснение к оценке. Обязателен, если отмечено «Невозм. изм.» — укажите причину отсутствия данных.">Комментарий</Tooltip>,
+      dataIndex: 'expert_comment', width: 240,
       sorter: sorterFor((r: EditableMetric) => r.expert_comment),
       render: (_, rec) => (
         <Input

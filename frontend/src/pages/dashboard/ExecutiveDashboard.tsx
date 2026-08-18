@@ -4,7 +4,7 @@
  * Спокойная RAG-палитра, минимум текста и цвета.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Col, Row, Typography, Tag, Progress, Badge, Space, Button, Spin, Alert, Modal, Table, Segmented } from 'antd';
+import { Card, Col, Row, Typography, Tag, Progress, Badge, Space, Button, Spin, Alert, Modal, Table, Segmented, Tooltip } from 'antd';
 import { RobotOutlined, FireOutlined, AppstoreOutlined, FundOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import ReactECharts from 'echarts-for-react';
@@ -74,6 +74,13 @@ interface LiveDashboard {
 
 // Бакет уровня (0..5) → представительный % для RAG-индикации.
 const BUCKET_SCORE = [-1, 10, 30, 50, 70, 90];
+
+// Второй уровень свёртки (портфель) — по критичности ИС, зеркало backend
+// DEFAULT_CRITICALITY_WEIGHTS (weight_versions.py, В-6а). Нужно только для демо-режима: в
+// live-режиме портфельный балл считает backend (portfolio_score) и приходит в globalHealthScore.
+const CRITICALITY_WEIGHTS: Record<string, number> = {
+  'MISSION CRITICAL': 3, 'BUSINESS CRITICAL': 2, 'BUSINESS OPERATIONAL': 1,
+};
 
 // Сборка структуры управленческого дашборда из реального ответа API (LLM-режим).
 // ТЗ v20 п.2: балл ИС и ранжирование «Топ проблемных ИС» — по весам ГОСТ 25010 характеристики
@@ -372,7 +379,18 @@ const ExecutiveDashboard: React.FC = () => {
   }, [orderedHeatRows.map((r) => r.system).join('|'), heatSort]);
   const shownHeatRows = showAllHeatmap ? sortedHeatRows : sortedHeatRows.slice(0, 5);
 
-  const globalIndex = data.globalIndex;
+  // П.11 (ТЗ v20/v19): в демо-режиме индекс раньше приходил статичным полем EXECUTIVE_SCALE.
+  // globalIndex и не менялся при переключении весов ГОСТ 25010, хотя баллы карточек ниже
+  // (systems/weightedScoreOf) уже пересчитывались — портфель и карточки расходились. Здесь
+  // считаем тем же способом, что backend portfolio_score: свёртка взвешенных по характеристикам
+  // баллов систем (systems[].score) по критичности (CRITICALITY_WEIGHTS).
+  const globalIndex = useMemo(() => {
+    if (isLive) return data.globalIndex;
+    const totalW = systems.reduce((a, s) => a + (CRITICALITY_WEIGHTS[s.criticality] ?? 1), 0);
+    if (!totalW) return data.globalIndex;
+    const num = systems.reduce((a, s) => a + (CRITICALITY_WEIGHTS[s.criticality] ?? 1) * s.score, 0);
+    return Math.round(num / totalW);
+  }, [isLive, data.globalIndex, systems]);
   const idxTok = ragToken(globalIndex);
   // ECharts рисует на canvas и не понимает var() — берём конкретные цвета активной темы.
   const chart = useChartTokens();
@@ -564,6 +582,13 @@ const ExecutiveDashboard: React.FC = () => {
                 <Title level={5} style={{ margin: '4px 0', color: BRAND.ink }}>
                   {sys.name}
                 </Title>
+                {/* П.1: раньше карточка ДО клика по кнопке уже показывала абзац + «→ рекомендация» —
+                    визуально неотличимо от настоящего вывода ИИ, хотя это шаблонный текст по цифрам
+                    (sys.aiSummary/recommendation). Подпись явно называет источник, чтобы кнопка
+                    «Собрать AI-резюме» не выглядела бесполезной («аналитика же и так уже тут»). */}
+                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block', marginBottom: 2 }}>
+                  {insight?.text ? '✓ Вывод ИИ (сгенерировано по кнопке)' : 'Сводка по метрикам — не заключение ИИ, нажмите кнопку выше'}
+                </Text>
                 <Paragraph
                   type="secondary"
                   ellipsis={{ rows: 3 }}
@@ -573,9 +598,13 @@ const ExecutiveDashboard: React.FC = () => {
                     ? 'Не удалось получить анализ LLM — попробуйте ещё раз или проверьте backend.'
                     : insight?.text ?? sys.aiSummary}
                 </Paragraph>
-                <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>
-                  → {sys.recommendation}
-                </Text>
+                {/* Шаблонная рекомендация — только пока нет настоящего вывода ИИ (не мешаем её
+                    текстом, который уже содержит собственные выводы/следующие шаги). */}
+                {!insight?.text && !insight?.error && (
+                  <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>
+                    → {sys.recommendation}
+                  </Text>
+                )}
               </Card>
             </Col>
           );
@@ -619,8 +648,13 @@ const ExecutiveDashboard: React.FC = () => {
                     />
                   </th>
                   {data.heatmap.characteristics.map((c, i) => (
-                    <th key={c} title={c} style={{ fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize, padding: '0 4px' }}>
-                      {abbr(c)}
+                    <th key={c} style={{ fontWeight: 500, color: BRAND.inkSoft, fontSize: TYPE.caption.fontSize, padding: '0 4px' }}>
+                      {/* П.3: сокращения — не «замаскированный» текст, а расшифровка по наведению;
+                          раньше это был невидимый нативный title, теперь — та же подсказка, что и
+                          везде в приложении (пунктирное подчёркивание = «здесь есть расшифровка»). */}
+                      <Tooltip title={c}>
+                        <span style={{ borderBottom: `1px dotted ${BRAND.inkSoft}`, cursor: 'help' }}>{abbr(c)}</span>
+                      </Tooltip>
                       <SortButton
                         active={heatSort?.col === i} dir={heatSort?.dir}
                         label={`Сортировать по «${c}»`}
@@ -726,7 +760,11 @@ const ExecutiveDashboard: React.FC = () => {
       </Row>
 
       {/* Эффективность сотрудников (ТЗ v17, req 7) — под техдолгом и теплокартой */}
-      <EmployeeEffectivenessCard proposals={proposals} style={{ marginTop: 16 }} />
+      <EmployeeEffectivenessCard
+        proposals={proposals}
+        style={{ marginTop: 16 }}
+        onSelectOwner={(o, status) => navigate(`/dashboard/taskplan?owner=${encodeURIComponent(o)}${status ? `&status=${encodeURIComponent(status)}` : ''}`)}
+      />
 
       {/* Реестр мер качества — по умолчанию СВЁРНУТ, раскрывается по клику на шапку */}
       <CollapsibleCard
