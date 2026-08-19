@@ -11,7 +11,7 @@
  * топ-менеджмента (маршруты в App.tsx), но действия по мерам — только просмотр.
  */
 import React, { useMemo, useState } from 'react';
-import { Alert, Button, Col, DatePicker, Empty, Input, InputNumber, Modal, Radio, Row, Space, Statistic, Table, Tag, Timeline, Typography } from 'antd';
+import { Alert, Button, Col, DatePicker, Empty, Input, InputNumber, Modal, Radio, Row, Space, Table, Tag, Timeline, Typography } from 'antd';
 import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
 import { ClockCircleOutlined, CommentOutlined, FieldTimeOutlined, FileTextOutlined, ScheduleOutlined, WarningOutlined } from '@ant-design/icons';
@@ -26,8 +26,9 @@ import {
   type Proposal, type PriceOfInaction, type PriceHistory, type BudgetVariance,
 } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
-import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, SPACE } from '../theme/premium';
-import { numericColumn, numericText, sorterFor } from '../theme/table';
+import { accentDot, pageContainer, pageTitle, GOLD, SPACE } from '../theme/premium';
+import { numericColumn, sorterFor } from '../theme/table';
+import KpiCard from '../components/KpiCard';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -37,10 +38,6 @@ const parseRu = (d?: string): Date | null => {
   return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
 };
 const TODAY = new Date(2026, 5, 26).getTime();
-
-// Резерв под 2-строчный заголовок KPI-плитки (см. использование ниже) — держит значение
-// на одной высоте у всех плиток ряда независимо от длины конкретного заголовка.
-const KPI_TITLE_STYLE: React.CSSProperties = { minHeight: 40, color: BRAND.inkSoft, fontSize: 14 };
 
 // Приоритет для сортировки по статусу — просроченное впереди, выполненное в хвосте (наглядно
 // для исполнителя: что горит сильнее всего). statusTag использует тот же порядок условий.
@@ -218,25 +215,16 @@ const AssigneeTasksPage: React.FC = () => {
         )}
       </Row>
 
-      {/* Выравнивание цифр: заголовки разной длины («Просрочено / не выполнено» против
-          «Выполнено») переносились по-разному, и значение у каждой плитки съезжало на свою
-          высоту — цифры 9/2/1/22% не стояли на одной линии по ряду. minHeight на заголовке
-          резервирует место под двухстрочный вариант ВСЕГДА, а не только когда он реально
-          нужен — тогда значение стартует с одной и той же высоты у всех плиток ряда, плюс
-          табличные цифры (numericText), как и в остальном приложении. */}
+      {/* Выравнивание цифр (5-й заход): предыдущие правки (minHeight на заголовке Statistic)
+          лечили симптом внутри самодельной вёрстки вместо переиспользования уже готового
+          KpiCard (components/KpiCard.tsx, UI-12) — того самого компонента с «Аналитического
+          дашборда качества ИС» (DashboardPage.tsx). Три экрана с плитками — три разные
+          вёрстки; теперь здесь та же, что и там. */}
       <Row gutter={[16, 16]} style={{ margin: '16px 0' }}>
-        <Col xs={12} md={6}><div {...premiumCard()}>
-          <Statistic title={<div style={KPI_TITLE_STYLE}>Всего поручений</div>} value={stats.total} valueStyle={numericText} />
-        </div></Col>
-        <Col xs={12} md={6}><div {...premiumCard()}>
-          <Statistic title={<div style={KPI_TITLE_STYLE}>Выполнено</div>} value={stats.done} valueStyle={{ color: RAG.good.strong, ...numericText }} />
-        </div></Col>
-        <Col xs={12} md={6}><div {...premiumCard()}>
-          <Statistic title={<div style={KPI_TITLE_STYLE}>Просрочено / не выполнено</div>} value={stats.overdue} valueStyle={{ color: stats.overdue ? RAG.bad.strong : undefined, ...numericText }} />
-        </div></Col>
-        <Col xs={12} md={6}><div {...premiumCard()}>
-          <Statistic title={<div style={KPI_TITLE_STYLE}>Личная эффективность</div>} value={stats.eff} suffix="%" valueStyle={{ color: ragToken(stats.eff).strong, ...numericText }} />
-        </div></Col>
+        <Col flex="1 1 168px"><KpiCard title="Всего поручений" value={stats.total} /></Col>
+        <Col flex="1 1 168px"><KpiCard title="Выполнено" value={stats.done} color={RAG.good.strong} /></Col>
+        <Col flex="1 1 168px"><KpiCard title="Просрочено / не выполнено" value={stats.overdue} color={stats.overdue ? RAG.bad.strong : undefined} /></Col>
+        <Col flex="1 1 168px"><KpiCard title="Личная эффективность" value={`${stats.eff}%`} color={ragToken(stats.eff).strong} /></Col>
       </Row>
 
       {tasks.length === 0 ? (
