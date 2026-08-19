@@ -11,8 +11,14 @@ import React, { useState } from 'react';
 import { Modal, Typography, Space, Statistic, Empty, Spin } from 'antd';
 import { UserOutlined } from '@ant-design/icons';
 import { RAG } from '../theme/ragPalette';
+import { numericText } from '../theme/table';
 
 const { Text } = Typography;
+
+// Выравнивание цифр (тот же паттерн, что в riskWidgets/AssigneeTasksPage): без резерва
+// высоты под заголовок Statistic-цифры внутри одного Space-ряда съезжают на свою высоту,
+// если заголовки переносятся по-разному («Взвеш. нагрузка» вместо «Часы (оценено)»).
+const STAT_TITLE_STYLE: React.CSSProperties = { minHeight: 44 };
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
 interface ManagerRow {
@@ -69,16 +75,19 @@ export const OwnerLink: React.FC<Props> = ({ owner, fallback = 'не назна�
           <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
         ) : row ? (
           <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            <Space size="large" wrap>
-              <Statistic title="Нагрузка" value={row.openCount} />
-              <Statistic title="Просрочено" value={row.overdueCount}
-                valueStyle={row.overdueCount > 0 ? { color: RAG.bad.strong } : undefined} />
-              <Statistic title="Выполнено" value={row.completedCount}
-                valueStyle={row.completedCount > 0 ? { color: RAG.good.strong } : undefined} />
+            <Space size="large" wrap align="start">
+              <Statistic title={<div style={STAT_TITLE_STYLE}>Нагрузка</div>} value={row.openCount}
+                valueStyle={numericText} />
+              <Statistic title={<div style={STAT_TITLE_STYLE}>Просрочено</div>} value={row.overdueCount}
+                valueStyle={{ ...(row.overdueCount > 0 ? { color: RAG.bad.strong } : undefined), ...numericText }} />
+              <Statistic title={<div style={STAT_TITLE_STYLE}>Выполнено</div>} value={row.completedCount}
+                valueStyle={{ ...(row.completedCount > 0 ? { color: RAG.good.strong } : undefined), ...numericText }} />
             </Space>
-            <Space size="large" wrap>
-              <Statistic title="Взвеш. нагрузка" value={row.weightedLoad} />
-              <Statistic title="Часы (оценено)" value={row.hoursEstimated} suffix="ч" />
+            <Space size="large" wrap align="start">
+              <Statistic title={<div style={STAT_TITLE_STYLE}>Взвеш. нагрузка</div>} value={row.weightedLoad}
+                valueStyle={numericText} />
+              <Statistic title={<div style={STAT_TITLE_STYLE}>Часы (оценено)</div>} value={row.hoursEstimated} suffix="ч"
+                valueStyle={numericText} />
             </Space>
             {row.measuresWithoutEstimate > 0 && (
               <Text type="secondary" style={{ fontSize: 12 }}>
