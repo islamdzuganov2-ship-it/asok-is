@@ -8,7 +8,7 @@
  * Источник данных по режиму (эталон governance): 'mock' — демо-набор (mockIncidents), 'live' — БД
  * через API /incidents. Не вмешивается в расчётный движок оценки качества.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Alert, Button, Card, Col, Empty, Modal, Row, Select, Space, Spin,
     Table, Tag, Typography,
@@ -20,7 +20,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import ReactECharts from 'echarts-for-react';
 import { useSelector, shallowEqual } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { RootState } from '../../store';
 import {
@@ -78,6 +78,7 @@ const IncidentsAnalyticsPage: React.FC = () => {
     // режимах (computeIncidentAnalytics — зеркало backend-агрегации).
     const liveList = useGetIncidentsQuery(undefined, { skip: !isLive });
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const allIncidents = isLive ? (liveList.data ?? []) : MOCK_INCIDENTS;
     const loading = isLive && liveList.isFetching;
@@ -87,6 +88,18 @@ const IncidentsAnalyticsPage: React.FC = () => {
     const [quarterFilter, setQuarterFilter] = useState<string[]>([]);                    // T-40
     const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined); // T-41 (реестр)
     const [selectedIncident, setSelectedIncident] = useState<TechIncidentDto | null>(null);
+
+    // Переход с дашборда владельца риска (?system=/?category=, клик по плитке/строке/списку) —
+    // сразу применяем фильтр; параметры одноразовые, дальше — обычный Select-стейт (T-39/T-41).
+    useEffect(() => {
+        const sys = searchParams.get('system');
+        const cat = searchParams.get('category');
+        if (!sys && !cat) return;
+        if (sys) setSystemFilter(sys);
+        if (cat) setCategoryFilter(cat);
+        setSearchParams((sp) => { sp.delete('system'); sp.delete('category'); return sp; }, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Ключ квартала возникновения (UTC): «Q{1..4}-{год}». Мультивыбор может пересекать границы лет.
     const quarterKeyOf = (iso: string) => {
