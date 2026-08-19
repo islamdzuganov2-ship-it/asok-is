@@ -6,10 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Col, Row, Typography, Tag, List, Statistic, Empty, Spin, Space, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import {
-  SafetyCertificateOutlined, ThunderboltOutlined, AlertOutlined, AppstoreOutlined, PartitionOutlined,
-  DollarOutlined,
-} from '@ant-design/icons';
+import { AppstoreOutlined, PartitionOutlined, DollarOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
@@ -20,8 +17,9 @@ import type { RootState } from '../store';
 import { MOCK_INCIDENTS, computeIncidentAnalytics, computeTriggeredRisks } from '../data/mockIncidents';
 import { RAG, BRAND, ACCENT, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
-import { numericColumn, numericText, sorterFor } from '../theme/table';
+import { numericColumn, sorterFor } from '../theme/table';
 import { fmtMoney } from '../utils/money';
+import KpiCard from '../components/KpiCard';
 import type { WidgetDef } from './DashboardShell';
 
 const { Text } = Typography;
@@ -83,41 +81,23 @@ const RiskKpiWidget: React.FC = () => {
   // П.2 (второй заход): плитки теперь кликабельны — ведут на «Аналитику сбоев», «Доля
   // релизных» — сразу с фильтром по первопричине RELEASE.
   //
-  // Выравнивание цифр (по фидбэку): раньше иконка и Statistic(заголовок+значение) стояли в
-  // одном Space по горизонтали — Space.align="center" центрировал иконку по высоте ВСЕГО
-  // блока «заголовок+значение», а не по строке значения. Заголовки разной длины («Открытые»
-  // против «Доля релизных, %») переносились по-разному, и значение у каждой плитки уезжало
-  // на свою высоту — цифры 9 / 2 / 5.9 / 22 не стояли на одной линии по ряду. Теперь заголовок
-  // с иконкой — отдельная строка фиксированной высоты (minHeight держит место под перенос),
-  // значение — отдельная строка НИЖЕ, всегда на одном уровне у всех плиток ряда,
-  // + табличные цифры (numericText), как и в остальном приложении.
-  const tile = (title: string, value: React.ReactNode, icon: React.ReactNode, tone: string, to?: string) => (
-    <Col xs={12} md={6}>
-      <Card
-        {...premiumCard('ink')}
-        hoverable={!!to}
-        onClick={to ? () => navigate(to) : undefined}
-        styles={{ body: { padding: SPACE.base, cursor: to ? 'pointer' : undefined } }}
-      >
-        <Space align="start" size={SPACE.cozy} style={{ width: '100%', minHeight: 36, marginBottom: SPACE.tight }}>
-          <span style={{
-            width: 32, height: 32, borderRadius: 9, background: `${tone}1A`, color: tone,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flex: '0 0 auto',
-          }}>{icon}</span>
-          <Text type="secondary" style={{ ...TYPE.caption, lineHeight: 1.3 }}>{title}</Text>
-        </Space>
-        <div style={{ color: BRAND.ink, fontSize: TYPE.metricSm.fontSize, fontWeight: 700, ...numericText }}>
-          {value}
-        </div>
-      </Card>
+  // Выравнивание цифр (по фидбэку, 5-й заход): предыдущие правки лечили симптом (перенос
+  // заголовка) внутри СВОЕЙ самодельной плитки — Card+Space+icon — вместо того чтобы взять уже
+  // готовый общий компонент. KpiCard (components/KpiCard.tsx, UI-12) — тот самый «эталон»
+  // с «Аналитического дашборда качества ИС» (DashboardPage.tsx): подпись/значение
+  // центрированы, табличные цифры, «раскрыть →» при клике. Три разных дашборда с плитками —
+  // три разные самодельные вёрстки; теперь здесь та же, что и там, а не ещё один вариант.
+  const tile = (title: string, value: React.ReactNode, tone: string, to?: string) => (
+    <Col flex="1 1 168px">
+      <KpiCard title={title} value={value} color={tone} onClick={to ? () => navigate(to) : undefined} />
     </Col>
   );
   return (
     <Row gutter={[16, 16]}>
-      {tile('Всего техсбоев', a?.total ?? 0, <ThunderboltOutlined />, RAG.medium.color, '/dashboard/incidents')}
-      {tile('Открытые', a?.openCount ?? 0, <AlertOutlined />, RAG.bad.color, '/dashboard/incidents')}
-      {tile('Средн. MTTR, ч', a?.avgMttrHours != null ? a.avgMttrHours.toFixed(1) : '—', <SafetyCertificateOutlined />, RAG.good.color, '/dashboard/incidents')}
-      {tile('Доля релизных, %', releaseShare, <ThunderboltOutlined />, RAG.medium.color, '/dashboard/incidents?category=RELEASE')}
+      {tile('Всего техсбоев', a?.total ?? 0, RAG.medium.strong, '/dashboard/incidents')}
+      {tile('Открытые', a?.openCount ?? 0, RAG.bad.strong, '/dashboard/incidents')}
+      {tile('Средн. MTTR, ч', a?.avgMttrHours != null ? a.avgMttrHours.toFixed(1) : '—', RAG.good.strong, '/dashboard/incidents')}
+      {tile('Доля релизных, %', releaseShare, RAG.medium.strong, '/dashboard/incidents?category=RELEASE')}
     </Row>
   );
 };
