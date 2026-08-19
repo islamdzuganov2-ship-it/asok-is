@@ -25,6 +25,7 @@ from app.modules.risk.event_schemas import (
     MeasureLinkOut,
     PortfolioRiskSummaryOut,
     RiskEventCreate,
+    RiskEventLinksOut,
     RiskEventOut,
     RiskEventUpdate,
     RiskMeasureChainRowOut,
@@ -118,6 +119,16 @@ async def update_event(
     return await service.update_event(db, ev, payload)
 
 
+# Карточка взаимосвязи ТС-мера-экономика-качество (БТ-322): все связи риска одним запросом.
+@router.get("/{event_id}/links", response_model=RiskEventLinksOut)
+async def get_event_links(
+    event_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    return await service.get_links(db, event_id)
+
+
 @router.post("/{event_id}/archive", response_model=RiskEventOut)
 async def archive_event(
     event_id: uuid.UUID,
@@ -158,6 +169,36 @@ async def link_measure(
     _: dict = Depends(require_permission("risk.register.edit")),
 ):
     return await service.link_measure(db, event_id, payload)
+
+
+@router.delete("/{event_id}/subchars/{link_id}", status_code=204)
+async def unlink_subchar(
+    event_id: uuid.UUID,
+    link_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("risk.register.edit")),
+):
+    await service.unlink_subchar(db, event_id, link_id)
+
+
+@router.delete("/{event_id}/incidents/{link_id}", status_code=204)
+async def unlink_incident(
+    event_id: uuid.UUID,
+    link_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("risk.register.edit")),
+):
+    await service.unlink_incident(db, event_id, link_id)
+
+
+@router.delete("/{event_id}/measures/{link_id}", status_code=204)
+async def unlink_measure(
+    event_id: uuid.UUID,
+    link_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("risk.register.edit")),
+):
+    await service.unlink_measure(db, event_id, link_id)
 
 
 # ── Пересчёт ALE (RE-09) ──

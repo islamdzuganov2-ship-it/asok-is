@@ -226,6 +226,8 @@ export interface TechIncidentDto {
     resolvedAt?: string | null;
     source: string;
     createdBy?: string;
+    // RE-07: стоимость единичной реализации (C_ТС), считает движок econ.
+    costTotal?: number | null;
 }
 export interface IncidentCategoryOption { code: string; label: string }
 export interface IncidentCategoriesDto { base: IncidentCategoryOption[]; custom: string[] }
