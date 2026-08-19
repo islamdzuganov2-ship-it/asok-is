@@ -3,7 +3,7 @@
  * Нативно подаёт проблематику + рекомендацию к действию; по клику — модал R1.5.
  * Спокойная RAG-палитра, минимум текста и цвета.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, Col, Row, Typography, Tag, Progress, Badge, Space, Button, Spin, Alert, Modal, Table, Segmented, Tooltip } from 'antd';
 import { RobotOutlined, FireOutlined, AppstoreOutlined, FundOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -211,6 +211,12 @@ const ExecutiveDashboard: React.FC = () => {
   const [moneyMode, setMoneyMode] = useState<MoneyMode>('score');
   const [moneyLayer, setMoneyLayer] = useState<HeatmapMoneyCell[] | null>(null);
   const [moneyLoading, setMoneyLoading] = useState(false);
+  // Переключатель денежных режимов скрыт в демо (см. ниже) — если ушли в демо, оставив
+  // moneyMode на «ALE/ΔALE/покрытие», ячейки теплокарты рисовались бы пустыми пунктирными
+  // кружками без денежного слоя и без способа вернуться на «Балл качества» через UI.
+  useEffect(() => {
+    if (!isLive) setMoneyMode('score');
+  }, [isLive]);
   useEffect(() => {
     if (!isLive || moneyMode === 'score' || moneyLayer !== null) return;
     let alive = true;
@@ -351,6 +357,23 @@ const ExecutiveDashboard: React.FC = () => {
   const topCards = [...systems]
     .sort((a, b) => a.score - b.score)
     .slice(0, 3);
+
+  // По фидбэку (п.1, второй заход): карточка не должна показывать текст, оформленный как вывод
+  // ИИ, если ИИ на самом деле не анализировал — раньше это решалось только подписью «Сводка по
+  // метрикам», сам вывод ИИ ждал ручного клика. Теперь в режиме LLM реальный анализ по топ-3
+  // системам запускается автоматически при открытии дашборда (по одному разу на систему за
+  // время жизни компонента — firedInsightsRef, не аiInsights, чтобы не зависеть от гонки
+  // состояния). В демо-режиме не трогаем: там нет живой LLM, дёргать нечего.
+  const firedInsightsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!isLive) return;
+    topCards.forEach((sys) => {
+      if (firedInsightsRef.current.has(sys.id)) return;
+      firedInsightsRef.current.add(sys.id);
+      genSystemInsight(sys);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLive, topCards.map((s) => s.id).join('|')]);
 
   // Строки теплокарты: худшие по взвешенному баллу — первые. По умолчанию топ-5, остальное под кнопкой.
   const orderedHeatRows = [...data.heatmap.rows].sort((a, b) => {
@@ -621,18 +644,23 @@ const ExecutiveDashboard: React.FC = () => {
             styles={{ header: premiumCard('slate').styles.header, body: { padding: SPACE.airy, overflowX: 'auto' } }}
           >
             {/* УК-11: переключатель режима отображения — балл качества / деньги под риском /
-                эффект мер / покрытие. Цветовая шкала точек перестраивается под режим (moneyCellVisual). */}
-            <Segmented
-              size="small"
-              value={moneyMode}
-              onChange={(v) => setMoneyMode(v as MoneyMode)}
-              options={MONEY_MODE_OPTIONS}
-              style={{ marginBottom: SPACE.cozy }}
-              disabled={!isLive}
-            />
-            {moneyMode !== 'score' && !isLive && (
+                эффект мер / покрытие. Цветовая шкала точек перестраивается под режим (moneyCellVisual).
+                По фидбэку (п.3, второй заход): в демо-режиме денежные режимы не работают (риски
+                заводятся только в реестре, не в демо-наборе) — раньше кнопки всё равно рисовались,
+                просто задизейбленными, и выглядели как «сломанные»/непонятные надписи. В демо
+                переключатель вообще не показываем — там осмыслен только «Балл качества». */}
+            {isLive ? (
+              <Segmented
+                size="small"
+                value={moneyMode}
+                onChange={(v) => setMoneyMode(v as MoneyMode)}
+                options={MONEY_MODE_OPTIONS}
+                style={{ marginBottom: SPACE.cozy }}
+              />
+            ) : (
               <Text type="secondary" style={{ display: 'block', fontSize: TYPE.caption.fontSize, marginBottom: SPACE.cozy }}>
-                Денежный слой доступен только в режиме live (риски заводятся в реестре, не в демо-наборе).
+                Режим: <Text strong style={{ fontSize: TYPE.caption.fontSize }}>Балл качества</Text> — денежные
+                режимы (ALE/ΔALE/покрытие) считаются по реестру рисков и доступны только в режиме LLM.
               </Text>
             )}
             {moneyMode !== 'score' && isLive && moneyLoading && <Spin size="small" style={{ marginBottom: SPACE.cozy }} />}
