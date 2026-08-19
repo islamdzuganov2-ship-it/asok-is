@@ -3,14 +3,19 @@
  *
  * Показывает риски из базы, которые МОГУТ РЕАЛИЗОВАТЬСЯ по текущему состоянию ИС: частые техсбои
  * по первопричинам (маппинг категория → характеристика ISO) и/или просевшие характеристики.
- * Реализует пункт бизнес-видения «работа с рисками по недопущению техсбоя». Источник — backend
- * GET /risks/triggered (риски + пояснение, ЧЕМ сработал каждый). Аналитика реальной БД —
- * не зависит от переключателя Демо/LLM.
+ * Реализует пункт бизнес-видения «работа с рисками по недопущению техсбоя». Источник в режиме
+ * LLM — backend GET /risks/triggered (риски + пояснение, ЧЕМ сработал каждый). В демо-режиме
+ * (по умолчанию) — тот же алгоритм на сценарных демо-данных (computeTriggeredRisks), как и
+ * везде в приложении: раньше страница ВСЕГДА ходила в реальную БД независимо от переключателя
+ * Демо/LLM и оставалась пустой в демо-режиме — правка по фидбэку (п.12).
  */
 import React, { useMemo, useState } from 'react';
 import { Alert, Card, Col, Empty, List, Row, Select, Space, Spin, Tag, Typography } from 'antd';
 import { AlertOutlined, SafetyCertificateOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { useSelector } from 'react-redux';
 import { useGetSystemsQuery, useGetTriggeredRisksQuery } from '../../store/api/apiSlice';
+import type { RootState } from '../../store';
+import { MOCK_INCIDENTS, computeTriggeredRisks } from '../../data/mockIncidents';
 import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE, TYPE, PREMIUM } from '../../theme/premium';
 import { RAG, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 
@@ -25,9 +30,13 @@ const SEVERITY: Record<string, { label: string; color: string; order: number }> 
 };
 
 const RiskRadarPage: React.FC = () => {
+    const dataMode = useSelector((s: RootState) => s.ui.dataMode);
+    const isLive = dataMode === 'live';
     const { data: systems } = useGetSystemsQuery();
     const [system, setSystem] = useState<string | undefined>(undefined);
-    const { data: risks, isFetching } = useGetTriggeredRisksQuery(system ? { system } : undefined);
+    const live = useGetTriggeredRisksQuery(system ? { system } : undefined, { skip: !isLive });
+    const risks = isLive ? live.data : computeTriggeredRisks(MOCK_INCIDENTS, system);
+    const isFetching = isLive && live.isFetching;
 
     const sorted = useMemo(
         () => [...(risks ?? [])].sort(
@@ -70,7 +79,7 @@ const RiskRadarPage: React.FC = () => {
                 icon={<SafetyCertificateOutlined />}
                 style={{ marginBottom: 16 }}
                 message="Зачем нужен этот раздел"
-                description="Радар отбирает из базы риски, которые уже показывают признаки скорой реализации — по двум сигналам: (1) частые технические сбои по одной и той же первопричине в этой ИС, (2) просевшие характеристики качества ISO 25010, связанные с риском. Список строится напрямую по данным БД (не LLM) и не зависит от переключателя Демо/LLM — это не аналитика «по настроению», а факт срабатывания. Мера минимизации по каждому риску берётся из справочника рисков, а не придумывается на лету. Приоритет для реагирования — критические и высокие."
+                description={`Радар отбирает из базы риски, которые уже показывают признаки скорой реализации — по двум сигналам: (1) частые технические сбои по одной и той же первопричине в этой ИС, (2) просевшие характеристики качества ISO 25010, связанные с риском. Список строится напрямую по данным (не «по настроению» LLM), а не придумывается на лету — это факт срабатывания. ${isLive ? 'Режим LLM: данные из реальной БД.' : 'Демо-режим: тот же алгоритм на сценарном демо-наборе техсбоев.'} Мера минимизации по каждому риску берётся из справочника рисков. Приоритет для реагирования — критические и высокие.`}
             />
 
             {isFetching ? (

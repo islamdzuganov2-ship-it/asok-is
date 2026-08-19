@@ -29,6 +29,7 @@ import { RAG, ragToken, levelLabel, BRAND, solidTagStyle } from '../../theme/rag
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, TYPE, SPACE, PREMIUM } from '../../theme/premium';
 import { useChartTokens } from '../../theme/useThemeTokens';
 import { numericColumn, sorterFor } from '../../theme/table';
+import { useCharacteristicWeights } from '../../hooks/useCharacteristicWeights';
 import { ProfessionalJudgmentModal, JudgmentTarget } from '../../components/ProfessionalJudgmentModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import MeasureDevelopmentPanel from '../../components/MeasureDevelopmentPanel';
@@ -131,6 +132,7 @@ const ManagerDashboard: React.FC = () => {
   const charTok = scoreTok(characteristic?.score ?? -1);
   // ECharts (canvas) не понимает var() — берём конкретные цвета активной темы.
   const chart = useChartTokens();
+  const { weights: charWeights } = useCharacteristicWeights();
 
   // Каскад раскрытия (T-29): меры/суждения — по характеристике или выбранной подхарактеристике.
   const charMeasures = useMemo(
@@ -152,11 +154,17 @@ const ManagerDashboard: React.FC = () => {
   const showMetrics = !!characteristic;
   const showMeasures = !!characteristic && (hasCharMeasures || subMeasures.length > 0);
 
-  // Интегральный балл ИС (для центра доната) = среднее измеримых характеристик.
+  // Интегральный балл ИС (для центра доната) = взвешенное по весам ГОСТ 25010 среднее измеримых
+  // характеристик (П.11: раньше был голым средним без весов — расходился с методикой
+  // управленческого/аналитического дашбордов, где та же цифра уже взвешена по charWeights).
   const integral = useMemo(() => {
     const meas = system?.characteristics.filter((c) => c.score >= 0) ?? [];
-    return meas.length ? Math.round(meas.reduce((a, c) => a + c.score, 0) / meas.length) : -1;
-  }, [system?.id]);
+    if (!meas.length) return -1;
+    const w = meas.reduce((a, c) => a + (charWeights[c.title] ?? 0), 0);
+    return w > 0
+      ? Math.round(meas.reduce((a, c) => a + c.score * (charWeights[c.title] ?? 0), 0) / w)
+      : Math.round(meas.reduce((a, c) => a + c.score, 0) / meas.length);
+  }, [system?.id, charWeights]);
 
   const gaugeOption = useMemo(
     () => ({

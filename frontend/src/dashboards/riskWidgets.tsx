@@ -16,7 +16,7 @@ import {
   type IncidentCategoryStat, type IncidentSystemStat,
 } from '../store/api/apiSlice';
 import type { RootState } from '../store';
-import { MOCK_INCIDENTS, computeIncidentAnalytics } from '../data/mockIncidents';
+import { MOCK_INCIDENTS, computeIncidentAnalytics, computeTriggeredRisks } from '../data/mockIncidents';
 import { RAG, BRAND, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
 import { sorterFor } from '../theme/table';
@@ -38,6 +38,16 @@ function useIncidentAnalytics() {
   return { data, isLoading: isLive && live.isLoading };
 }
 
+/** Тот же принцип для риск-триггеров (T-16) — раньше RiskTriggersWidget тоже всегда ходил в
+ * реальную БД независимо от переключателя Демо/LLM. */
+function useTriggeredRisks() {
+  const dataMode = useSelector((s: RootState) => s.ui.dataMode);
+  const isLive = dataMode === 'live';
+  const live = useGetTriggeredRisksQuery(undefined, { skip: !isLive });
+  const data = isLive ? (live.data ?? []) : computeTriggeredRisks(MOCK_INCIDENTS);
+  return { data, isLoading: isLive && live.isLoading };
+}
+
 const sevToken = (s: string) => {
   const v = (s || '').toUpperCase();
   if (v.includes('HIGH') || v.includes('CRIT') || v.includes('ВЫС') || v.includes('КРИТ')) return RAG.bad;
@@ -49,7 +59,12 @@ const sevToken = (s: string) => {
 const RiskKpiWidget: React.FC = () => {
   const { data: a, isLoading } = useIncidentAnalytics();
   if (isLoading) return <div><Spin /> <Text type="secondary">Загрузка показателей…</Text></div>;
-  const releaseShare = a ? Math.round((a.releaseInducedShare || 0) * 100) : 0;
+  // Найдено при проверке п.12: releaseInducedShare уже в процентах (0..100, см.
+  // computeIncidentAnalytics/backend service.analytics — как на «Аналитике сбоев»,
+  // IncidentsAnalyticsPage.tsx показывает то же поле без домножения). Здесь было лишнее
+  // «* 100» — тайл «Доля релизных, %» показывал 2220% вместо 22.2%, причём и в live-режиме
+  // тоже (виджет тянул реальную БД и до этой правки, просто в демо оставался пустым).
+  const releaseShare = a ? Math.round(a.releaseInducedShare || 0) : 0;
   const tile = (title: string, value: React.ReactNode, icon: React.ReactNode, tone: string) => (
     <Col xs={12} md={6}>
       <Card {...premiumCard('ink')} styles={{ body: { padding: SPACE.base } }}>
@@ -76,7 +91,7 @@ const RiskKpiWidget: React.FC = () => {
 
 const RiskTriggersWidget: React.FC = () => {
   const navigate = useNavigate();
-  const { data: triggered, isLoading } = useGetTriggeredRisksQuery();
+  const { data: triggered, isLoading } = useTriggeredRisks();
   const top = (triggered ?? []).slice(0, 6);
   return (
     <Card

@@ -47,9 +47,13 @@ const CURRENT_QUARTER = (() => {
   const now = new Date();
   return `Q${Math.floor(now.getMonth() / 3) + 1}-${now.getFullYear()}`;
 })();
+const TODAY_QUARTER_FOUND = QUARTERS.indexOf(CURRENT_QUARTER) >= 0;
+// Общий индекс «сегодня» — переиспользуется и графиками (markLine), и мини-карточками
+// подхарактеристик (Sparkline), чтобы не считать дважды и не разойтись в трактовке.
+const TODAY_QUARTER_IDX = TODAY_QUARTER_FOUND ? QUARTERS.indexOf(CURRENT_QUARTER) : QUARTERS.length - 1;
 function todayMarkLine() {
-  const found = QUARTERS.indexOf(CURRENT_QUARTER);
-  const idx = found >= 0 ? found : QUARTERS.length - 1;
+  const idx = TODAY_QUARTER_IDX;
+  const found = TODAY_QUARTER_FOUND ? idx : -1;
   return {
     symbol: 'none' as const,
     silent: true,
@@ -425,7 +429,7 @@ const QualityDynamicsPage: React.FC = () => {
                     </Tag>
                     <Text type="secondary" style={TYPE.micro}>{s.char}</Text>
                   </Space>
-                  <div style={{ marginTop: SPACE.snug }}><Sparkline series={s.series} /></div>
+                  <div style={{ marginTop: SPACE.snug }}><Sparkline series={s.series} todayIndex={TODAY_QUARTER_IDX} /></div>
                 </Card>
               </Col>
             );
