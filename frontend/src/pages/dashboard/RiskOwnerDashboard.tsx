@@ -22,8 +22,11 @@ const RiskOwnerDashboard: React.FC = () => {
       subtitle="Сводка риск-контура: техсбои, проактивные триггеры, реестр и экономика риска. «Настроить» — свой состав виджетов."
       headerExtra={
         <Space wrap>
+          {/* Обе кнопки — равноправные переходы, не вкладки: «Риск-экономика» раньше была
+              жёстко на type="primary" и всегда выглядела «выбранной» (тёмная заливка), даже
+              находясь на «Основное» — читалось как будто мы уже на странице риск-экономики. */}
           <Button icon={<WarningOutlined />} onClick={() => navigate('/risks')}>Реестр рисков</Button>
-          <Button type="primary" icon={<AuditOutlined />} onClick={() => navigate('/risk-economics')}>Риск-экономика</Button>
+          <Button icon={<AuditOutlined />} onClick={() => navigate('/risk-economics')}>Риск-экономика</Button>
         </Space>
       }
     />
