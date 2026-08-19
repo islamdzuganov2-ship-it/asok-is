@@ -27,7 +27,7 @@ import {
 } from '../store/slices/governanceSlice';
 import { BRAND, RAG, ragToken, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, pageContainer, pageTitle, GOLD, SPACE } from '../theme/premium';
-import { numericColumn, sorterFor } from '../theme/table';
+import { numericColumn, numericText, sorterFor } from '../theme/table';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -37,6 +37,10 @@ const parseRu = (d?: string): Date | null => {
   return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
 };
 const TODAY = new Date(2026, 5, 26).getTime();
+
+// Резерв под 2-строчный заголовок KPI-плитки (см. использование ниже) — держит значение
+// на одной высоте у всех плиток ряда независимо от длины конкретного заголовка.
+const KPI_TITLE_STYLE: React.CSSProperties = { minHeight: 40, color: BRAND.inkSoft, fontSize: 14 };
 
 // Приоритет для сортировки по статусу — просроченное впереди, выполненное в хвосте (наглядно
 // для исполнителя: что горит сильнее всего). statusTag использует тот же порядок условий.
@@ -214,11 +218,25 @@ const AssigneeTasksPage: React.FC = () => {
         )}
       </Row>
 
+      {/* Выравнивание цифр: заголовки разной длины («Просрочено / не выполнено» против
+          «Выполнено») переносились по-разному, и значение у каждой плитки съезжало на свою
+          высоту — цифры 9/2/1/22% не стояли на одной линии по ряду. minHeight на заголовке
+          резервирует место под двухстрочный вариант ВСЕГДА, а не только когда он реально
+          нужен — тогда значение стартует с одной и той же высоты у всех плиток ряда, плюс
+          табличные цифры (numericText), как и в остальном приложении. */}
       <Row gutter={[16, 16]} style={{ margin: '16px 0' }}>
-        <Col xs={12} md={6}><div {...premiumCard()}><Statistic title="Всего поручений" value={stats.total} /></div></Col>
-        <Col xs={12} md={6}><div {...premiumCard()}><Statistic title="Выполнено" value={stats.done} valueStyle={{ color: RAG.good.strong }} /></div></Col>
-        <Col xs={12} md={6}><div {...premiumCard()}><Statistic title="Просрочено / не выполнено" value={stats.overdue} valueStyle={{ color: stats.overdue ? RAG.bad.strong : undefined }} /></div></Col>
-        <Col xs={12} md={6}><div {...premiumCard()}><Statistic title="Личная эффективность" value={stats.eff} suffix="%" valueStyle={{ color: ragToken(stats.eff).strong }} /></div></Col>
+        <Col xs={12} md={6}><div {...premiumCard()}>
+          <Statistic title={<div style={KPI_TITLE_STYLE}>Всего поручений</div>} value={stats.total} valueStyle={numericText} />
+        </div></Col>
+        <Col xs={12} md={6}><div {...premiumCard()}>
+          <Statistic title={<div style={KPI_TITLE_STYLE}>Выполнено</div>} value={stats.done} valueStyle={{ color: RAG.good.strong, ...numericText }} />
+        </div></Col>
+        <Col xs={12} md={6}><div {...premiumCard()}>
+          <Statistic title={<div style={KPI_TITLE_STYLE}>Просрочено / не выполнено</div>} value={stats.overdue} valueStyle={{ color: stats.overdue ? RAG.bad.strong : undefined, ...numericText }} />
+        </div></Col>
+        <Col xs={12} md={6}><div {...premiumCard()}>
+          <Statistic title={<div style={KPI_TITLE_STYLE}>Личная эффективность</div>} value={stats.eff} suffix="%" valueStyle={{ color: ragToken(stats.eff).strong, ...numericText }} />
+        </div></Col>
       </Row>
 
       {tasks.length === 0 ? (

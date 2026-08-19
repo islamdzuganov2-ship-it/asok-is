@@ -20,7 +20,7 @@ import type { RootState } from '../store';
 import { MOCK_INCIDENTS, computeIncidentAnalytics, computeTriggeredRisks } from '../data/mockIncidents';
 import { RAG, BRAND, ACCENT, solidTagStyle } from '../theme/ragPalette';
 import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
-import { numericColumn, sorterFor } from '../theme/table';
+import { numericColumn, numericText, sorterFor } from '../theme/table';
 import { fmtMoney } from '../utils/money';
 import type { WidgetDef } from './DashboardShell';
 
@@ -82,6 +82,15 @@ const RiskKpiWidget: React.FC = () => {
   const releaseShare = a ? Math.round(a.releaseInducedShare || 0) : 0;
   // П.2 (второй заход): плитки теперь кликабельны — ведут на «Аналитику сбоев», «Доля
   // релизных» — сразу с фильтром по первопричине RELEASE.
+  //
+  // Выравнивание цифр (по фидбэку): раньше иконка и Statistic(заголовок+значение) стояли в
+  // одном Space по горизонтали — Space.align="center" центрировал иконку по высоте ВСЕГО
+  // блока «заголовок+значение», а не по строке значения. Заголовки разной длины («Открытые»
+  // против «Доля релизных, %») переносились по-разному, и значение у каждой плитки уезжало
+  // на свою высоту — цифры 9 / 2 / 5.9 / 22 не стояли на одной линии по ряду. Теперь заголовок
+  // с иконкой — отдельная строка фиксированной высоты (minHeight держит место под перенос),
+  // значение — отдельная строка НИЖЕ, всегда на одном уровне у всех плиток ряда,
+  // + табличные цифры (numericText), как и в остальном приложении.
   const tile = (title: string, value: React.ReactNode, icon: React.ReactNode, tone: string, to?: string) => (
     <Col xs={12} md={6}>
       <Card
@@ -90,14 +99,16 @@ const RiskKpiWidget: React.FC = () => {
         onClick={to ? () => navigate(to) : undefined}
         styles={{ body: { padding: SPACE.base, cursor: to ? 'pointer' : undefined } }}
       >
-        <Space align="center" size={SPACE.cozy}>
+        <Space align="start" size={SPACE.cozy} style={{ width: '100%', minHeight: 36, marginBottom: SPACE.tight }}>
           <span style={{
-            width: 38, height: 38, borderRadius: 10, background: `${tone}1A`, color: tone,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flex: '0 0 auto',
+            width: 32, height: 32, borderRadius: 9, background: `${tone}1A`, color: tone,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flex: '0 0 auto',
           }}>{icon}</span>
-          <Statistic title={<Text type="secondary" style={TYPE.caption}>{title}</Text>} value={value as any}
-            valueStyle={{ color: BRAND.ink, fontSize: TYPE.metricSm.fontSize, fontWeight: 700 }} />
+          <Text type="secondary" style={{ ...TYPE.caption, lineHeight: 1.3 }}>{title}</Text>
         </Space>
+        <div style={{ color: BRAND.ink, fontSize: TYPE.metricSm.fontSize, fontWeight: 700, ...numericText }}>
+          {value}
+        </div>
       </Card>
     </Col>
   );
