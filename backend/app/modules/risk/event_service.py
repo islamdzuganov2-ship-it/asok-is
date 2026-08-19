@@ -22,13 +22,17 @@ from app.modules.risk.event_schemas import (
     HeatmapCellMeasureOut,
     HeatmapCellRiskOut,
     HeatmapMoneyCellOut,
+    IncidentLinkDetailOut,
+    MeasureLinkDetailOut,
     MeasureLinkIn,
     PortfolioRiskSummaryOut,
     RiskEventCreate,
+    RiskEventLinksOut,
     RiskEventUpdate,
     RiskMeasureChainMeasureOut,
     RiskMeasureChainRowOut,
     SubcharLinkIn,
+    SubcharLinkOut,
 )
 from app.modules.risk.models import (
     RISK_EVENT_ACTIVE,
@@ -150,6 +154,72 @@ async def linked_incidents(db: AsyncSession, event_id: uuid.UUID) -> list[TechIn
     if not ids:
         return []
     return list((await db.execute(select(TechIncident).where(TechIncident.id.in_(ids)))).scalars().all())
+
+
+async def get_links(db: AsyncSession, event_id: uuid.UUID) -> RiskEventLinksOut:
+    """Карточка взаимосвязи ТС-мера-экономика-качество (БТ-322) — все три связи риска одним
+    запросом каждая, с деталями для отображения (не голыми id)."""
+    await get_or_404(db, event_id)
+
+    subchar_rows = (await db.execute(select(RiskEventSubchar).where(
+        RiskEventSubchar.risk_event_id == event_id,
+    ))).scalars().all()
+
+    incident_rows = (await db.execute(
+        select(RiskEventIncident, TechIncident)
+        .join(TechIncident, TechIncident.id == RiskEventIncident.incident_id)
+        .where(RiskEventIncident.risk_event_id == event_id)
+    )).all()
+
+    measure_rows = (await db.execute(
+        select(RiskEventMeasure, Proposal)
+        .join(Proposal, Proposal.id == RiskEventMeasure.proposal_id)
+        .where(RiskEventMeasure.risk_event_id == event_id)
+    )).all()
+
+    return RiskEventLinksOut(
+        subchars=[SubcharLinkOut.model_validate(s) for s in subchar_rows],
+        incidents=[
+            IncidentLinkDetailOut(
+                id=link.id, incident_id=inc.id, title=inc.title, system_name=inc.system_name,
+                occurred_at=inc.occurred_at,
+                cost_total=float(inc.cost_total) if inc.cost_total is not None else None,
+            )
+            for link, inc in incident_rows
+        ],
+        measures=[
+            MeasureLinkDetailOut(
+                id=link.id, proposal_id=p.id, title=p.risk_title or p.metric_name or "Мера",
+                status=p.status,
+                ale_reduction_share=float(link.ale_reduction_share) if link.ale_reduction_share is not None else None,
+            )
+            for link, p in measure_rows
+        ],
+    )
+
+
+async def unlink_subchar(db: AsyncSession, event_id: uuid.UUID, link_id: uuid.UUID) -> None:
+    link = await db.get(RiskEventSubchar, link_id)
+    if link is None or link.risk_event_id != event_id:
+        raise NotFoundError("Связь с подхарактеристикой не найдена")
+    await db.delete(link)
+    await db.commit()
+
+
+async def unlink_incident(db: AsyncSession, event_id: uuid.UUID, link_id: uuid.UUID) -> None:
+    link = await db.get(RiskEventIncident, link_id)
+    if link is None or link.risk_event_id != event_id:
+        raise NotFoundError("Связь с техсбоем не найдена")
+    await db.delete(link)
+    await db.commit()
+
+
+async def unlink_measure(db: AsyncSession, event_id: uuid.UUID, link_id: uuid.UUID) -> None:
+    link = await db.get(RiskEventMeasure, link_id)
+    if link is None or link.risk_event_id != event_id:
+        raise NotFoundError("Связь с мерой не найдена")
+    await db.delete(link)
+    await db.commit()
 
 
 # ═══════════════════════ Пересчёт ALE (RE-09) ═══════════════════════

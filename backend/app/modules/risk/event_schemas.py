@@ -103,6 +103,31 @@ class MeasureLinkOut(_CamelModel):
     ale_reduction_share: float | None = None
 
 
+# ── Карточка взаимосвязи ТС-мера-экономика-качество (БТ-322): все связи риска одним запросом,
+# с деталями (не голыми id) — иначе фронту пришлось бы дозапрашивать заголовки сбоев/мер отдельно. ──
+class IncidentLinkDetailOut(_CamelModel):
+    id: uuid.UUID              # id связи (для отвязки)
+    incident_id: uuid.UUID
+    title: str
+    system_name: str
+    occurred_at: datetime
+    cost_total: float | None = None
+
+
+class MeasureLinkDetailOut(_CamelModel):
+    id: uuid.UUID              # id связи (для отвязки)
+    proposal_id: uuid.UUID
+    title: str
+    status: str
+    ale_reduction_share: float | None = None
+
+
+class RiskEventLinksOut(_CamelModel):
+    subchars: list[SubcharLinkOut]
+    incidents: list[IncidentLinkDetailOut]
+    measures: list[MeasureLinkDetailOut]
+
+
 class AleResultOut(_CamelModel):
     """Результат пересчёта годовой стоимости риска (RE-09)."""
     risk_event_id: uuid.UUID

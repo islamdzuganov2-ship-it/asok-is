@@ -35,6 +35,8 @@ class TechIncidentOut(_CamelModel):
     source: str
     created_by: str | None = None
     created_at: datetime | None = None
+    # RE-07: стоимость единичной реализации (C_ТС) — считается движком econ, кэшируется на записи.
+    cost_total: float | None = None
 
 
 class TechIncidentCreate(_CamelModel):

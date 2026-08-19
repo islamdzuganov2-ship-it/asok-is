@@ -33,6 +33,7 @@ import { selectVisibleProposals } from '../../store/slices/governanceSlice';
 import { MOCK_INCIDENTS, INCIDENT_CATEGORIES, computeIncidentAnalytics } from '../../data/mockIncidents';
 import { premiumCard, pageContainer, pageTitle, accentDot, accentColorOf, SPACE, TYPE } from '../../theme/premium';
 import CollapsibleCard from '../../components/CollapsibleCard';
+import { fmtMoney } from '../../utils/money';
 import KpiCard from '../../components/KpiCard';
 import { BRAND, RAG, solidTagStyle, ACCENT } from '../../theme/ragPalette';
 import { useChartTokens } from '../../theme/useThemeTokens';
@@ -407,6 +408,9 @@ const IncidentsAnalyticsPage: React.FC = () => {
                             <Col span={12}><Text type="secondary">MTTR: </Text><Text strong>{(() => { const m = mttrHours(selectedIncident); return m === null ? '—' : `${m} ч`; })()}</Text></Col>
                             <Col span={12}><Text type="secondary">Возник: </Text>{fmtDate(selectedIncident.occurredAt)}</Col>
                             <Col span={12}><Text type="secondary">Восстановлен: </Text>{fmtDate(selectedIncident.resolvedAt)}</Col>
+                            {/* RE-07: экономика этого ТС — стоимость единичной реализации, тот же C_ТС,
+                                что складывается в ALE рискового события на риск-экономическом контуре. */}
+                            <Col span={12}><Text type="secondary">Стоимость (C_ТС): </Text><Text strong>{fmtMoney(selectedIncident.costTotal)}</Text></Col>
                             {selectedIncident.releaseRef && <Col span={24}><Text type="secondary">Релиз/версия: </Text>{selectedIncident.releaseRef}</Col>}
                         </Row>
                         {selectedIncident.category === 'OTHER' && selectedIncident.categoryCustom && (
