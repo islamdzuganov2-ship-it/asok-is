@@ -22,10 +22,12 @@ import {
     SafetyCertificateOutlined,
     ApartmentOutlined,
     SlidersOutlined,
+    ArrowLeftOutlined,
+    SearchOutlined,
     // ExperimentOutlined — под развитие: иконка пункта «Оценка СИИ» (пока не выведен в меню).
 } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { RootState } from '../store';
 import { useAppDispatch } from '../store/hooks';
 import { logout, setPermissions } from '../store/slices/authSlice';
@@ -34,6 +36,7 @@ import { syncProposals } from '../store/slices/governanceSlice';
 import { useGetMyPermissionsQuery, useGetMandatorySectionsQuery } from '../store/api/apiSlice';
 import { roleLabel } from '../constants/roles';
 import NotificationBell from './NotificationBell';
+import CommandPalette from './CommandPalette';
 import { PREMIUM, GOLD, TYPE, SPACE } from '../theme/premium';
 import { BRAND } from '../theme/ragPalette';
 
@@ -55,11 +58,29 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const [collapsed, setCollapsed] = useState(false);
+    // ТЗ v21 §4: командная строка Ctrl+K/⌘K — глобальный слушатель, не завязан на конкретную
+    // страницу (доступна из любого раздела, не только кокпитов).
+    const [paletteOpen, setPaletteOpen] = useState(false);
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                setPaletteOpen((v) => !v);
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
     const navigate = useNavigate();
     const location = useLocation();
     const dispatch = useAppDispatch();
     const { role, fullName, permissions, permissionsLoaded } = useSelector((state: RootState) => state.auth);
     const dataMode = useSelector((state: RootState) => state.ui.dataMode);
+    const isCockpitRoute = location.pathname === '/dashboard/ceo' || location.pathname === '/dashboard/cto';
+    // ТЗ v21 §7.5: возврат с L3 на кокпит. Признак — `?from=cockpit&role=ceo|cto` в адресе
+    // (проставляется ссылками из кокпита, см. ExecCockpit «Полная картина» и плитки Detail).
+    const [searchParams] = useSearchParams();
+    const fromCockpitRole = searchParams.get('from') === 'cockpit' ? searchParams.get('role') : null;
     // Переключатели опциональных дашбордов из «Настройка» (ТЗ v17, req 5).
     const hiddenSections = useSelector((state: RootState) => state.ui.hiddenSections);
     const navOrder = useSelector((state: RootState) => state.ui.navOrder);
@@ -173,8 +194,20 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         'view.my_tasks': <ScheduleOutlined />,
         'view.dashboard.risk_radar': <AlertOutlined />,
     };
-    const mi = (key: string, icon: React.ReactNode, label: string) => ({ key, icon, label });
-    const group = (label: string, children: Array<{ key: string; icon: React.ReactNode; label: string }>) =>
+    // ТЗ v21 §8.1: вторая строка — вопрос, на который отвечает раздел («разделы отвечают на
+    // вопросы», не описывают артефакт). В свёрнутом сайдбаре вторая строка не рендерится —
+    // вопрос уходит в title (подсказка antd Menu при наведении на свёрнутый пункт).
+    const mi = (key: string, icon: React.ReactNode, label: string, question?: string) => ({
+        key, icon,
+        label: collapsed || !question ? label : (
+            <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.15 }}>
+                <span>{label}</span>
+                <span style={{ ...TYPE.micro, fontWeight: 400, opacity: 0.6 }}>{question}</span>
+            </span>
+        ),
+        title: question ? `${label} — ${question}` : label,
+    });
+    const group = (label: string, children: Array<{ key: string; icon: React.ReactNode; label: React.ReactNode }>) =>
         children.length ? [{ type: 'group' as const, label: collapsed ? undefined : groupLabel(label), children }] : [];
 
     const orderIndex = (perm: string) => {
@@ -185,7 +218,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         .filter((sec) => sec.group === groupName && has(sec.perm))
         .slice()
         .sort((a, b) => orderIndex(a.perm) - orderIndex(b.perm))
-        .map((sec) => mi(ROUTE_BY_PERM[sec.perm], ICON_BY_PERM[sec.perm], sec.label));
+        .map((sec) => mi(ROUTE_BY_PERM[sec.perm], ICON_BY_PERM[sec.perm], sec.label, sec.question));
 
     const mainItems = itemsOfGroup('Основное');
     const dataItems = itemsOfGroup('Сбор и анализ данных');
@@ -269,18 +302,26 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                         Система оценки качества
                     </Title>
                     <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.base, minWidth: 0, flex: '0 1 auto' }}>
-                        <Tooltip title={`${llmStatusText}. Переключатель источника данных дашбордов.`}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.snug, flex: '0 0 auto' }}>
-                                <Badge color={llmStatusColor} />
-                                <RobotOutlined style={{ color: dataMode === 'live' ? BRAND.ink : BRAND.inkSoft }} />
-                                <Text type="secondary" className="header-mode-label" style={TYPE.caption}>Демо</Text>
-                                <Switch
-                                    size="small"
-                                    checked={dataMode === 'live'}
-                                    onChange={(v) => dispatch(setDataMode(v ? 'live' : 'mock'))}
-                                />
-                                <Text type="secondary" className="header-mode-label" style={TYPE.caption}>LLM</Text>
-                            </div>
+                        {/* ТЗ v21 §9.1: на кокпитах CEO/CTO тумблер убран из шапки — рядом с ним стоит
+                            сумма в рублях, и случайное переключение во время демонстрации правлению
+                            меняло бы её без предупреждения (кокпит всегда на живых данных). */}
+                        {!isCockpitRoute && (
+                            <Tooltip title={`${llmStatusText}. Переключатель источника данных дашбордов.`}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.snug, flex: '0 0 auto' }}>
+                                    <Badge color={llmStatusColor} />
+                                    <RobotOutlined style={{ color: dataMode === 'live' ? BRAND.ink : BRAND.inkSoft }} />
+                                    <Text type="secondary" className="header-mode-label" style={TYPE.caption}>Демо</Text>
+                                    <Switch
+                                        size="small"
+                                        checked={dataMode === 'live'}
+                                        onChange={(v) => dispatch(setDataMode(v ? 'live' : 'mock'))}
+                                    />
+                                    <Text type="secondary" className="header-mode-label" style={TYPE.caption}>LLM</Text>
+                                </div>
+                            </Tooltip>
+                        )}
+                        <Tooltip title="Поиск (Ctrl+K)">
+                            <Button type="text" icon={<SearchOutlined />} onClick={() => setPaletteOpen(true)} />
                         </Tooltip>
                         <NotificationBell />
                         <Dropdown menu={userMenu} placement="bottomRight">
@@ -296,9 +337,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     </div>
                 </Header>
                 <Content style={{ margin: 0, background: 'transparent', padding: 24, minHeight: 'calc(100vh - 64px)' }}>
+                    {fromCockpitRole && (fromCockpitRole === 'ceo' || fromCockpitRole === 'cto') && (
+                        <Button
+                            type="link" icon={<ArrowLeftOutlined />} style={{ paddingLeft: 0, marginBottom: SPACE.snug }}
+                            onClick={() => navigate(`/dashboard/${fromCockpitRole}`)}
+                        >
+                            К кокпиту
+                        </Button>
+                    )}
                     {children}
                 </Content>
             </Layout>
+            <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
         </Layout>
     );
 };

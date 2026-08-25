@@ -33,6 +33,7 @@ from app.modules.governance.schemas import (
     MeasureEconomicsIn,
     MeasureEconomicsResult,
     MetaIn,
+    OverdueSummaryOut,
     PortfolioEffectCurveOut,
     PriceHistoryOut,
     PriceOfInactionOut,
@@ -85,10 +86,21 @@ async def create_proposal(
 # имеет значение для литеральных путей против path-параметров, см. risk/event_router.py /by-cell).
 @router.get("/proposals/effect-curve", response_model=PortfolioEffectCurveOut)
 async def get_portfolio_effect_curve(
+    system_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("view.risk_economics")),
 ):
-    return await economics_service.portfolio_effect_curve(db)
+    return await economics_service.portfolio_effect_curve(db, system_id=system_id)
+
+
+@router.get("/proposals/overdue-summary", response_model=OverdueSummaryOut)
+async def get_overdue_summary(
+    system_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("view.risk_economics")),
+):
+    """Просрочка и Ц_ОМ портфельно (плитка CEO «Держим ли мы слово?», ТЗ v21 КП-13)."""
+    return await economics_service.overdue_summary(db, system_id=system_id)
 
 
 @router.post("/proposals/{pid}/approve", response_model=ProposalOut)

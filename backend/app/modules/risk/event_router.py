@@ -93,10 +93,11 @@ async def get_risk_measure_chain(
 
 @router.get("/portfolio-summary", response_model=PortfolioRiskSummaryOut)
 async def get_portfolio_risk_summary(
+    system_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ):
-    return await service.portfolio_risk_summary(db)
+    return await service.portfolio_risk_summary(db, system_id=system_id)
 
 
 @router.get("/{event_id}", response_model=RiskEventOut)

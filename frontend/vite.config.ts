@@ -19,7 +19,12 @@ export default defineConfig({
     // Ведущая точка матчит и сам домен, и его поддомены (asok.asokis.ai и т.п.).
     allowedHosts: ['localhost', '127.0.0.1', '.asokis.ai', '.trycloudflare.com', '.ngrok-free.app', '.ngrok-free.dev', '.ngrok.app'],
     watch: {
-      usePolling: false,
+      // На Docker Desktop for Windows чейнджи bind-mount не всегда доходят до chokidar через
+      // нативные fs-события — HMR тихо перестаёт видеть правки (сервер отдаёт старый
+      // трансформированный модуль, хотя файл на диске уже другой). Опция включается только по
+      // явному флагу окружения — поведение по умолчанию (Linux-хосты, где нативные события
+      // работают) не меняется.
+      usePolling: process.env.VITE_WATCH_POLLING === 'true',
     },
     // Относительный /api проксируется на бэкенд → один источник (same-origin),
     // поэтому приложение работает одинаково и на localhost, и по публичной ссылке,

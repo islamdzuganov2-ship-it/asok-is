@@ -1,11 +1,23 @@
 /**
- * CtoDashboard.tsx (BL-008) — основной дашборд роли CTO.
- * Пока стартует как общий управленческий дашборд; конкретный состав виджетов CTO будет
- * описан и наполнен отдельно (в т.ч. через персональную настройку виджетов, Фаза 4).
+ * CtoDashboard.tsx (ТЗ v21 §6) — кокпит CTO: очередь решений и надёжность ИТ-ландшафта.
+ * Полная лента виджетов (прежний контур) остаётся доступна по ссылке «Полная картина» (§11.1).
  */
 import React from 'react';
-import ExecutiveDashboard from './ExecutiveDashboard';
+import { FundOutlined } from '@ant-design/icons';
+import ExecCockpit from '../../dashboards/cockpit/ExecCockpit';
+import { CTO_TILES } from '../../dashboards/cockpit/ctoTiles';
+import { GOLD } from '../../theme/premium';
 
-const CtoDashboard: React.FC = () => <ExecutiveDashboard />;
+const CtoDashboard: React.FC = () => (
+  <ExecCockpit
+    dashboardKey="cto-cockpit"
+    title="Кокпит CTO"
+    icon={<FundOutlined style={{ color: GOLD.base, marginRight: 8 }} />}
+    tiles={CTO_TILES}
+    defaultLens="score"
+    fullPictureHref="/dashboard/executive"
+    role="cto"
+  />
+);
 
 export default CtoDashboard;

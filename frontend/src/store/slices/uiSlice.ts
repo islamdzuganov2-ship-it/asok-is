@@ -36,21 +36,21 @@ function loadFontKey(): string {
  * доступно по матрице. Ключ раздела совпадает с ключом права — связь «право → тумблер»
  * видна без отдельной таблицы соответствий.
  */
-export const NAV_SECTIONS: ReadonlyArray<{ perm: string; label: string; group: string }> = [
-  { perm: 'view.dashboard.cto', label: 'Дашборд CTO', group: 'Основное' },
-  { perm: 'view.dashboard.ceo', label: 'Дашборд CEO', group: 'Основное' },
-  { perm: 'view.dashboard.manager', label: 'Основное', group: 'Основное' },
-  { perm: 'view.dashboard.risk', label: 'Основное — риск', group: 'Основное' },
-  { perm: 'view.dashboard.analytics', label: 'Аналитический дашборд', group: 'Основное' },
-  { perm: 'view.dashboard.dynamics', label: 'Динамика качества', group: 'Основное' },
-  { perm: 'view.assessments', label: 'Внесение данных', group: 'Сбор и анализ данных' },
-  { perm: 'view.dashboard.incidents', label: 'Аналитика сбоев', group: 'Сбор и анализ данных' },
-  { perm: 'view.risks', label: 'База рисков', group: 'Сбор и анализ данных' },
-  { perm: 'view.risk_economics', label: 'Риск-экономика', group: 'Сбор и анализ данных' },
-  { perm: 'view.reports', label: 'Отчёты', group: 'Сбор и анализ данных' },
-  { perm: 'view.dashboard.taskplan', label: 'План задач', group: 'Формирование техдолга' },
-  { perm: 'view.my_tasks', label: 'Мои задачи', group: 'Формирование техдолга' },
-  { perm: 'view.dashboard.risk_radar', label: 'Риск-радар', group: 'Формирование техдолга' },
+export const NAV_SECTIONS: ReadonlyArray<{ perm: string; label: string; group: string; question: string }> = [
+  { perm: 'view.dashboard.cto', label: 'Дашборд CTO', group: 'Основное', question: 'Что требует моего решения?' },
+  { perm: 'view.dashboard.ceo', label: 'Дашборд CEO', group: 'Основное', question: 'Сколько нам это стоит и что требует подписи?' },
+  { perm: 'view.dashboard.manager', label: 'Основное', group: 'Основное', question: 'Где просело и что предложить?' },
+  { perm: 'view.dashboard.risk', label: 'Основное — риск', group: 'Основное', question: 'Что мы уже знаем о своих рисках?' },
+  { perm: 'view.dashboard.analytics', label: 'Аналитический дашборд', group: 'Основное', question: 'Что показывают цифры за период?' },
+  { perm: 'view.dashboard.dynamics', label: 'Динамика качества', group: 'Основное', question: 'Куда движемся?' },
+  { perm: 'view.assessments', label: 'Внесение данных', group: 'Сбор и анализ данных', question: 'Откуда берутся цифры?' },
+  { perm: 'view.dashboard.incidents', label: 'Аналитика сбоев', group: 'Сбор и анализ данных', question: 'Насколько мы надёжны?' },
+  { perm: 'view.risks', label: 'База рисков', group: 'Сбор и анализ данных', question: 'Что мы уже знаем о своих рисках?' },
+  { perm: 'view.risk_economics', label: 'Риск-экономика', group: 'Сбор и анализ данных', question: 'Во что это превращается в рублях?' },
+  { perm: 'view.reports', label: 'Отчёты', group: 'Сбор и анализ данных', question: 'Что выгрузить наружу?' },
+  { perm: 'view.dashboard.taskplan', label: 'План задач', group: 'Формирование техдолга', question: 'Что и когда должно быть сделано?' },
+  { perm: 'view.my_tasks', label: 'Мои задачи', group: 'Формирование техдолга', question: 'Что поручено лично мне?' },
+  { perm: 'view.dashboard.risk_radar', label: 'Риск-радар', group: 'Формирование техдолга', question: 'Что может произойти?' },
 ];
 
 /** Скрытые пользователем разделы. Храним именно СКРЫТЫЕ, чтобы новый раздел из релиза

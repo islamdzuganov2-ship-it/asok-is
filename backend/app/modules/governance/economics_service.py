@@ -11,6 +11,7 @@ governance оставался лёгким и без циклов с risk (risk.
 from __future__ import annotations
 
 import math
+import uuid
 from datetime import date as date_cls, datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -38,6 +39,9 @@ from app.modules.governance.schemas import (
     EffectTimelineOut,
     MeasureEconomicsIn,
     MeasureEconomicsResult,
+    OverdueSummaryItemOut,
+    OverdueSummaryOut,
+    OverdueSummaryOwnerStatOut,
     PortfolioEffectCurveOut,
     PriceOfInactionOut,
     QuarterEffectPointOut,
@@ -266,6 +270,66 @@ async def compute_price_of_inaction(db: AsyncSession, p: Proposal) -> PriceOfIna
     )
 
 
+async def overdue_summary(db: AsyncSession, *, system_id: uuid.UUID | None = None) -> OverdueSummaryOut:
+    """Просрочка и Ц_ОМ портфельно (ТЗ v21, КП-13) — плитка CEO «Держим ли мы слово?».
+
+    Ц_ОМ каждой меры уже посчитан и лежит на строке (`ale_at_risk_current`/`_snapshot`) — его
+    обновляет ежедневная задача `recompute_all_overdue_price_of_inaction`. Здесь только агрегация
+    уже посчитанного, без повторного вызова движка (§17.4 формула не пересчитывается заново)."""
+    from sqlalchemy import or_
+
+    from app.modules.governance.models import EXECUTION_DONE, STATUS_APPROVED
+
+    stmt = select(Proposal).where(
+        Proposal.status == STATUS_APPROVED,
+        or_(Proposal.execution.is_(None), Proposal.execution != EXECUTION_DONE),
+        Proposal.due_on.is_not(None),
+        Proposal.due_on < _now(),
+    )
+    if system_id is not None:
+        stmt = stmt.where(Proposal.system_id == system_id)
+    overdue = list((await db.execute(stmt)).scalars().all())
+
+    now = _now()
+    items: list[OverdueSummaryItemOut] = []
+    total_current = 0.0
+    total_snapshot = 0.0
+    by_owner_acc: dict[str, dict[str, float]] = {}
+    for p in overdue:
+        current = float(p.ale_at_risk_current) if p.ale_at_risk_current is not None else (
+            float(p.ale_at_risk_snapshot) if p.ale_at_risk_snapshot is not None else 0.0
+        )
+        total_current += current
+        total_snapshot += float(p.ale_at_risk_snapshot or 0)
+        owner_key = p.owner or "не назначен"
+        row = by_owner_acc.setdefault(owner_key, {"count": 0, "price": 0.0})
+        row["count"] += 1
+        row["price"] += current
+        items.append(OverdueSummaryItemOut(
+            proposal_id=p.id,
+            title=p.risk_title or p.characteristic or "Мера качества",
+            system_name=p.system_name,
+            owner=p.owner,
+            overdue_days=max(0, (now - p.due_on).days) if p.due_on else 0,
+            price_current=round(current, 2),
+            escalated=bool(p.escalated),
+        ))
+
+    items.sort(key=lambda i: i.price_current or 0, reverse=True)
+    by_owner = [
+        OverdueSummaryOwnerStatOut(owner=k, count=int(v["count"]), price=round(v["price"], 2))
+        for k, v in by_owner_acc.items()
+    ]
+    return OverdueSummaryOut(
+        overdue_count=len(overdue),
+        owners_affected=len(by_owner_acc),
+        total_price_current=round(total_current, 2),
+        total_price_snapshot=round(total_snapshot, 2),
+        by_owner=by_owner,
+        items=items,
+    )
+
+
 async def recompute_all_overdue_price_of_inaction(db: AsyncSession) -> int:
     """Ежедневный пересчёт Ц_ОМ по всем просроченным мерам (§17.4, УК-49) — вызывается фоновой
     задачей `governance/tasks.py`. Возвращает число просроченных карточек, по которым посчитано."""
@@ -399,14 +463,18 @@ def effect_timeline(p: Proposal, horizon_quarters: int = 8) -> EffectTimelineOut
     )
 
 
-async def portfolio_effect_curve(db: AsyncSession, horizon_quarters: int = 8) -> PortfolioEffectCurveOut:
+async def portfolio_effect_curve(
+    db: AsyncSession, horizon_quarters: int = 8, *, system_id: uuid.UUID | None = None,
+) -> PortfolioEffectCurveOut:
     """Портфельно: «когда придут деньги» — Σ квартальных чистых эффектов по всем одобренным
     мерам с определённой датой старта, накопительно. CAPEX меры учитывается один раз, в
     квартале ЕЁ старта, не размазывается — иначе кривая соврала бы о том, когда деньги
-    ФАКТИЧЕСКИ уходят."""
-    proposals = (await db.execute(
-        select(Proposal).where(Proposal.status == STATUS_APPROVED)
-    )).scalars().all()
+    ФАКТИЧЕСКИ уходят. system_id — сквозной разрез (ТЗ v21); без параметра поведение не
+    меняется (КП-ПР-7)."""
+    stmt = select(Proposal).where(Proposal.status == STATUS_APPROVED)
+    if system_id is not None:
+        stmt = stmt.where(Proposal.system_id == system_id)
+    proposals = (await db.execute(stmt)).scalars().all()
 
     net_by_quarter: dict[str, float] = {}
     included = 0

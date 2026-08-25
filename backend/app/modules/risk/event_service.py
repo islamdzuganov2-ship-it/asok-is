@@ -460,13 +460,15 @@ async def risk_measure_chain(db: AsyncSession) -> list[RiskMeasureChainRowOut]:
     ]
 
 
-async def portfolio_risk_summary(db: AsyncSession) -> PortfolioRiskSummaryOut:
+async def portfolio_risk_summary(db: AsyncSession, *, system_id: uuid.UUID | None = None) -> PortfolioRiskSummaryOut:
     """УК-20: «под риском / покрыто выполненными мерами / остаточный / вложения / ожидаемый
     эффект». covered_by_done_measures — ТОЛЬКО execution=DONE (см. докстринг PortfolioRiskSummaryOut);
-    expected_effect — одобренные, но ещё не выполненные (эффект в будущем, не в прошлом)."""
-    risks = (await db.execute(
-        select(RiskEvent).where(RiskEvent.status == RISK_EVENT_ACTIVE)
-    )).scalars().all()
+    expected_effect — одобренные, но ещё не выполненные (эффект в будущем, не в прошлом).
+    system_id — сквозной разрез (ТЗ v21); без параметра поведение не меняется (КП-ПР-7)."""
+    stmt = select(RiskEvent).where(RiskEvent.status == RISK_EVENT_ACTIVE)
+    if system_id is not None:
+        stmt = stmt.where(RiskEvent.system_id == system_id)
+    risks = (await db.execute(stmt)).scalars().all()
     total_at_risk = round(sum(float(r.ale_avg or 0) for r in risks), 2)
     if not risks:
         return PortfolioRiskSummaryOut(

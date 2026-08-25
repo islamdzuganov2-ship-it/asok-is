@@ -29,14 +29,22 @@ from app.modules.systems.models import System
 UNASSIGNED = "Портфель (без ИС)"
 
 
-async def cost_dashboard(db: AsyncSession) -> CostDashboardOut:
-    events = list((await db.execute(
-        select(RiskEvent).where(RiskEvent.status == RISK_EVENT_ACTIVE)
-    )).scalars().all())
+async def cost_dashboard(db: AsyncSession, *, system_id=None) -> CostDashboardOut:
+    """system_id — сквозной разрез (ТЗ v21, КП-13): без параметра поведение не меняется
+    (вызов без аргументов возвращает то же, что и раньше — КП-ПР-7)."""
+    stmt = select(RiskEvent).where(RiskEvent.status == RISK_EVENT_ACTIVE)
+    if system_id is not None:
+        stmt = stmt.where(RiskEvent.system_id == system_id)
+    events = list((await db.execute(stmt)).scalars().all())
     subchars = list((await db.execute(select(RiskEventSubchar))).scalars().all())
     systems = {s.id: s.name for s in (await db.execute(select(System))).scalars().all()}
-    ncs = list((await db.execute(select(Nonconformity))).scalars().all())
-    incidents = list((await db.execute(select(TechIncident))).scalars().all())
+    nc_stmt = select(Nonconformity)
+    inc_stmt = select(TechIncident)
+    if system_id is not None:
+        nc_stmt = nc_stmt.where(Nonconformity.system_id == system_id)
+        inc_stmt = inc_stmt.where(TechIncident.system_id == system_id)
+    ncs = list((await db.execute(nc_stmt)).scalars().all())
+    incidents = list((await db.execute(inc_stmt)).scalars().all())
 
     def ale(e: RiskEvent) -> float:
         return float(e.ale_avg or 0)
