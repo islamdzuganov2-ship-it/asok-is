@@ -6,6 +6,7 @@
  * рекомендаций (grounding). Подключено к /api/v1/risks (CRUD + поиск).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Alert, Button, Form, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd';
 import { message } from '../theme/appMessage';
 import type { ColumnsType } from 'antd/es/table';
@@ -41,10 +42,13 @@ const SEVERITY_COLOR: Record<string, string> = {
 const SEVERITY_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
 const RiskBasePage: React.FC = () => {
+  // ТЗ v21 §4: переход из командной строки (Ctrl+K) приходит с ?q=<код риска> — сразу фильтруем,
+  // как RiskRadarPage уже делает для ?system=.
+  const [searchParams] = useSearchParams();
   const [risks, setRisks] = useState<Risk[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
@@ -155,6 +159,7 @@ const RiskBasePage: React.FC = () => {
       <Input.Search
         placeholder="Поиск по названию, описанию, коду, ключевым словам…"
         allowClear
+        defaultValue={search}
         style={{ maxWidth: 480 }}
         onSearch={setSearch}
       />

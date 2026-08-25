@@ -68,3 +68,35 @@ async def test_cost_dashboard_aggregates_portfolio(db_session):
     assert dash.blocking_count == 1
     # ALE по ИС — вся сумма на одной системе.
     assert dash.by_system[0].system == "ИС-Дашборд" and dash.by_system[0].ale == 4_000_000.0
+
+
+async def test_cost_dashboard_filters_by_criticality_and_characteristic(db_session):
+    """ТЗ v21 §10.4: criticality/characteristic — сквозной разрез, не только system_id."""
+    mc = System(name="ИС-Крит", criticality_class=CriticalityClass.MISSION_CRITICAL)
+    bo = System(name="ИС-Обычная", criticality_class=CriticalityClass.BUSINESS_OPERATIONAL)
+    db_session.add_all([mc, bo])
+    await db_session.commit()
+    await db_session.refresh(mc)
+    await db_session.refresh(bo)
+
+    re_mc = RiskEvent(code="CRIT-1", title="Риск MC", ale_avg=1_000_000, system_id=mc.id)
+    re_bo = RiskEvent(code="CRIT-2", title="Риск BO", ale_avg=500_000, system_id=bo.id)
+    db_session.add_all([re_mc, re_bo])
+    await db_session.commit()
+    db_session.add(RiskEventSubchar(risk_event_id=re_mc.id, characteristic="Надёжность",
+                                    subcharacteristic="Отказоустойчивость"))
+    db_session.add(RiskEventSubchar(risk_event_id=re_bo.id, characteristic="Переносимость",
+                                    subcharacteristic="Адаптируемость"))
+    await db_session.commit()
+
+    only_mc = await cost_dashboard(db_session, criticality=["MISSION CRITICAL"])
+    assert only_mc.portfolio_ale == 1_000_000.0 and only_mc.risks_count == 1
+
+    only_reliability = await cost_dashboard(db_session, characteristic="Надёжность")
+    assert only_reliability.portfolio_ale == 1_000_000.0 and only_reliability.risks_count == 1
+
+    both = await cost_dashboard(db_session, criticality=["BUSINESS OPERATIONAL"], characteristic="Надёжность")
+    assert both.risks_count == 0  # BO-система не имеет риска по «Надёжности»
+
+    everything = await cost_dashboard(db_session)
+    assert everything.portfolio_ale == 1_500_000.0 and everything.risks_count == 2

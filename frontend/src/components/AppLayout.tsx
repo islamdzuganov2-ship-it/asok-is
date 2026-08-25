@@ -155,8 +155,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     // щёлкал тумблер, и ничего не происходило. Персонализация — поверх RBAC, а не вместо:
     // право остаётся верхней границей.
     //
-    // ДЕФ-11 (БТ-038, T-25): группы названы как в ТЗ — «Основное», «Сбор и анализ данных»,
-    // «Формирование техдолга».
+    // ДЕФ-11 (БТ-038, T-25): изначально группы были названы как в ТЗ v15/v16 — «Основное»,
+    // «Сбор и анализ данных», «Формирование техдолга» (по типу артефакта). ТЗ v21 §8.2
+    // перегруппировал их по ГЛУБИНЕ раскрытия — «Моя картина» → «Разрезы» → «Работа с данными»
+    // (см. NAV_SECTIONS.group в uiSlice.ts) — состав пунктов внутри группы не изменился.
     // ДЕФ-14 (БТ-445): порядок внутри группы задаёт пользователь перетаскиванием; ключи, для
     // которых порядок не задан, идут следом в исходном порядке NAV_SECTIONS.
     //
@@ -220,9 +222,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         .sort((a, b) => orderIndex(a.perm) - orderIndex(b.perm))
         .map((sec) => mi(ROUTE_BY_PERM[sec.perm], ICON_BY_PERM[sec.perm], sec.label, sec.question));
 
-    const mainItems = itemsOfGroup('Основное');
-    const dataItems = itemsOfGroup('Сбор и анализ данных');
-    const techDebtItems = itemsOfGroup('Формирование техдолга');
+    const myPictureItems = itemsOfGroup('Моя картина');
+    const slicesItems = itemsOfGroup('Разрезы');
+    const dataItems = itemsOfGroup('Работа с данными');
     const adminItems = [
         ...(has('view.admin.users') ? [mi('/admin/users', <TeamOutlined />, 'Пользователи')] : []),
         ...(has('view.admin.permissions') ? [mi('/admin/permissions', <SafetyOutlined />, 'Права')] : []),
@@ -237,9 +239,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const settingsItems = has('view.settings') ? [mi('/admin/flags', <SettingOutlined />, 'Настройка')] : [];
 
     const menuItems = [
-        ...group('Основное', mainItems),
-        ...group('Сбор и анализ данных', dataItems),
-        ...group('Формирование техдолга', techDebtItems),
+        ...group('Моя картина', myPictureItems),
+        ...group('Разрезы', slicesItems),
+        ...group('Работа с данными', dataItems),
         ...group('Администрирование', adminItems),
         ...settingsItems,
     ];

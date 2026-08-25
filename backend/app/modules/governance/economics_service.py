@@ -270,12 +270,18 @@ async def compute_price_of_inaction(db: AsyncSession, p: Proposal) -> PriceOfIna
     )
 
 
-async def overdue_summary(db: AsyncSession, *, system_id: uuid.UUID | None = None) -> OverdueSummaryOut:
+async def overdue_summary(
+    db: AsyncSession, *,
+    system_id: list[uuid.UUID] | None = None,
+    criticality: list[str] | None = None,
+    characteristic: str | None = None,
+) -> OverdueSummaryOut:
     """Просрочка и Ц_ОМ портфельно (ТЗ v21, КП-13) — плитка CEO «Держим ли мы слово?».
 
     Ц_ОМ каждой меры уже посчитан и лежит на строке (`ale_at_risk_current`/`_snapshot`) — его
     обновляет ежедневная задача `recompute_all_overdue_price_of_inaction`. Здесь только агрегация
-    уже посчитанного, без повторного вызова движка (§17.4 формула не пересчитывается заново)."""
+    уже посчитанного, без повторного вызова движка (§17.4 формула не пересчитывается заново).
+    Сквозной разрез (ТЗ v21 §10.4): без параметров поведение не меняется (КП-ПР-7)."""
     from sqlalchemy import or_
 
     from app.modules.governance.models import EXECUTION_DONE, STATUS_APPROVED
@@ -287,8 +293,14 @@ async def overdue_summary(db: AsyncSession, *, system_id: uuid.UUID | None = Non
         Proposal.due_on < _now(),
     )
     if system_id is not None:
-        stmt = stmt.where(Proposal.system_id == system_id)
+        stmt = stmt.where(Proposal.system_id.in_(system_id))
+    if characteristic is not None:
+        stmt = stmt.where(Proposal.characteristic == characteristic)
     overdue = list((await db.execute(stmt)).scalars().all())
+    if criticality is not None:
+        systems = (await db.execute(select(System))).scalars().all()
+        crit_ids = {s.id for s in systems if s.criticality_class.value in criticality}
+        overdue = [p for p in overdue if p.system_id in crit_ids]
 
     now = _now()
     items: list[OverdueSummaryItemOut] = []
@@ -464,17 +476,26 @@ def effect_timeline(p: Proposal, horizon_quarters: int = 8) -> EffectTimelineOut
 
 
 async def portfolio_effect_curve(
-    db: AsyncSession, horizon_quarters: int = 8, *, system_id: uuid.UUID | None = None,
+    db: AsyncSession, horizon_quarters: int = 8, *,
+    system_id: list[uuid.UUID] | None = None,
+    criticality: list[str] | None = None,
+    characteristic: str | None = None,
 ) -> PortfolioEffectCurveOut:
     """Портфельно: «когда придут деньги» — Σ квартальных чистых эффектов по всем одобренным
     мерам с определённой датой старта, накопительно. CAPEX меры учитывается один раз, в
     квартале ЕЁ старта, не размазывается — иначе кривая соврала бы о том, когда деньги
-    ФАКТИЧЕСКИ уходят. system_id — сквозной разрез (ТЗ v21); без параметра поведение не
-    меняется (КП-ПР-7)."""
+    ФАКТИЧЕСКИ уходят. Сквозной разрез (ТЗ v21 §10.4): без параметров поведение не меняется
+    (КП-ПР-7)."""
     stmt = select(Proposal).where(Proposal.status == STATUS_APPROVED)
     if system_id is not None:
-        stmt = stmt.where(Proposal.system_id == system_id)
-    proposals = (await db.execute(stmt)).scalars().all()
+        stmt = stmt.where(Proposal.system_id.in_(system_id))
+    if characteristic is not None:
+        stmt = stmt.where(Proposal.characteristic == characteristic)
+    proposals = list((await db.execute(stmt)).scalars().all())
+    if criticality is not None:
+        systems = (await db.execute(select(System))).scalars().all()
+        crit_ids = {s.id for s in systems if s.criticality_class.value in criticality}
+        proposals = [p for p in proposals if p.system_id in crit_ids]
 
     net_by_quarter: dict[str, float] = {}
     included = 0

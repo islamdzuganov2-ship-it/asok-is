@@ -12,12 +12,15 @@ from app.modules.risk.models import (
     RiskEventMeasure,
     RiskEventSubchar,
 )
-from app.modules.risk.schemas import RiskBaseCreate, RiskBaseOut, RiskBaseUpdate
+from app.modules.risk.schemas import RiskBaseCreate, RiskBaseOut, RiskBaseUpdate, TriggeredRiskOut
 from app.modules.risk.service import (
     risks_for_characteristics,
     search_risks,
     semantic_search_risks,
+    triggered_risks,
 )
+from app.modules.risk.event_schemas import PortfolioRiskSummaryOut
+from app.modules.risk.event_service import portfolio_risk_summary
 
 __all__ = [
     "RiskBase",
@@ -27,9 +30,13 @@ __all__ = [
     "search_risks",
     "semantic_search_risks",
     "risks_for_characteristics",
+    "triggered_risks",
+    "TriggeredRiskOut",
     # BL-007 числовой контур риска (RE-08/09)
     "RiskEvent",
     "RiskEventSubchar",
     "RiskEventIncident",
     "RiskEventMeasure",
+    "portfolio_risk_summary",
+    "PortfolioRiskSummaryOut",
 ]

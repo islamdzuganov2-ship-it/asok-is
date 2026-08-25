@@ -1,10 +1,15 @@
 /**
  * ceoTiles.tsx — реестр плиток кокпита CEO (ТЗ v21 §5). Линза по умолчанию — 'ale'.
  *
- * Денежный слой — на живых данных modules/econ (заказчик подтвердил 25.08.2026). Портфельная
- * дельта (Δ к прошлому периоду) реализована только там, где история по периодам реально
- * существует (см. portfolio_trend_service.py); для ALE/замкнутости контура снимков по периодам
- * нет — плитки честно показывают текущее значение без Δ, а не выдуманную дельту (§7.3, §10.2).
+ * Денежный слой — на живых данных modules/econ (заказчик подтвердил 25.08.2026). Все шесть
+ * плиток читают ОДИН бандл (`useGetCockpitBundleQuery` — §10.5): RTK Query дедуплицирует
+ * одинаковые аргументы сам, поэтому шесть плиток с одним разрезом дают один сетевой запрос,
+ * а не шесть, и все дельты считаются от одной и той же точки отсчёта.
+ *
+ * Портфельная дельта (Δ к прошлому периоду) реализована только там, где история по периодам
+ * реально существует (см. portfolio_trend_service.py); для ALE/замкнутости контура снимков по
+ * периодам нет — плитки честно показывают текущее значение без Δ, а не выдуманную дельту
+ * (§7.3, §10.2).
  */
 import React from 'react';
 import { Table, Tag, Typography, Space } from 'antd';
@@ -12,50 +17,25 @@ import { Link } from 'react-router-dom';
 import { RightOutlined } from '@ant-design/icons';
 import type { CockpitTile, TileValue, Tone } from './types';
 import type { Slice } from '../../store/slice/sliceTypes';
-import { CRITICALITY_TO_CLASS } from '../../store/slice/sliceTypes';
-import { useCockpitFetch } from './useCockpitData';
-import { qs } from '../../utils/apiFetch';
+import { useGetCockpitBundleQuery } from '../../store/api/apiSlice';
+import { cockpitBundleArgs } from './bundleArgs';
+import { useSingleSystemName } from './useSliceSystemName';
 import { fmtMoney, fmtMoneyCompact } from '../../utils/money';
+
+/** `/dashboard/taskplan` уже читает `?characteristic=`/`?owner=`/`?status=` (ТЗ v20 п.1) —
+ * донашиваем текущий разрез, а не открываем план задач «с чистого листа» (ТЗ v21 §3.5). */
+function taskplanHref(slice: Slice, extra?: { status?: string }): string {
+  const p = new URLSearchParams({ from: 'cockpit', role: 'ceo' });
+  if (slice.characteristic) p.set('characteristic', slice.characteristic);
+  if (slice.owner) p.set('owner', slice.owner);
+  if (extra?.status) p.set('status', extra.status);
+  return `/dashboard/taskplan?${p.toString()}`;
+}
 
 const { Text } = Typography;
 
-interface CostDashboard {
-  portfolioAle: number; risksCount: number; nonconformitiesTotal: number; verified: number;
-  closureRate: number; blockingCount: number;
-  verdict: { eliminate: number; compensate: number; accept: number };
-  bySystem: { system: string; ale: number }[];
-}
-interface AcceptanceItem {
-  id: string; title: string; systemName: string | null; criticality: string | null; ale: number;
-  signer: string | null; waitingDays: number; slaDays: number; overdue: boolean; vetoes: string[];
-}
-interface AcceptanceQueue {
-  items: AcceptanceItem[];
-  bySigner: { signer: string; count: number; totalAle: number; overdue: number }[];
-  matrixApplied: { maxAle: number | null; signer: string }[];
-}
-interface PortfolioRiskSummary {
-  totalAtRisk: number; coveredByDoneMeasures: number; residualRisk: number;
-  requiredInvestment: number; expectedEffect: number; risksCount: number; measuresCount: number;
-}
-interface EffectCurve {
-  points: { quarterLabel: string; netCash: number; cumulative: number }[];
-  measuresIncluded: number; measuresExcludedNoStartDate: number;
-}
-interface OverdueItem {
-  proposalId: string; title: string; systemName: string | null; owner: string | null;
-  overdueDays: number; priceCurrent: number | null; escalated: boolean;
-}
-interface OverdueSummary {
-  overdueCount: number; ownersAffected: number; totalPriceCurrent: number; totalPriceSnapshot: number;
-  byOwner: { owner: string; count: number; price: number }[]; items: OverdueItem[];
-}
-
-function sysParam(slice: Slice): string | undefined {
-  return slice.systems.length === 1 ? slice.systems[0] : undefined;
-}
-function critParam(slice: Slice): string | undefined {
-  return slice.criticality.length === 1 ? CRITICALITY_TO_CLASS[slice.criticality[0]] : undefined;
+function useCeoBundle(slice: Slice) {
+  return useGetCockpitBundleQuery(cockpitBundleArgs('CEO', slice));
 }
 
 function l3Link(href: string, label: string) {
@@ -77,6 +57,12 @@ function detailTable<T>(rows: T[], columns: any[], empty: string, l3?: { href: s
   );
 }
 
+function loadErrorValue(isLoading: boolean, isError: boolean): TileValue | null {
+  if (isLoading) return { value: null, tone: 'neutral', subtitle: '', loading: true };
+  if (isError) return { value: null, tone: 'neutral', subtitle: '', empty: { reason: 'Не удалось получить данные кокпита' } };
+  return null;
+}
+
 // ── 5.1 «Сколько нам стоит текущее качество?» ──
 const CostTile: CockpitTile = {
   id: 'ceo-cost',
@@ -84,30 +70,27 @@ const CostTile: CockpitTile = {
   perm: 'view.risk_economics',
   defaultEnabled: true,
   useValue(slice): TileValue {
-    const { data, loading, error } = useCockpitFetch<CostDashboard>(
-      `/econ/dashboard${qs({ system_id: sysParam(slice) })}`,
-    );
-    if (loading) return { value: null, tone: 'neutral', subtitle: '', loading: true };
-    if (error || !data) {
-      return { value: null, tone: 'neutral', subtitle: '', empty: { reason: 'Не удалось получить данные econ/dashboard' } };
-    }
-    if (!data.risksCount) {
+    const { data, isLoading, isError } = useCeoBundle(slice);
+    const early = loadErrorValue(isLoading, isError);
+    if (early) return early;
+    const d = data!.costDashboard!;
+    if (!d.risksCount) {
       return {
         value: null, tone: 'neutral', subtitle: '',
         empty: { reason: 'Стоимость не рассчитана: нет активных рисковых событий с посчитанным ALE',
                 fixHref: '/risk-economics?from=cockpit&role=ceo', fixLabel: 'Открыть риск-экономику →' },
       };
     }
-    const tone: Tone = data.portfolioAle > 10_000_000 ? 'critical' : data.portfolioAle > 2_000_000 ? 'medium' : 'high';
+    const tone: Tone = d.portfolioAle > 10_000_000 ? 'critical' : d.portfolioAle > 2_000_000 ? 'medium' : 'high';
     return {
-      value: fmtMoneyCompact(data.portfolioAle), tone,
-      subtitle: `${data.risksCount} активных рисковых события в портфеле`,
+      value: fmtMoneyCompact(d.portfolioAle), tone,
+      subtitle: `${d.risksCount} активных рисковых события в портфеле`,
     };
   },
   Detail({ slice }) {
-    const { data } = useCockpitFetch<CostDashboard>(`/econ/dashboard${qs({ system_id: sysParam(slice) })}`);
+    const { data } = useCeoBundle(slice);
     return detailTable(
-      data?.bySystem ?? [],
+      data?.costDashboard?.bySystem ?? [],
       [
         { title: 'ИС', dataIndex: 'system' },
         { title: 'ALE, ₽/год', dataIndex: 'ale', render: (v: number) => fmtMoney(v) },
@@ -125,15 +108,14 @@ const AcceptanceTile: CockpitTile = {
   perm: 'view.risk_economics',
   defaultEnabled: true,
   useValue(slice): TileValue {
-    const { data, loading, error } = useCockpitFetch<AcceptanceQueue>(
-      `/econ/acceptance-queue${qs({ system_id: sysParam(slice), criticality: critParam(slice) })}`,
-    );
-    if (loading) return { value: null, tone: 'neutral', subtitle: '', loading: true };
-    if (error || !data) return { value: null, tone: 'neutral', subtitle: '', empty: { reason: 'Не удалось получить очередь по матрице акцепта' } };
-    const topSigner = data.matrixApplied.find((m) => m.maxAle === null)?.signer;
-    const boardItems = topSigner ? data.items.filter((i) => i.signer === topSigner) : [];
+    const { data, isLoading, isError } = useCeoBundle(slice);
+    const early = loadErrorValue(isLoading, isError);
+    if (early) return early;
+    const q = data!.acceptanceQueue!;
+    const topSigner = q.matrixApplied.find((m) => m.maxAle === null)?.signer;
+    const boardItems = topSigner ? q.items.filter((i) => i.signer === topSigner) : [];
     const overdue = boardItems.filter((i) => i.overdue).length;
-    if (!data.items.length) {
+    if (!q.items.length) {
       return { value: 0, tone: 'high', subtitle: 'Решений, ожидающих оценки, нет' };
     }
     return {
@@ -144,11 +126,9 @@ const AcceptanceTile: CockpitTile = {
     };
   },
   Detail({ slice }) {
-    const { data } = useCockpitFetch<AcceptanceQueue>(
-      `/econ/acceptance-queue${qs({ system_id: sysParam(slice), criticality: critParam(slice) })}`,
-    );
+    const { data } = useCeoBundle(slice);
     return detailTable(
-      data?.items ?? [],
+      data?.acceptanceQueue?.items ?? [],
       [
         { title: 'Предмет', dataIndex: 'title', ellipsis: true, width: 240 },
         { title: 'ИС', dataIndex: 'systemName' },
@@ -170,40 +150,40 @@ const RosiTile: CockpitTile = {
   perm: 'view.risk_economics',
   defaultEnabled: true,
   useValue(slice): TileValue {
-    const summaryPath = `/risk-events/portfolio-summary${qs({ system_id: sysParam(slice) })}`;
-    const curvePath = `/governance/proposals/effect-curve${qs({ system_id: sysParam(slice) })}`;
-    const s = useCockpitFetch<PortfolioRiskSummary>(summaryPath);
-    const c = useCockpitFetch<EffectCurve>(curvePath);
-    if (s.loading || c.loading) return { value: null, tone: 'neutral', subtitle: '', loading: true };
-    if (!s.data || !s.data.requiredInvestment) {
+    const { data, isLoading, isError } = useCeoBundle(slice);
+    const early = loadErrorValue(isLoading, isError);
+    if (early) return early;
+    const s = data!.portfolioSummary!;
+    const c = data!.effectCurve;
+    if (!s.requiredInvestment) {
       return {
         value: null, tone: 'neutral', subtitle: '',
-        empty: { reason: 'ROSI не считается: нет одобренных мер с вложениями', fixHref: '/dashboard/taskplan?from=cockpit&role=ceo', fixLabel: 'Открыть план задач →' },
+        empty: { reason: 'ROSI не считается: нет одобренных мер с вложениями', fixHref: taskplanHref(slice), fixLabel: 'Открыть план задач →' },
       };
     }
-    const rosi = (s.data.expectedEffect - s.data.requiredInvestment) / s.data.requiredInvestment;
-    const excluded = c.data?.measuresExcludedNoStartDate ?? 0;
+    const rosi = (s.expectedEffect - s.requiredInvestment) / s.requiredInvestment;
+    const excluded = c?.measuresExcludedNoStartDate ?? 0;
     return {
       value: `${rosi >= 0 ? '+' : ''}${Math.round(rosi * 100)}`,
       unit: '%',
       tone: rosi >= 0 ? 'high' : 'critical',
-      trend: c.data?.points.map((p) => p.cumulative),
+      trend: c?.points.map((p) => p.cumulative),
       subtitle: excluded
-        ? `${c.data?.measuresIncluded ?? 0} мер в расчёте · ${excluded} без даты старта не учтены`
-        : `${c.data?.measuresIncluded ?? 0} мер в расчёте`,
+        ? `${c?.measuresIncluded ?? 0} мер в расчёте · ${excluded} без даты старта не учтены`
+        : `${c?.measuresIncluded ?? 0} мер в расчёте`,
     };
   },
   Detail({ slice }) {
-    const { data } = useCockpitFetch<EffectCurve>(`/governance/proposals/effect-curve${qs({ system_id: sysParam(slice) })}`);
+    const { data } = useCeoBundle(slice);
     return detailTable(
-      data?.points ?? [],
+      data?.effectCurve?.points ?? [],
       [
         { title: 'Квартал', dataIndex: 'quarterLabel' },
         { title: 'Чистый эффект, ₽', dataIndex: 'netCash', render: (v: number) => fmtMoney(v) },
         { title: 'Накопительно, ₽', dataIndex: 'cumulative', render: (v: number) => fmtMoney(v) },
       ],
       'Нет мер с определённой датой старта',
-      { href: '/dashboard/taskplan?from=cockpit&role=ceo', label: 'План задач' },
+      { href: taskplanHref(slice), label: 'План задач' },
     );
   },
 };
@@ -215,27 +195,31 @@ const VulnerabilityTile: CockpitTile = {
   perm: 'view.risk_economics',
   defaultEnabled: true,
   useValue(slice): TileValue {
-    const { data, loading } = useCockpitFetch<PortfolioRiskSummary>(`/risk-events/portfolio-summary${qs({ system_id: sysParam(slice) })}`);
-    if (loading) return { value: null, tone: 'neutral', subtitle: '', loading: true };
-    if (!data || !data.risksCount) {
+    const { data, isLoading, isError } = useCeoBundle(slice);
+    const early = loadErrorValue(isLoading, isError);
+    if (early) return early;
+    const s = data!.portfolioSummary!;
+    if (!s.risksCount) {
       return { value: null, tone: 'neutral', subtitle: '', empty: { reason: 'Нет активных рисковых событий в портфеле' } };
     }
-    const tone: Tone = data.residualRisk > data.totalAtRisk * 0.7 ? 'critical' : data.residualRisk > data.totalAtRisk * 0.3 ? 'medium' : 'high';
+    const tone: Tone = s.residualRisk > s.totalAtRisk * 0.7 ? 'critical' : s.residualRisk > s.totalAtRisk * 0.3 ? 'medium' : 'high';
     return {
-      value: fmtMoneyCompact(data.residualRisk), tone,
-      subtitle: `покрыто выполненными мерами ${fmtMoneyCompact(data.coveredByDoneMeasures)} из ${fmtMoneyCompact(data.totalAtRisk)}`,
+      value: fmtMoneyCompact(s.residualRisk), tone,
+      subtitle: `покрыто выполненными мерами ${fmtMoneyCompact(s.coveredByDoneMeasures)} из ${fmtMoneyCompact(s.totalAtRisk)}`,
     };
   },
   Detail({ slice }) {
-    const { data } = useCockpitFetch<CostDashboard>(`/econ/dashboard${qs({ system_id: sysParam(slice) })}`);
+    const { data } = useCeoBundle(slice);
+    const sysName = useSingleSystemName(slice);
+    const radarHref = `/dashboard/risk-radar?from=cockpit&role=ceo${sysName ? `&system=${encodeURIComponent(sysName)}` : ''}`;
     return detailTable(
-      (data?.bySystem ?? []).slice(0, 5),
+      (data?.costDashboard?.bySystem ?? []).slice(0, 5),
       [
         { title: 'ИС', dataIndex: 'system' },
         { title: 'ALE, ₽/год', dataIndex: 'ale', render: (v: number) => fmtMoney(v) },
       ],
       'Нет данных',
-      { href: '/dashboard/risk-radar?from=cockpit&role=ceo', label: 'Риск-радар' },
+      { href: radarHref, label: 'Риск-радар' },
     );
   },
 };
@@ -247,26 +231,27 @@ const ClosureTile: CockpitTile = {
   perm: 'view.risk_economics',
   defaultEnabled: true,
   useValue(slice): TileValue {
-    const dash = useCockpitFetch<CostDashboard>(`/econ/dashboard${qs({ system_id: sysParam(slice) })}`);
-    const ov = useCockpitFetch<OverdueSummary>(`/governance/proposals/overdue-summary${qs({ system_id: sysParam(slice) })}`);
-    if (dash.loading || ov.loading) return { value: null, tone: 'neutral', subtitle: '', loading: true };
-    if (!dash.data || !dash.data.nonconformitiesTotal) {
+    const { data, isLoading, isError } = useCeoBundle(slice);
+    const early = loadErrorValue(isLoading, isError);
+    if (early) return early;
+    const dash = data!.costDashboard!;
+    const ov = data!.overdueSummary!;
+    if (!dash.nonconformitiesTotal) {
       return { value: null, tone: 'neutral', subtitle: '', empty: { reason: 'Нет зафиксированных несоответствий — замыкать пока нечего' } };
     }
-    const rate = dash.data.closureRate;
+    const rate = dash.closureRate;
     const tone: Tone = rate >= 75 ? 'high' : rate >= 50 ? 'medium' : 'critical';
-    const overdueCount = ov.data?.overdueCount ?? 0;
     return {
       value: rate, unit: '%', tone,
-      subtitle: overdueCount
-        ? `просрочено мер: ${overdueCount} · цена неисполнения ${fmtMoneyCompact(ov.data!.totalPriceCurrent)}`
+      subtitle: ov.overdueCount
+        ? `просрочено мер: ${ov.overdueCount} · цена неисполнения ${fmtMoneyCompact(ov.totalPriceCurrent)}`
         : 'Просроченных мер нет',
     };
   },
   Detail({ slice }) {
-    const { data } = useCockpitFetch<OverdueSummary>(`/governance/proposals/overdue-summary${qs({ system_id: sysParam(slice) })}`);
+    const { data } = useCeoBundle(slice);
     return detailTable(
-      data?.items ?? [],
+      data?.overdueSummary?.items ?? [],
       [
         { title: 'Мера', dataIndex: 'title', ellipsis: true, width: 240 },
         { title: 'Ответственный', dataIndex: 'owner' },
@@ -274,7 +259,7 @@ const ClosureTile: CockpitTile = {
         { title: 'Ц_ОМ, ₽', dataIndex: 'priceCurrent', render: (v: number | null) => fmtMoney(v) },
       ],
       'Просроченных мер нет',
-      { href: '/dashboard/taskplan?from=cockpit&role=ceo', label: 'План задач → просроченные' },
+      { href: taskplanHref(slice, { status: 'Просрочено' }), label: 'План задач → просроченные' },
     );
   },
 };
@@ -286,15 +271,17 @@ const RegulatorTile: CockpitTile = {
   perm: 'view.risk_economics',
   defaultEnabled: true,
   useValue(slice): TileValue {
-    const { data, loading } = useCockpitFetch<CostDashboard>(`/econ/dashboard${qs({ system_id: sysParam(slice) })}`);
-    if (loading) return { value: null, tone: 'neutral', subtitle: '', loading: true };
-    if (!data || !data.nonconformitiesTotal) {
+    const { data, isLoading, isError } = useCeoBundle(slice);
+    const early = loadErrorValue(isLoading, isError);
+    if (early) return early;
+    const d = data!.costDashboard!;
+    if (!d.nonconformitiesTotal) {
       return { value: 0, tone: 'high', subtitle: 'Незакрытых блокирующих несоответствий нет' };
     }
     return {
-      value: data.blockingCount, unit: 'шт.',
-      tone: data.blockingCount > 0 ? 'critical' : 'high',
-      subtitle: `принято рисков с подписью: ${data.verdict.accept}`,
+      value: d.blockingCount, unit: 'шт.',
+      tone: d.blockingCount > 0 ? 'critical' : 'high',
+      subtitle: `принято рисков с подписью: ${d.verdict.accept}`,
     };
   },
   Detail() {

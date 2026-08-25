@@ -13,7 +13,8 @@ const { Title, Text } = Typography;
 
 // Мини-превью «Аналитика сбоев» — донат первопричин + столбцы MTTR.
 
-const GROUPS = ['Основное', 'Сбор и анализ данных', 'Формирование техдолга'];
+// ТЗ v21 §8.2: группы меню по глубине раскрытия, тот же список, что строит AppLayout.
+const GROUPS = ['Моя картина', 'Разрезы', 'Работа с данными'];
 
 const AdminFlagsPage: React.FC = () => {
   const dispatch = useDispatch();

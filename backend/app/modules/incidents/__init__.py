@@ -10,6 +10,10 @@
 сервисные функции доступны соседним доменам (reporting/LLM) через этот фасад.
 """
 from app.modules.incidents.models import CATEGORIES, TechIncident
+from app.modules.incidents.schemas import IncidentAnalyticsOut
 from app.modules.incidents.service import analytics, list_incidents, triggering_characteristics
 
-__all__ = ["TechIncident", "CATEGORIES", "analytics", "list_incidents", "triggering_characteristics"]
+__all__ = [
+    "TechIncident", "CATEGORIES", "analytics", "list_incidents", "triggering_characteristics",
+    "IncidentAnalyticsOut",
+]

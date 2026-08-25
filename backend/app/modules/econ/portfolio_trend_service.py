@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.assessment import AssessmentPeriod, AssessmentValue
 from app.modules.econ.schemas import PortfolioTrendOut, TrendPointOut
 from app.modules.incidents import TechIncident
+from app.modules.systems import System
 from app.shared.periods import period_sort_key
 
 ANOMALY_THRESHOLD_PP = 12.0  # слайд 11 — тот же порог, что и для отдельной ИС
@@ -42,22 +43,34 @@ def _quarter_label(dt: datetime) -> str:
     return f"{dt.year}-Q{q}"
 
 
-async def _score_trend(db: AsyncSession, system_id: uuid.UUID | None, periods: int) -> PortfolioTrendOut:
+async def _criticality_system_ids(db: AsyncSession, criticality: list[str] | None) -> set[uuid.UUID] | None:
+    if not criticality:
+        return None
+    systems = (await db.execute(select(System))).scalars().all()
+    return {s.id for s in systems if s.criticality_class.value in criticality}
+
+
+async def _score_trend(
+    db: AsyncSession, system_id: list[uuid.UUID] | None, criticality: list[str] | None, periods: int,
+) -> PortfolioTrendOut:
     stmt = (
-        select(AssessmentPeriod.period, AssessmentValue.calculated_x)
+        select(AssessmentPeriod.period, AssessmentValue.calculated_x, AssessmentPeriod.system_id)
         .join(AssessmentValue, AssessmentValue.period_id == AssessmentPeriod.id)
         .where(AssessmentValue.calculated_x.is_not(None))
     )
     if system_id is not None:
-        stmt = stmt.where(AssessmentPeriod.system_id == system_id)
+        stmt = stmt.where(AssessmentPeriod.system_id.in_(system_id))
+    crit_ids = await _criticality_system_ids(db, criticality)
     rows = (await db.execute(stmt)).all()
+    if crit_ids is not None:
+        rows = [r for r in rows if r[2] in crit_ids]
     if not rows:
         return PortfolioTrendOut(
             metric="score", points=[], empty_reason="Нет ни одного посчитанного значения метрики",
         )
 
     by_period: dict[str, list[float]] = defaultdict(list)
-    for period_label, x in rows:
+    for period_label, x, _sid in rows:
         by_period[period_label].append(float(x))
 
     ordered_labels = sorted(by_period.keys(), key=period_sort_key)[-periods:]
@@ -68,11 +81,16 @@ async def _score_trend(db: AsyncSession, system_id: uuid.UUID | None, periods: i
     return _finalize("score", points)
 
 
-async def _availability_trend(db: AsyncSession, system_id: uuid.UUID | None, periods: int) -> PortfolioTrendOut:
+async def _availability_trend(
+    db: AsyncSession, system_id: list[uuid.UUID] | None, criticality: list[str] | None, periods: int,
+) -> PortfolioTrendOut:
     stmt = select(TechIncident)
     if system_id is not None:
-        stmt = stmt.where(TechIncident.system_id == system_id)
+        stmt = stmt.where(TechIncident.system_id.in_(system_id))
     rows = list((await db.execute(stmt)).scalars().all())
+    crit_ids = await _criticality_system_ids(db, criticality)
+    if crit_ids is not None:
+        rows = [r for r in rows if r.system_id in crit_ids]
     if not rows:
         return PortfolioTrendOut(
             metric="availability", points=[], empty_reason="Нет зарегистрированных технических сбоев",
@@ -109,12 +127,13 @@ def _finalize(metric: str, points: list[TrendPointOut]) -> PortfolioTrendOut:
 
 
 async def portfolio_trend(
-    db: AsyncSession, *, metric: str, periods: int = 6, system_id: uuid.UUID | None = None,
+    db: AsyncSession, *, metric: str, periods: int = 6,
+    system_id: list[uuid.UUID] | None = None, criticality: list[str] | None = None,
 ) -> PortfolioTrendOut:
     if metric == "score":
-        return await _score_trend(db, system_id, periods)
+        return await _score_trend(db, system_id, criticality, periods)
     if metric == "availability":
-        return await _availability_trend(db, system_id, periods)
+        return await _availability_trend(db, system_id, criticality, periods)
     if metric in ("ale", "closure"):
         return PortfolioTrendOut(
             metric=metric, points=[],

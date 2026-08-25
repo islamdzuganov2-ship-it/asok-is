@@ -61,8 +61,9 @@ def _evaluated_since(nc: Nonconformity) -> datetime:
 async def acceptance_queue(
     db: AsyncSession, *,
     signer: str | None = None,
-    system_id: uuid.UUID | None = None,
-    criticality: str | None = None,
+    system_id: list[uuid.UUID] | None = None,
+    criticality: list[str] | None = None,
+    characteristic: str | None = None,
 ) -> AcceptanceQueueOut:
     matrix = await config_value(db, "acceptance_matrix", []) or []
     catastrophe_threshold = await config_value(db, "catastrophe_threshold", None)
@@ -71,7 +72,9 @@ async def acceptance_queue(
 
     stmt = select(Nonconformity).where(Nonconformity.status == STATUS_EVALUATED)
     if system_id is not None:
-        stmt = stmt.where(Nonconformity.system_id == system_id)
+        stmt = stmt.where(Nonconformity.system_id.in_(system_id))
+    if characteristic is not None:
+        stmt = stmt.where(Nonconformity.characteristic == characteristic)
     ncs = list((await db.execute(stmt)).scalars().all())
 
     systems = {s.id: s for s in (await db.execute(select(System))).scalars().all()}
@@ -92,7 +95,7 @@ async def acceptance_queue(
             continue
         sysobj = systems.get(nc.system_id) if nc.system_id else None
         crit = sysobj.criticality_class.value if sysobj else None
-        if criticality is not None and crit != criticality:
+        if criticality is not None and crit not in criticality:
             continue
 
         waiting_days = max(0, (now - _evaluated_since(nc)).days)

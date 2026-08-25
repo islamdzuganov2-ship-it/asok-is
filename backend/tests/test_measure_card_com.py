@@ -392,6 +392,34 @@ async def test_portfolio_effect_curve_excludes_pending_and_uncomputable(db_sessi
     assert curve.points[-1].cumulative > curve.points[0].cumulative
 
 
+async def test_portfolio_effect_curve_filters_by_system_and_characteristic(db_session):
+    """ТЗ v21 §10.4: сквозной разрез на портфельной кривой эффекта."""
+    import uuid as uuid_mod
+    sys_a = uuid_mod.uuid4()
+
+    p1 = await service.create(db_session, _new(is_process_measure=True, characteristic="Надёжность"), "manager")
+    p1 = await service.decide(db_session, p1, approve=True, comment=None, username="admin")
+    p1.capex = 100000
+    p1.delta_ale_cash = 200000
+    p1.system_id = sys_a
+    await db_session.commit()
+
+    p2 = await service.create(db_session, _new(is_process_measure=True, characteristic="Защищённость"), "manager")
+    p2 = await service.decide(db_session, p2, approve=True, comment=None, username="admin")
+    p2.capex = 50000
+    p2.delta_ale_cash = 100000
+    await db_session.commit()
+
+    only_char = await portfolio_effect_curve(db_session, characteristic="Надёжность")
+    assert only_char.measures_included == 1
+
+    only_sys = await portfolio_effect_curve(db_session, system_id=[sys_a])
+    assert only_sys.measures_included == 1
+
+    everything = await portfolio_effect_curve(db_session)
+    assert everything.measures_included == 2
+
+
 async def test_portfolio_effect_curve_sums_across_measures_in_same_quarter(db_session):
     p1 = await service.create(db_session, _new(is_process_measure=True, characteristic="Надёжность"), "manager")
     p1 = await service.decide(db_session, p1, approve=True, comment=None, username="admin")

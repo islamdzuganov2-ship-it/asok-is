@@ -37,20 +37,25 @@ function loadFontKey(): string {
  * видна без отдельной таблицы соответствий.
  */
 export const NAV_SECTIONS: ReadonlyArray<{ perm: string; label: string; group: string; question: string }> = [
-  { perm: 'view.dashboard.cto', label: 'Дашборд CTO', group: 'Основное', question: 'Что требует моего решения?' },
-  { perm: 'view.dashboard.ceo', label: 'Дашборд CEO', group: 'Основное', question: 'Сколько нам это стоит и что требует подписи?' },
-  { perm: 'view.dashboard.manager', label: 'Основное', group: 'Основное', question: 'Где просело и что предложить?' },
-  { perm: 'view.dashboard.risk', label: 'Основное — риск', group: 'Основное', question: 'Что мы уже знаем о своих рисках?' },
-  { perm: 'view.dashboard.analytics', label: 'Аналитический дашборд', group: 'Основное', question: 'Что показывают цифры за период?' },
-  { perm: 'view.dashboard.dynamics', label: 'Динамика качества', group: 'Основное', question: 'Куда движемся?' },
-  { perm: 'view.assessments', label: 'Внесение данных', group: 'Сбор и анализ данных', question: 'Откуда берутся цифры?' },
-  { perm: 'view.dashboard.incidents', label: 'Аналитика сбоев', group: 'Сбор и анализ данных', question: 'Насколько мы надёжны?' },
-  { perm: 'view.risks', label: 'База рисков', group: 'Сбор и анализ данных', question: 'Что мы уже знаем о своих рисках?' },
-  { perm: 'view.risk_economics', label: 'Риск-экономика', group: 'Сбор и анализ данных', question: 'Во что это превращается в рублях?' },
-  { perm: 'view.reports', label: 'Отчёты', group: 'Сбор и анализ данных', question: 'Что выгрузить наружу?' },
-  { perm: 'view.dashboard.taskplan', label: 'План задач', group: 'Формирование техдолга', question: 'Что и когда должно быть сделано?' },
-  { perm: 'view.my_tasks', label: 'Мои задачи', group: 'Формирование техдолга', question: 'Что поручено лично мне?' },
-  { perm: 'view.dashboard.risk_radar', label: 'Риск-радар', group: 'Формирование техдолга', question: 'Что может произойти?' },
+  // ТЗ v21 §8.2: группы по ГЛУБИНЕ раскрытия (L1 «моя картина» → L2 «разрезы» → L3 «работа
+  // с данными»), а не по типу артефакта, как раньше («Основное» / «Сбор и анализ данных» /
+  // «Формирование техдолга»). Посадочные дашборды всех ролей — в одной группе «Моя картина»:
+  // у каждой роли из них виден ровно один (свой), остальные пункты внутри группы отфильтрует
+  // право, как и раньше.
+  { perm: 'view.dashboard.cto', label: 'Дашборд CTO', group: 'Моя картина', question: 'Что требует моего решения?' },
+  { perm: 'view.dashboard.ceo', label: 'Дашборд CEO', group: 'Моя картина', question: 'Сколько нам это стоит и что требует подписи?' },
+  { perm: 'view.dashboard.manager', label: 'Основное', group: 'Моя картина', question: 'Где просело и что предложить?' },
+  { perm: 'view.dashboard.risk', label: 'Основное — риск', group: 'Моя картина', question: 'Что мы уже знаем о своих рисках?' },
+  { perm: 'view.dashboard.analytics', label: 'Аналитический дашборд', group: 'Разрезы', question: 'Что показывают цифры за период?' },
+  { perm: 'view.dashboard.dynamics', label: 'Динамика качества', group: 'Разрезы', question: 'Куда движемся?' },
+  { perm: 'view.dashboard.incidents', label: 'Аналитика сбоев', group: 'Разрезы', question: 'Насколько мы надёжны?' },
+  { perm: 'view.dashboard.risk_radar', label: 'Риск-радар', group: 'Разрезы', question: 'Что может произойти?' },
+  { perm: 'view.dashboard.taskplan', label: 'План задач', group: 'Разрезы', question: 'Что и когда должно быть сделано?' },
+  { perm: 'view.assessments', label: 'Внесение данных', group: 'Работа с данными', question: 'Откуда берутся цифры?' },
+  { perm: 'view.risks', label: 'База рисков', group: 'Работа с данными', question: 'Что мы уже знаем о своих рисках?' },
+  { perm: 'view.risk_economics', label: 'Риск-экономика', group: 'Работа с данными', question: 'Во что это превращается в рублях?' },
+  { perm: 'view.reports', label: 'Отчёты', group: 'Работа с данными', question: 'Что выгрузить наружу?' },
+  { perm: 'view.my_tasks', label: 'Мои задачи', group: 'Работа с данными', question: 'Что поручено лично мне?' },
 ];
 
 /** Скрытые пользователем разделы. Храним именно СКРЫТЫЕ, чтобы новый раздел из релиза

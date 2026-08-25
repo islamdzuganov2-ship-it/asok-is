@@ -12,6 +12,7 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, Card, Col, Empty, List, Row, Select, Space, Spin, Tag, Typography } from 'antd';
 import { AlertOutlined, SafetyCertificateOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useGetSystemsQuery, useGetTriggeredRisksQuery } from '../../store/api/apiSlice';
 import type { RootState } from '../../store';
@@ -33,7 +34,10 @@ const RiskRadarPage: React.FC = () => {
     const dataMode = useSelector((s: RootState) => s.ui.dataMode);
     const isLive = dataMode === 'live';
     const { data: systems } = useGetSystemsQuery();
-    const [system, setSystem] = useState<string | undefined>(undefined);
+    // ТЗ v21 §3.5/§11.3: разрез из кокпита («Открыть → Риск-радар») сужает сразу при входе —
+    // тот же ключ, что уже читает IncidentsAnalyticsPage (?system=ИМЯ, не id).
+    const [searchParams] = useSearchParams();
+    const [system, setSystem] = useState<string | undefined>(() => searchParams.get('system') ?? undefined);
     const live = useGetTriggeredRisksQuery(system ? { system } : undefined, { skip: !isLive });
     const risks = isLive ? live.data : computeTriggeredRisks(MOCK_INCIDENTS, system);
     const isFetching = isLive && live.isFetching;

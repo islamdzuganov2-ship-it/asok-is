@@ -11,6 +11,7 @@ import { RightOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { PREMIUM, TYPE, SPACE } from '../../theme/premium';
 import { BRAND, RAG } from '../../theme/ragPalette';
 import { numericText } from '../../theme/table';
+import { useIsDarkTheme } from '../../theme/useThemeTokens';
 import type { Tone, TileValue } from './types';
 
 const { Text } = Typography;
@@ -46,6 +47,11 @@ export interface TileCardProps {
 
 const TileCard: React.FC<TileCardProps> = ({ question, value, onClick }) => {
   const tok = TONE_TOKEN[value.tone];
+  // RAG.soft — бледная плашка, посчитанная под светлую тему (найдено живой проверкой graphite,
+  // ТЗ v21 §КП-ПР-11): на тёмном фоне вместе с тематизированным текстом давала светло-серый
+  // текст на светлой плашке — провал контраста. В тёмной теме держим обычную поверхность темы и
+  // переносим акцент тона на рамку/цифру/спарклайн (они и так фиксированные, не var()).
+  const isDark = useIsDarkTheme();
 
   if (value.loading) {
     return (
@@ -63,8 +69,8 @@ const TileCard: React.FC<TileCardProps> = ({ question, value, onClick }) => {
       style={{
         height: '100%',
         borderRadius: PREMIUM.radius,
-        border: `1px solid ${value.empty ? PREMIUM.border : tok.border}`,
-        background: value.empty ? BRAND.surface : tok.soft,
+        border: `1px solid ${value.empty ? PREMIUM.border : (isDark ? tok.color : tok.border)}`,
+        background: value.empty || isDark ? BRAND.surface : tok.soft,
         boxShadow: PREMIUM.shadow.card,
         cursor: onClick ? 'pointer' : 'default',
       }}

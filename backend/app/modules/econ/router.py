@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
+from app.shared.filters import parse_str_list, parse_uuid_list
 from app.modules.econ import service
 from app.modules.econ.acceptance_queue_service import acceptance_queue
 from app.modules.econ.dashboard_service import cost_dashboard
@@ -56,13 +57,19 @@ CONFIG_ROLES = ("RISK_MANAGER", "ADMIN")                   # правят фин
 
 @router.get("/dashboard", response_model=CostDashboardOut)
 async def get_cost_dashboard(
-    system_id: uuid.UUID | None = None,
+    system_id: str | None = None,
+    criticality: str | None = None,
+    characteristic: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> CostDashboardOut:
     """Агрегаты для CTO/CEO: портфельный ALE, тепловая карта, топ рисков, воронка, деградация.
-    system_id — сквозной разрез (ТЗ v21); без параметра поведение не меняется (КП-ПР-7)."""
-    return await cost_dashboard(db, system_id=system_id)
+    Сквозной разрез (ТЗ v21 §10.4): без параметров поведение не меняется (КП-ПР-7). system_id/
+    criticality — списком через запятую (формат `qs()` на фронте)."""
+    return await cost_dashboard(
+        db, system_id=parse_uuid_list(system_id), criticality=parse_str_list(criticality),
+        characteristic=characteristic,
+    )
 
 
 # ═══════════════════════ Кокпит CEO/CTO (ТЗ v21, КП-11/12) ═══════════════════════
@@ -70,25 +77,33 @@ async def get_cost_dashboard(
 @router.get("/acceptance-queue", response_model=AcceptanceQueueOut)
 async def get_acceptance_queue(
     signer: str | None = None,
-    system_id: uuid.UUID | None = None,
+    system_id: str | None = None,
     criticality: str | None = None,
+    characteristic: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> AcceptanceQueueOut:
     """Очередь решений по матрице акцепта (плитка CEO «Что требует моей подписи?», КП-23.2)."""
-    return await acceptance_queue(db, signer=signer, system_id=system_id, criticality=criticality)
+    return await acceptance_queue(
+        db, signer=signer, system_id=parse_uuid_list(system_id), criticality=parse_str_list(criticality),
+        characteristic=characteristic,
+    )
 
 
 @router.get("/portfolio-trend", response_model=PortfolioTrendOut)
 async def get_portfolio_trend(
     metric: str = "score",
     periods: int = 6,
-    system_id: uuid.UUID | None = None,
+    system_id: str | None = None,
+    criticality: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> PortfolioTrendOut:
     """Динамика портфельных величин между периодами (плитки CEO 5.1 и CTO «Что просело», КП-24/КП-31)."""
-    return await portfolio_trend(db, metric=metric, periods=periods, system_id=system_id)
+    return await portfolio_trend(
+        db, metric=metric, periods=periods,
+        system_id=parse_uuid_list(system_id), criticality=parse_str_list(criticality),
+    )
 
 
 # ═══════════════ Эффективность руководителей (задача 12, §7.1) — ДИАГНОСТИКА ═══════════════

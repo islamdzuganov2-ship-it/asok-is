@@ -88,7 +88,7 @@ async def test_queue_filters_by_system_and_signer(db_session):
     ])
     await db_session.commit()
 
-    only_a = await acceptance_queue(db_session, system_id=sys_a.id)
+    only_a = await acceptance_queue(db_session, system_id=[sys_a.id])
     assert len(only_a.items) == 1 and only_a.items[0].system_name == "ИС-А"
 
     only_owner_signer = await acceptance_queue(db_session, signer="Владелец ИС")

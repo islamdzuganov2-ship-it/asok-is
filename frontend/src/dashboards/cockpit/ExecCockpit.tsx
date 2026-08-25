@@ -13,12 +13,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { RootState } from '../../store';
 import { pageContainer, pageTitle, PREMIUM, SPACE } from '../../theme/premium';
 import { BRAND } from '../../theme/ragPalette';
-import { useGetMyPreferencesQuery, usePutMyPreferencesMutation } from '../../store/api/apiSlice';
+import { useGetMyPreferencesQuery, usePutMyPreferencesMutation, useGetCockpitBundleQuery } from '../../store/api/apiSlice';
 import { message } from '../../theme/appMessage';
 import { useSlice } from '../../store/slice/sliceUrl';
 import { Slice } from '../../store/slice/sliceTypes';
 import SliceBar from '../../components/SliceBar';
 import TileCard from './TileCard';
+import CockpitInsight from './CockpitInsight';
+import { cockpitBundleArgs } from './bundleArgs';
 import type { CockpitTile } from './types';
 
 const { Title, Text } = Typography;
@@ -68,6 +70,10 @@ const ExecCockpit: React.FC<Props> = ({ dashboardKey, title, icon, tiles, defaul
     [tiles, permissions],
   );
 
+  // Тот же бандл, что читают плитки (bundleArgs идентичен — см. предупреждение в bundleArgs.ts),
+  // поэтому RTK Query отдаёт уже загруженные данные без второго сетевого запроса.
+  const { data: bundle } = useGetCockpitBundleQuery(cockpitBundleArgs(role.toUpperCase() as 'CEO' | 'CTO', slice));
+
   const { data: prefsData } = useGetMyPreferencesQuery();
   const [putPrefs] = usePutMyPreferencesMutation();
   const saved = prefsData?.prefs?.dashboards?.[dashboardKey]?.widgets;
@@ -97,6 +103,7 @@ const ExecCockpit: React.FC<Props> = ({ dashboardKey, title, icon, tiles, defaul
       <Row align="middle" justify="space-between" gutter={[16, 8]} style={{ marginBottom: SPACE.base }}>
         <Col>
           <Title level={4} style={pageTitle}>{icon}{title}</Title>
+          <CockpitInsight role={role.toUpperCase() as 'CEO' | 'CTO'} bundle={bundle} />
         </Col>
         <Col>
           <Space wrap>

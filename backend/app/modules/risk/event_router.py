@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.database import get_db
 from app.modules.iam import get_current_user, require_permission
 from app.modules.risk import event_service as service
+from app.shared.filters import parse_str_list, parse_uuid_list
 from app.modules.risk.event_schemas import (
     AleResultOut,
     HeatmapCellDetailOut,
@@ -93,11 +94,16 @@ async def get_risk_measure_chain(
 
 @router.get("/portfolio-summary", response_model=PortfolioRiskSummaryOut)
 async def get_portfolio_risk_summary(
-    system_id: uuid.UUID | None = None,
+    system_id: str | None = None,
+    criticality: str | None = None,
+    characteristic: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ):
-    return await service.portfolio_risk_summary(db, system_id=system_id)
+    return await service.portfolio_risk_summary(
+        db, system_id=parse_uuid_list(system_id), criticality=parse_str_list(criticality),
+        characteristic=characteristic,
+    )
 
 
 @router.get("/{event_id}", response_model=RiskEventOut)

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.modules.governance.economics_service import overdue_summary
 from app.modules.governance.models import Proposal
+from app.modules.systems.models import CriticalityClass, System
 
 NOW = datetime.now(timezone.utc)
 
@@ -61,6 +62,28 @@ async def test_filters_by_system(db_session):
     db_session.add_all([p_a, p_b])
     await db_session.commit()
 
-    s = await overdue_summary(db_session, system_id=sid_a)
+    s = await overdue_summary(db_session, system_id=[sid_a])
     assert s.overdue_count == 1
     assert s.items[0].system_name == "ИС-А"
+
+
+async def test_filters_by_criticality_and_characteristic(db_session):
+    mc = System(name="ИС-MC", criticality_class=CriticalityClass.MISSION_CRITICAL)
+    bo = System(name="ИС-BO", criticality_class=CriticalityClass.BUSINESS_OPERATIONAL)
+    db_session.add_all([mc, bo])
+    await db_session.commit()
+    await db_session.refresh(mc)
+    await db_session.refresh(bo)
+
+    p_mc = Proposal(system_id=mc.id, system_name=mc.name, status="APPROVED", owner="А",
+                    characteristic="Надёжность", due_on=NOW - timedelta(days=2), ale_at_risk_current=100_000)
+    p_bo = Proposal(system_id=bo.id, system_name=bo.name, status="APPROVED", owner="Б",
+                    characteristic="Защищённость", due_on=NOW - timedelta(days=2), ale_at_risk_current=200_000)
+    db_session.add_all([p_mc, p_bo])
+    await db_session.commit()
+
+    only_mc = await overdue_summary(db_session, criticality=["MISSION CRITICAL"])
+    assert only_mc.overdue_count == 1 and only_mc.items[0].system_name == "ИС-MC"
+
+    only_char = await overdue_summary(db_session, characteristic="Защищённость")
+    assert only_char.overdue_count == 1 and only_char.items[0].system_name == "ИС-BO"
