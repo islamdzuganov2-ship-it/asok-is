@@ -1,27 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { Badge, Button, Dropdown, Layout, Menu, Spin, Switch, Tooltip, Typography } from 'antd';
 import {
-    DashboardOutlined,
-    FormOutlined,
     LogoutOutlined,
     SettingOutlined,
-    FileExcelOutlined,
     UserOutlined,
-    FundOutlined,
-    AuditOutlined,
-    WarningOutlined,
     RobotOutlined,
-    LineChartOutlined,
-    ScheduleOutlined,
-    HomeOutlined,
-    ThunderboltOutlined,
-    AlertOutlined,
     TeamOutlined,
     SafetyOutlined,
     ExperimentOutlined,
-    SafetyCertificateOutlined,
     ApartmentOutlined,
     SlidersOutlined,
+    HolderOutlined,
+    CheckOutlined,
     // ExperimentOutlined — под развитие: иконка пункта «Оценка СИИ» (пока не выведен в меню).
 } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
@@ -32,6 +22,10 @@ import { logout, setPermissions } from '../store/slices/authSlice';
 import { setDataMode, NAV_SECTIONS } from '../store/slices/uiSlice';
 import { syncProposals } from '../store/slices/governanceSlice';
 import { useGetMyPermissionsQuery, useGetMandatorySectionsQuery } from '../store/api/apiSlice';
+import { useNavPrefsHydration } from '../hooks/useNavPreferences';
+import SidebarNavEditor from './SidebarNavEditor';
+import { ROUTE_BY_PERM, ICON_BY_PERM } from '../constants/navMeta';
+import { groupOfPerm } from '../constants/navOrderMath';
 import { roleLabel } from '../constants/roles';
 import NotificationBell from './NotificationBell';
 import { PREMIUM, GOLD, TYPE, SPACE } from '../theme/premium';
@@ -63,11 +57,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     // Переключатели опциональных дашбордов из «Настройка» (ТЗ v17, req 5).
     const hiddenSections = useSelector((state: RootState) => state.ui.hiddenSections);
     const navOrder = useSelector((state: RootState) => state.ui.navOrder);
+    const navGroups = useSelector((state: RootState) => state.ui.navGroups);
     // ТЗ v20 п.10: разделы, зафиксированные супер-администратором как обязательные для всех —
     // персональное скрытие (hiddenSections) их не должно затрагивать.
     const { data: mandatorySections } = useGetMandatorySectionsQuery();
     const mandatorySet = new Set(mandatorySections?.permissions ?? []);
     const userRole = role || 'GUEST';
+
+    // БТ-500: порядок меню едет за пользователем между устройствами (серверные prefs).
+    useNavPrefsHydration();
+    // Режим «Настроить меню»: пункты перетаскиваются прямо в сайдбаре, в т.ч. между группами.
+    const [navEditing, setNavEditing] = useState(false);
+
 
     // Права пользователя (BL-008): грузим с сервера и кладём в стор (обновляются и при возврате
     // во вкладку — refetchOnFocus в apiSlice), чтобы правки супер-админа применялись без F5.
@@ -141,38 +142,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     //
     // Единый источник состава — NAV_SECTIONS (uiSlice): и меню, и экран настроек читают
     // ОДИН список, поэтому «есть тумблер, но нет пункта» стало невозможным по построению.
-    const ROUTE_BY_PERM: Record<string, string> = {
-        'view.dashboard.cto': '/dashboard/cto',
-        'view.dashboard.ceo': '/dashboard/ceo',
-        'view.dashboard.manager': '/dashboard/manager',
-        'view.dashboard.risk': '/dashboard/risk',
-        'view.dashboard.analytics': '/dashboard/analytics',
-        'view.dashboard.dynamics': '/dashboard/manager/dynamics',
-        'view.assessments': '/assessments/new',
-        'view.dashboard.incidents': '/dashboard/incidents',
-        'view.risks': '/risks',
-        'view.risk_economics': '/risk-economics',
-        'view.reports': '/reports',
-        'view.dashboard.taskplan': '/dashboard/taskplan',
-        'view.my_tasks': '/my-tasks',
-        'view.dashboard.risk_radar': '/dashboard/risk-radar',
-    };
-    const ICON_BY_PERM: Record<string, React.ReactNode> = {
-        'view.dashboard.cto': <FundOutlined />,
-        'view.dashboard.ceo': <FundOutlined />,
-        'view.dashboard.manager': <HomeOutlined />,
-        'view.dashboard.risk': <SafetyCertificateOutlined />,
-        'view.dashboard.analytics': <DashboardOutlined />,
-        'view.dashboard.dynamics': <LineChartOutlined />,
-        'view.assessments': <FormOutlined />,
-        'view.dashboard.incidents': <ThunderboltOutlined />,
-        'view.risks': <WarningOutlined />,
-        'view.risk_economics': <AuditOutlined />,
-        'view.reports': <FileExcelOutlined />,
-        'view.dashboard.taskplan': <ScheduleOutlined />,
-        'view.my_tasks': <ScheduleOutlined />,
-        'view.dashboard.risk_radar': <AlertOutlined />,
-    };
     const mi = (key: string, icon: React.ReactNode, label: string) => ({ key, icon, label });
     const group = (label: string, children: Array<{ key: string; icon: React.ReactNode; label: string }>) =>
         children.length ? [{ type: 'group' as const, label: collapsed ? undefined : groupLabel(label), children }] : [];
@@ -181,10 +150,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         const i = navOrder.indexOf(perm);
         return i < 0 ? Number.MAX_SAFE_INTEGER : i;
     };
-    const itemsOfGroup = (groupName: string) => NAV_SECTIONS
-        .filter((sec) => sec.group === groupName && has(sec.perm))
+    // Группа пункта — по умолчанию из NAV_SECTIONS, но пользователь мог перенести пункт
+    // в другую группу перетаскиванием в сайдбаре (БТ-500).
+    const groupOf = (perm: string) => groupOfPerm(perm, NAV_SECTIONS, navGroups);
+
+    /** Секции группы в пользовательском порядке — общий источник и для меню, и для режима правки. */
+    const sectionsOfGroup = (groupName: string) => NAV_SECTIONS
+        .filter((sec) => groupOf(sec.perm) === groupName && has(sec.perm))
         .slice()
-        .sort((a, b) => orderIndex(a.perm) - orderIndex(b.perm))
+        .sort((a, b) => orderIndex(a.perm) - orderIndex(b.perm));
+
+    const itemsOfGroup = (groupName: string) => sectionsOfGroup(groupName)
         .map((sec) => mi(ROUTE_BY_PERM[sec.perm], ICON_BY_PERM[sec.perm], sec.label));
 
     const mainItems = itemsOfGroup('Основное');
@@ -245,14 +221,37 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     )}
                 </div>
                 <div style={{ height: 1, margin: '0 16px 6px', background: PREMIUM.gradient.goldLine }} />
-                <Menu
-                    theme="dark"
-                    mode="inline"
-                    selectedKeys={[location.pathname]}
-                    items={menuItems}
-                    onClick={({ key }) => navigate(key)}
-                    style={{ background: 'transparent', borderInlineEnd: 'none' }}
-                />
+                {/* Кнопка режима правки меню. В свёрнутом сайдбаре скрыта: перетаскивать
+                    56-пиксельные иконки без подписей — не настройка, а угадайка. */}
+                {!collapsed && (
+                    <div style={{ padding: `0 ${SPACE.base}px ${SPACE.cozy}px`, display: 'flex', justifyContent: 'flex-end' }}>
+                        <Button
+                            size="small"
+                            type={navEditing ? 'primary' : 'text'}
+                            icon={navEditing ? <CheckOutlined /> : <HolderOutlined />}
+                            onClick={() => setNavEditing((v) => !v)}
+                            style={navEditing ? undefined : { color: 'rgba(233,220,190,0.8)' }}
+                        >
+                            {navEditing ? 'Готово' : 'Порядок'}
+                        </Button>
+                    </div>
+                )}
+                {navEditing && !collapsed ? (
+                    <SidebarNavEditor
+                        groupLabel={groupLabel}
+                        iconByPerm={ICON_BY_PERM}
+                        sectionsOfGroup={sectionsOfGroup}
+                    />
+                ) : (
+                    <Menu
+                        theme="dark"
+                        mode="inline"
+                        selectedKeys={[location.pathname]}
+                        items={menuItems}
+                        onClick={({ key }) => navigate(key)}
+                        style={{ background: 'transparent', borderInlineEnd: 'none' }}
+                    />
+                )}
             </Sider>
             <Layout style={{ background: PREMIUM.gradient.canvas }}>
                 {/* Шапка не сжималась: заголовок и блок пользователя вместе требовали ~637px,

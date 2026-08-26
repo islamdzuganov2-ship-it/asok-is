@@ -1,30 +1,31 @@
 /**
  * RiskOwnerDashboard.tsx (BL-008) — основной дашборд роли «Владелец риска» (RISK_MANAGER).
- * Построен на DashboardShell: пользователь настраивает состав виджетов под себя («Настроить» →
- * галочки + перетаскивание, раскладка сохраняется per-user на бэкенде). Виджеты — в riskWidgets.
+ *
+ * Первый дашборд, который умел настраиваться (DashboardShell: галочки + порядок списком).
+ * Теперь на общем конструкторе: те же виджеты стали карточками каталога, к вкл/выкл и порядку
+ * добавились свободное расположение, размеры и возможность взять карточку с любого другого
+ * доступного дашборда. Сохранённые ранее настройки (prefs.dashboards.risk.widgets) читаются
+ * и конвертируются в раскладку — см. useDashboardLayout.layoutFromWidgets.
  */
 import React from 'react';
 import { Button, Space } from 'antd';
 import { SafetyCertificateOutlined, WarningOutlined, AuditOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { DashboardShell } from '../../dashboards/DashboardShell';
-import { RISK_WIDGETS } from '../../dashboards/riskWidgets';
+import GridDashboard from '../../dashboards/GridDashboard';
 import { GOLD } from '../../theme/premium';
 
 const RiskOwnerDashboard: React.FC = () => {
   const navigate = useNavigate();
   return (
-    <DashboardShell
+    <GridDashboard
       dashboardKey="risk"
-      widgets={RISK_WIDGETS}
       icon={<SafetyCertificateOutlined style={{ color: GOLD.base, marginRight: 8 }} />}
       title="Основное — владелец риска"
-      subtitle="Сводка риск-контура: техсбои, проактивные триггеры, реестр и экономика риска. «Настроить» — свой состав виджетов."
+      subtitle="Сводка риск-контура: техсбои, проактивные триггеры, реестр и экономика риска"
       headerExtra={
         <Space wrap>
           {/* Обе кнопки — равноправные переходы, не вкладки: «Риск-экономика» раньше была
-              жёстко на type="primary" и всегда выглядела «выбранной» (тёмная заливка), даже
-              находясь на «Основное» — читалось как будто мы уже на странице риск-экономики. */}
+              жёстко на type="primary" и всегда выглядела «выбранной». */}
           <Button icon={<WarningOutlined />} onClick={() => navigate('/risks')}>Реестр рисков</Button>
           <Button icon={<AuditOutlined />} onClick={() => navigate('/risk-economics')}>Риск-экономика</Button>
         </Space>

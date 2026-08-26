@@ -5,6 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { setSectionVisible, setNavOrder, resetPersonalization, NAV_SECTIONS } from '../store/slices/uiSlice';
 import { useGetMandatorySectionsQuery } from '../store/api/apiSlice';
+import { useSaveNavPrefs } from '../hooks/useNavPreferences';
 import { accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE } from '../theme/premium';
 import { RAG, BRAND } from '../theme/ragPalette';
 import ThemeSettingsCard from '../components/ThemeSettingsCard';
@@ -20,6 +21,9 @@ const AdminFlagsPage: React.FC = () => {
   const ui = useSelector((s: RootState) => s.ui);
   const permissions = useSelector((s: RootState) => s.auth.permissions);
   const [dragged, setDragged] = React.useState<string | null>(null);
+  // БТ-500: та же настройка, что и в сайдбаре, — пишем её и на сервер, чтобы не расходилась
+  // между устройствами и с режимом «Порядок» в левом меню.
+  const saveNavPrefs = useSaveNavPrefs();
   // ТЗ v20 п.10: разделы, зафиксированные супер-администратором как обязательные для всех —
   // тумблер недоступен, сервер — источник истины по обязательности.
   const { data: mandatorySections } = useGetMandatorySectionsQuery();
@@ -53,6 +57,20 @@ const AdminFlagsPage: React.FC = () => {
     if (from < 0 || to < 0) return;
     order.splice(to, 0, ...order.splice(from, 1));
     dispatch(setNavOrder(order));
+    saveNavPrefs({ navOrder: order });
+  };
+
+  const toggleSection = (perm: string, visible: boolean) => {
+    dispatch(setSectionVisible({ perm, visible }));
+    const next = { ...ui.hiddenSections };
+    if (visible) delete next[perm];
+    else next[perm] = true;
+    saveNavPrefs({ hiddenSections: next });
+  };
+
+  const resetAll = () => {
+    dispatch(resetPersonalization());
+    saveNavPrefs({ navOrder: [], hiddenSections: {}, navGroups: {} });
   };
 
   return (
@@ -71,7 +89,7 @@ const AdminFlagsPage: React.FC = () => {
         и не влияет на права: показать можно только то, что доступно вашей роли.
       </Text>
       <div style={{ marginTop: 12, marginBottom: 12 }}>
-        <Button size="small" onClick={() => dispatch(resetPersonalization())}>Вернуть вид по умолчанию</Button>
+        <Button size="small" onClick={resetAll}>Вернуть вид по умолчанию</Button>
       </div>
       <Row gutter={[16, 16]}>
         {GROUPS.map((groupName) => {
@@ -117,7 +135,7 @@ const AdminFlagsPage: React.FC = () => {
                         size="small"
                         checked={on}
                         disabled={mandatory}
-                        onChange={(v) => dispatch(setSectionVisible({ perm: sec.perm, visible: v }))}
+                        onChange={(v) => toggleSection(sec.perm, v)}
                       />
                     </div>
                   );

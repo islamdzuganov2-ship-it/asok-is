@@ -1,7 +1,8 @@
 /**
  * riskWidgets.tsx (BL-008, Фаза 4) — реестр виджетов дашборда владельца риска (dashboardKey="risk").
  * Каждый виджет самодостаточен (сам тянет данные через RTK Query; запросы дедуплицируются).
- * Используется DashboardShell: пользователь включает/выключает и переставляет их под себя.
+ * Живут в общем каталоге карточек (dashboards/cards/riskCards.tsx): пользователь включает,
+ * выключает и переставляет их через конструктор дашбордов.
  */
 import React, { useEffect, useState } from 'react';
 import { Card, Col, Row, Typography, Tag, List, Statistic, Empty, Spin, Space, Table } from 'antd';
@@ -20,7 +21,6 @@ import { premiumCard, accentDot, GOLD, TYPE, SPACE } from '../theme/premium';
 import { numericColumn, sorterFor } from '../theme/table';
 import { fmtMoney } from '../utils/money';
 import KpiCard from '../components/KpiCard';
-import type { WidgetDef } from './DashboardShell';
 
 const { Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -68,7 +68,7 @@ const sevToken = (s: string) => {
   return RAG.muted;
 };
 
-const RiskKpiWidget: React.FC = () => {
+export const RiskKpiWidget: React.FC = () => {
   const navigate = useNavigate();
   const { data: a, isLoading } = useIncidentAnalytics();
   if (isLoading) return <div><Spin /> <Text type="secondary">Загрузка показателей…</Text></div>;
@@ -102,7 +102,7 @@ const RiskKpiWidget: React.FC = () => {
   );
 };
 
-const RiskTriggersWidget: React.FC = () => {
+export const RiskTriggersWidget: React.FC = () => {
   const navigate = useNavigate();
   const { data: triggered, isLoading } = useTriggeredRisks();
   const top = (triggered ?? []).slice(0, 6);
@@ -140,7 +140,7 @@ const RiskTriggersWidget: React.FC = () => {
   );
 };
 
-const IncidentsByCategoryWidget: React.FC = () => {
+export const IncidentsByCategoryWidget: React.FC = () => {
   const navigate = useNavigate();
   const { data: a, isLoading } = useIncidentAnalytics();
   // П.1/2 (второй заход): раньше — сырые коды категорий (RELEASE/INFRASTRUCTURE/…) без
@@ -209,7 +209,7 @@ function useCostDashboard() {
   return { data, isLoading: isLive && loading, error: isLive && error, isLive };
 }
 
-const EconomicImpactWidget: React.FC = () => {
+export const EconomicImpactWidget: React.FC = () => {
   const navigate = useNavigate();
   const { data, isLoading, error, isLive } = useCostDashboard();
   return (
@@ -262,7 +262,7 @@ const EconomicImpactWidget: React.FC = () => {
   );
 };
 
-const TopSystemsWidget: React.FC = () => {
+export const TopSystemsWidget: React.FC = () => {
   const navigate = useNavigate();
   const { data: a, isLoading } = useIncidentAnalytics();
   return (
@@ -289,10 +289,3 @@ const TopSystemsWidget: React.FC = () => {
   );
 };
 
-export const RISK_WIDGETS: WidgetDef[] = [
-  { id: 'kpi', title: 'Ключевые показатели (техсбои)', defaultEnabled: true, Component: RiskKpiWidget },
-  { id: 'triggers', title: 'Проактивные риск-триггеры', defaultEnabled: true, Component: RiskTriggersWidget },
-  { id: 'economicImpact', title: 'Экономическое влияние', defaultEnabled: true, Component: EconomicImpactWidget },
-  { id: 'byCategory', title: 'Сбои по первопричинам', defaultEnabled: true, Component: IncidentsByCategoryWidget },
-  { id: 'topSystems', title: 'Нестабильные ИС', defaultEnabled: false, Component: TopSystemsWidget },
-];

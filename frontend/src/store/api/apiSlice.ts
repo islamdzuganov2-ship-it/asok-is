@@ -344,67 +344,20 @@ export interface PermissionCatalog { groups: string[]; permissions: PermissionDe
 export type PermissionMatrix = Record<string, string[]>;
 export interface MandatorySectionsOut { permissions: string[] }
 
-// Персональные настройки виджетов дашбордов (BL-008, Фаза 4).
-export interface WidgetPref { id: string; enabled: boolean; order: number }
-export interface DashboardPrefs { widgets: WidgetPref[] }
-export interface UserPrefs { dashboards?: Record<string, DashboardPrefs>; [k: string]: unknown }
-export interface PreferencesResponse { prefs: UserPrefs }
+// Персональные настройки пользователя — форма поля в ./preferencesTypes.
+import type { UserPrefs, PreferencesResponse } from './preferencesTypes';
 
-// ── Самооценка LLM по ISO/IEC 25010 (ТЗ v18 п.10) ──────────────────────────────────
-// score = null означает «невозможно измерить» — это ЧЕСТНЫЙ статус, а не отсутствие данных:
-// подхарактеристика либо неприменима к LLM-компоненту, либо требует инференса, который в
-// данном прогоне не выполнялся. В UI такие строки показываются отдельным статусом.
-export interface LlmSubcheck {
-    subcharacteristic: string;
-    what: string;
-    status: 'measured' | 'not_measurable';
-    score: number | null;
-    evidence: string;
-}
-export interface LlmCharacteristicCheck {
-    characteristic: string;
-    score: number | null;
-    measured: number;
-    total: number;
-    subcharacteristics: LlmSubcheck[];
-}
-export interface LlmModelProfile {
-    file_name?: string; name?: string; architecture?: string; quant?: string;
-    params?: string; size_mb?: number; n_ctx?: number; n_ctx_train?: number;
-    n_gpu_layers?: number; has_chat_template?: boolean;
-}
-export interface LlmQualityReport {
-    id: string;
-    generated_at: string;
-    duration_s: number;
-    mode: 'full' | 'static';
-    trigger: string;
-    model: LlmModelProfile | null;
-    model_available: boolean;
-    integral: number | null;
-    coverage: number;
-    measured: number;
-    total: number;
-    characteristics: LlmCharacteristicCheck[];
-    verdict: string;
-    notes: string[];
-}
-export interface LlmQualityHistoryRow {
-    id: string; generated_at: string; mode: string; trigger: string;
-    integral: number | null; coverage: number; duration_s: number; model?: string;
-}
-export interface LlmQualityResponse {
-    report: LlmQualityReport | null;
-    history: LlmQualityHistoryRow[];
-    schedule: string;
-}
-export interface LlmQualityRunResponse {
-    status: 'QUEUED' | 'COMPLETED';
-    mode: string;
-    task_id?: string;
-    report?: LlmQualityReport;
-    hint?: string;
-}
+export type {
+    WidgetPref, CardLayoutPref, DashboardPrefs, UserPrefs, PreferencesResponse,
+} from './preferencesTypes';
+
+// Самооценка LLM по ISO/IEC 25010 (ТЗ v18 п.10) — контракт в ./llmQualityTypes.
+import type { LlmQualityResponse, LlmQualityRunResponse } from './llmQualityTypes';
+
+export type {
+    LlmSubcheck, LlmCharacteristicCheck, LlmModelProfile, LlmQualityReport,
+    LlmQualityHistoryRow, LlmQualityResponse, LlmQualityRunResponse,
+} from './llmQualityTypes';
 export interface LlmPipelineSource {
     code: string; title: string; mechanism: string; storage: string;
     feeds: string[]; level: string; level_title: string; state: string;

@@ -18,6 +18,13 @@ import { numericColumn, numericText, sorterFor } from '../theme/table';
 import FieldHint from '../components/FieldHint';
 import { BRAND, RAG } from '../theme/ragPalette';
 import { OwnerLink } from '../components/OwnerLink';
+import { EconScopeProvider } from '../dashboards/scopes/EconScope';
+import RiskEventLinksPanel from '../components/RiskEventLinksPanel';
+import {
+  EconKpiCard, EconNonconformityCard, EconAleBySystemCard, EconHeatmapCard,
+  EconTopRisksCard, EconPortfolioSummaryCard, EconRiskMeasureEffectCard, EconQuarterlyEffectCard,
+} from '../dashboards/cards/econCards';
+import { EconManagersCard } from '../dashboards/cards/econManagersCard';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -49,65 +56,14 @@ interface BenchmarkComparison {
   ownValue: number | null; ownUnit: string; benchmark?: MarketBenchmark | null;
   deltaPct?: number | null; note: string;
 }
-// БТ-322: карточка взаимосвязи ТС-мера-экономика-качество — связи одного рискового события.
-interface RiskEventSubcharLink { id: string; characteristic: string; subcharacteristic: string }
-interface RiskEventIncidentLink {
-  id: string; incidentId: string; title: string; systemName: string; occurredAt: string; costTotal?: number | null;
-}
-interface RiskEventMeasureLink {
-  id: string; proposalId: string; title: string; status: string; aleReductionShare?: number | null;
-}
-interface RiskEventLinks {
-  subchars: RiskEventSubcharLink[]; incidents: RiskEventIncidentLink[]; measures: RiskEventMeasureLink[];
-}
-interface IncidentOption { id: string; title: string; systemName: string }
-interface ProposalOption { id: string; systemName: string; riskTitle?: string | null; metricName?: string | null }
 interface Nonconformity {
   id: string; code?: string | null; systemName: string; characteristic: string;
   subcharacteristic: string; level: string; status: string; owner: string;
   evaluatedAle?: number | null; evidenceType?: string | null; isBlocking: boolean;
 }
-// Эффективность руководителей (задача 12, §7.1) — диагностика без привязки к мотивации.
-interface ManagerMetricRow {
-  owner: string; openCount: number; overdueCount: number; completedCount: number;
-  avgAgeDays: number | null; deltaAleManaged: number; acceptShare: number; compensatingShare: number;
-  // ТЗ v19 п.13 (В-41): взвешенная нагрузка по открытым мерам — экран загрузки/балансировки.
-  weightedLoad: number; hoursEstimated: number;
-  measuresWithEstimate: number; measuresWithoutEstimate: number;
-}
-interface ManagerMetrics { mode: string; note: string; generatedAt: string; rows: ManagerMetricRow[] }
 interface FunnelStage { status: string; count: number }
 interface ClosureFunnel { total: number; verified: number; closureRate: number; stages: FunnelStage[] }
 interface AleResult { incidentsCounted: number; incidentsCosted: number; aro?: number | null; aleAvg?: number | null }
-interface TopRisk { code: string; title: string; owner?: string | null; system?: string | null; aleAvg: number; regulatory: boolean }
-interface HeatCell { system: string; subcharacteristic: string; ale: number }
-interface CostDashboard {
-  portfolioAle: number; risksCount: number; degradationTotal: number;
-  nonconformitiesTotal: number; verified: number; closureRate: number; blockingCount: number;
-  verdict: { eliminate: number; compensate: number; accept: number };
-  topRisks: TopRisk[]; bySystem: { system: string; ale: number }[]; heatmap: HeatCell[];
-}
-// ТЗ v19 п.7 (УК-19/20): сквозная цепочка риск → мера → эффект + портфельный итог.
-interface PortfolioRiskSummary {
-  totalAtRisk: number; coveredByDoneMeasures: number; residualRisk: number;
-  requiredInvestment: number; expectedEffect: number; risksCount: number; measuresCount: number;
-}
-interface RiskMeasureChainMeasure {
-  proposalId: string; title: string; status: string; execution: string | null;
-  capex: number | null; opexPerYear: number | null; aleReductionShare: number | null;
-  deltaAleCash: number | null; deltaAleDeferred: number | null; deltaAleCapacity: number | null;
-  rosi: number | null; verdict: string | null; paybackMonths: number | null;
-}
-interface RiskMeasureChainRow {
-  riskId: string; riskCode: string; riskTitle: string; systemName: string | null;
-  aleAvg: number | null; measures: RiskMeasureChainMeasure[];
-}
-// ТЗ v19 п.15 (УК-37): портфельная кривая эффекта во времени — «когда реально придут деньги».
-interface QuarterPortfolioPoint { quarterLabel: string; netCash: number; cumulative: number }
-interface PortfolioEffectCurve {
-  points: QuarterPortfolioPoint[]; measuresIncluded: number; measuresExcludedNoStartDate: number;
-}
-
 // ─── Подача ───
 const fmtMoney = (v?: number | null): string =>
   v === null || v === undefined ? '—' : `${new Intl.NumberFormat('ru-RU').format(Math.round(v))} ₽`;
@@ -182,432 +138,25 @@ const RiskEconomicsPage: React.FC = () => {
 };
 
 // ════════════════════════ Дашборд стоимости (§5) ════════════════════════
-const fmtMln = (v: number): string =>
-  v >= 1_000_000
-    ? `${(v / 1_000_000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} млн`
-    : new Intl.NumberFormat('ru-RU').format(Math.round(v));
-
-const DashboardTab: React.FC = () => {
-  const [d, setD] = useState<CostDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // ТЗ v19 п.7 (УК-19/20): портфельный итог + сквозная цепочка риск → мера → эффект.
-  const [summary, setSummary] = useState<PortfolioRiskSummary | null>(null);
-  const [chain, setChain] = useState<RiskMeasureChainRow[]>([]);
-  const [chainLoading, setChainLoading] = useState(true);
-  // ТЗ v19 п.15 (УК-37): портфельная кривая эффекта — суммарно по всем одобренным мерам.
-  const [curve, setCurve] = useState<PortfolioEffectCurve | null>(null);
-  const [curveLoading, setCurveLoading] = useState(true);
-
-  useEffect(() => {
-    let alive = true;
-    setLoading(true); setError(null);
-    api<CostDashboard>('/econ/dashboard')
-      .then((r) => { if (alive) setD(r); })
-      .catch((e: any) => { if (alive) setError(e.message); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    setChainLoading(true);
-    Promise.all([
-      api<PortfolioRiskSummary>('/risk-events/portfolio-summary'),
-      api<RiskMeasureChainRow[]>('/risk-events/chain'),
-    ])
-      .then(([s, c]) => { if (alive) { setSummary(s); setChain(c); } })
-      .catch(() => { if (alive) { setSummary(null); setChain([]); } })
-      .finally(() => { if (alive) setChainLoading(false); });
-    return () => { alive = false; };
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    setCurveLoading(true);
-    api<PortfolioEffectCurve>('/governance/proposals/effect-curve')
-      .then((r) => { if (alive) setCurve(r); })
-      .catch(() => { if (alive) setCurve(null); })
-      .finally(() => { if (alive) setCurveLoading(false); });
-    return () => { alive = false; };
-  }, []);
-
-  const topCols: ColumnsType<TopRisk> = [
-    { title: 'Код', dataIndex: 'code', width: 130, sorter: sorterFor((r: TopRisk) => r.code) },
-    {
-      title: 'Риск', dataIndex: 'title', sorter: sorterFor((r: TopRisk) => r.title),
-      render: (t: string, r: TopRisk) => (
-        <Space size={4}>{r.regulatory && <Tag color="volcano">рег.</Tag>}<Text strong>{t}</Text></Space>
-      ),
-    },
-    { title: 'ИС', dataIndex: 'system', width: 140, sorter: sorterFor((r: TopRisk) => r.system), render: (s?: string) => s || '—' },
-    { title: 'Владелец', dataIndex: 'owner', width: 160, sorter: sorterFor((r: TopRisk) => r.owner), render: (o?: string) => <OwnerLink owner={o} fallback="—" /> },
-    numericColumn({ title: 'ALE, ₽/год', dataIndex: 'aleAvg', width: 150, sorter: sorterFor((r: TopRisk) => r.aleAvg), render: (v: number) => fmtMoney(v) }),
-  ];
-
-  // Пивот тепловой карты: ИС (строки) × подхарактеристика (столбцы).
-  const heat = d?.heatmap ?? [];
-  const systems = Array.from(new Set(heat.map((h) => h.system)));
-  const subchars = Array.from(new Set(heat.map((h) => h.subcharacteristic)));
-  const maxAle = Math.max(1, ...heat.map((h) => h.ale));
-  const cellAle = (s: string, sub: string) => heat.find((h) => h.system === s && h.subcharacteristic === sub)?.ale ?? 0;
-
-  return (
+// Виджеты вкладки живут в общем каталоге карточек (dashboards/cards/econCards.tsx): те же
+// карточки пользователь может положить на «Мой дашборд» или на любой другой доступный ему
+// дашборд. Здесь они собраны в штатный порядок вкладки — один источник вёрстки, без копии.
+const DashboardTab: React.FC = () => (
+  <EconScopeProvider>
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      {error && <Alert type="error" showIcon message="Ошибка загрузки дашборда" description={error} closable />}
-
-      {/* KPI-ряд — «одна цифра, которую CEO уносит с совещания» */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: SPACE.base }}>
-        <KpiCard loading={loading} title="Портфельный ALE, ₽/год" value={d ? fmtMoney(d.portfolioAle) : '—'}
-          hint={d ? `${d.risksCount} рисковых событий` : undefined} />
-        <KpiCard loading={loading} title="Замкнутость контура" value={d ? `${d.closureRate}%` : '—'}
-          hint={d ? `${d.verified} из ${d.nonconformitiesTotal} верифицировано` : undefined} />
-        <KpiCard loading={loading} title="Накопленная деградация, ₽" value={d ? fmtMoney(d.degradationTotal) : '—'}
-          hint="сверх учтённых простоев" />
-        <KpiCard loading={loading} title="Блокирующие дефекты" value={d ? d.blockingCount : '—'}
-          color={d && d.blockingCount > 0 ? accentColorOf('terracotta') : undefined} hint="критические, не закрыты" />
-      </div>
-
+      <EconKpiCard />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: SPACE.base }}>
-        <Card {...premiumCard('sage')} title="Решения по несоответствиям">
-          <Space size="large" style={{ width: '100%', justifyContent: 'space-around' }}>
-            <Statistic title="Устранить" value={d?.verdict.eliminate ?? 0} valueStyle={{ ...TYPE.metricSm, color: BRAND.ink }} />
-            <Statistic title="Компенсировать" value={d?.verdict.compensate ?? 0} valueStyle={{ ...TYPE.metricSm, color: BRAND.ink }} />
-            <Statistic title="Принять" value={d?.verdict.accept ?? 0} valueStyle={{ ...TYPE.metricSm, color: BRAND.ink }} />
-          </Space>
-        </Card>
-        <Card {...premiumCard('slate')} title="ALE по системам" styles={{ body: { padding: SPACE.airy } }}>
-          {(d?.bySystem ?? []).slice(0, 5).map((s) => (
-            <div key={s.system} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: SPACE.snug }}>
-              <Text>{s.system}</Text><Text strong style={numericText}>{fmtMoney(s.ale)}</Text>
-            </div>
-          ))}
-          {(!d || d.bySystem.length === 0) && <Text type="secondary">Нет данных</Text>}
-        </Card>
+        <EconNonconformityCard />
+        <EconAleBySystemCard />
       </div>
-
-      {/* Тепловая карта концентрации риска (§5, виджет 2) */}
-      <Card {...premiumCard('gold')} title="Тепловая карта риска: ИС × подхарактеристика (ALE)"
-        styles={{ body: { padding: SPACE.airy } }}>
-        {systems.length === 0 ? (
-          <Text type="secondary">Нет привязок рисков к подхарактеристикам — добавьте связи на вкладке «Рисковые события».</Text>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: `minmax(140px, 1.4fr) repeat(${subchars.length}, minmax(96px, 1fr))`, gap: 4 }}>
-              <div />
-              {subchars.map((sc) => (
-                <div key={sc} style={{ ...TYPE.micro, color: BRAND.inkSoft, textAlign: 'center', padding: SPACE.tight }}>{sc}</div>
-              ))}
-              {systems.map((s) => (
-                <React.Fragment key={s}>
-                  <div style={{ ...TYPE.captionStrong, color: BRAND.ink, display: 'flex', alignItems: 'center' }}>{s}</div>
-                  {subchars.map((sc) => {
-                    const v = cellAle(s, sc);
-                    const a = v / maxAle;
-                    return (
-                      <div key={sc} title={v > 0 ? fmtMoney(v) : undefined} style={{
-                        background: v > 0 ? `rgba(185,154,85,${(0.15 + a * 0.75).toFixed(2)})` : PREMIUM.surfaceSoft,
-                        borderRadius: PREMIUM.radiusSm, padding: SPACE.snug, textAlign: 'center',
-                        ...TYPE.caption, ...numericText, color: BRAND.ink,
-                      }}>
-                        {v > 0 ? fmtMln(v) : '·'}
-                      </div>
-                    );
-                  })}
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* Топ рисков по стоимости (§5, виджет 3) */}
-      <Card {...premiumCard('terracotta')} title="Топ рисков по стоимости" styles={{ body: { padding: 0 } }}>
-        <Table<TopRisk>
-          columns={topCols} dataSource={d?.topRisks ?? []} rowKey="code" loading={loading} size="small"
-          pagination={false} scroll={{ x: 780 }}
-          locale={{ emptyText: 'Нет рисковых событий с посчитанным ALE.' }}
-        />
-      </Card>
-
-      {/* ТЗ v19 п.7 (УК-20): портфельный итог — «под риском / покрыто / остаточный / вложения / эффект» */}
-      <div>
-        <Title level={5} style={{ margin: '0 0 8px' }}>Портфельный итог по мерам</Title>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: SPACE.base }}>
-          <KpiCard loading={chainLoading} title="Всего под риском, ₽/год" value={summary ? fmtMoney(summary.totalAtRisk) : '—'}
-            hint={summary ? `${summary.risksCount} рисковых событий` : undefined} />
-          <KpiCard loading={chainLoading} title="Покрыто выполненными мерами, ₽/год" value={summary ? fmtMoney(summary.coveredByDoneMeasures) : '—'}
-            color={summary && summary.coveredByDoneMeasures > 0 ? accentColorOf('sage') : undefined} />
-          <KpiCard loading={chainLoading} title="Остаточный риск, ₽/год" value={summary ? fmtMoney(summary.residualRisk) : '—'}
-            color={summary && summary.residualRisk > 0 ? accentColorOf('terracotta') : undefined} />
-          <KpiCard loading={chainLoading} title="Требуемые вложения, ₽" value={summary ? fmtMoney(summary.requiredInvestment) : '—'}
-            hint={summary ? `${summary.measuresCount} мер` : undefined} />
-          <KpiCard loading={chainLoading} title="Ожидаемый эффект, ₽/год" value={summary ? fmtMoney(summary.expectedEffect) : '—'}
-            hint="одобрены, ещё не выполнены" />
-        </div>
-      </div>
-
-      {/* ТЗ v19 п.7 (УК-19): сквозная таблица риск → мера → эффект, разворот по клику на риск */}
-      <Card {...premiumCard('ink')} title="Риск → мера → эффект" styles={{ body: { padding: 0 } }}>
-        <Table<RiskMeasureChainRow>
-          rowKey="riskId" loading={chainLoading} size="small" pagination={{ pageSize: 10, hideOnSinglePage: true }}
-          dataSource={chain}
-          locale={{ emptyText: 'Нет активных рисковых событий.' }}
-          expandable={{
-            rowExpandable: (r) => r.measures.length > 0,
-            expandedRowRender: (r) => (
-              <Table<RiskMeasureChainMeasure>
-                rowKey="proposalId" size="small" pagination={false} dataSource={r.measures}
-                columns={[
-                  { title: 'Мера', dataIndex: 'title' },
-                  { title: 'Статус', dataIndex: 'status', width: 130,
-                    render: (s: string, m) => (
-                      <Space size={4}>
-                        <Tag>{s}</Tag>
-                        {m.execution && <Tag color={m.execution === 'DONE' ? 'green' : 'red'}>{m.execution === 'DONE' ? 'выполнено' : 'не выполнено'}</Tag>}
-                      </Space>
-                    ) },
-                  numericColumn({ title: 'Доля снятия', dataIndex: 'aleReductionShare', width: 100,
-                    render: (v: number | null) => v == null ? '—' : `${Math.round(v * 100)}%` }),
-                  numericColumn({ title: 'ΔALE (деньги)', dataIndex: 'deltaAleCash', width: 130, render: (v: number | null) => fmtMoney(v) }),
-                  numericColumn({ title: 'CAPEX', dataIndex: 'capex', width: 120, render: (v: number | null) => fmtMoney(v) }),
-                  numericColumn({ title: 'OPEX/год', dataIndex: 'opexPerYear', width: 120, render: (v: number | null) => fmtMoney(v) }),
-                  numericColumn({ title: 'ROSI', dataIndex: 'rosi', width: 90, render: (v: number | null) => v == null ? '—' : fmtNum(v) }),
-                  numericColumn({ title: 'Окупаемость, мес.', dataIndex: 'paybackMonths', width: 130,
-                    render: (v: number | null) => v == null ? '—' : fmtNum(v, 1) }),
-                  { title: 'Вердикт', dataIndex: 'verdict', width: 110, render: (v: string | null) => v || '—' },
-                ]}
-              />
-            ),
-          }}
-          columns={[
-            { title: 'Риск', dataIndex: 'riskTitle', sorter: sorterFor((r: RiskMeasureChainRow) => r.riskTitle),
-              render: (t: string, r) => <Space size={4}><Text type="secondary" style={{ fontSize: 12 }}>{r.riskCode}</Text><Text strong>{t}</Text></Space> },
-            { title: 'ИС', dataIndex: 'systemName', width: 160, render: (s: string | null) => s || '—' },
-            numericColumn({ title: 'ALE, ₽/год', dataIndex: 'aleAvg', width: 150,
-              sorter: sorterFor((r: RiskMeasureChainRow) => r.aleAvg), render: (v: number | null) => fmtMoney(v) }),
-            numericColumn({ title: 'Мер привязано', key: 'measuresCount', width: 130,
-              sorter: sorterFor((r: RiskMeasureChainRow) => r.measures.length),
-              render: (_: unknown, r) => r.measures.length || <Text type="secondary">0</Text> }),
-          ]}
-        />
-      </Card>
-
-      {/* ТЗ v19 п.15 (УК-37): портфельная кривая эффекта — «когда реально придут деньги»
-          по одобренным мерам, с учётом лага внедрения. Меры без решения (decided_at) не входят —
-          honestly считать для них нечего. */}
-      <Card {...premiumCard('sage')} title="Когда придут деньги: портфельный эффект по кварталам"
-        styles={{ body: { padding: SPACE.airy } }}>
-        {curveLoading ? (
-          <Text type="secondary">Загрузка…</Text>
-        ) : !curve || curve.points.length === 0 ? (
-          <Text type="secondary">Нет одобренных мер с посчитанной экономикой — кривую строить не из чего.</Text>
-        ) : (
-          <>
-            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-              {curve.points.map((pt) => (
-                <div key={pt.quarterLabel} style={{
-                  minWidth: 100, padding: '6px 8px', borderRadius: 6, background: '#fff', border: '1px solid #E5E7EB',
-                }}>
-                  <Text style={{ fontSize: TYPE.micro.fontSize, display: 'block' }} type="secondary">{pt.quarterLabel}</Text>
-                  <Text style={{ fontSize: 12, display: 'block', color: pt.netCash > 0 ? RAG.good.strong : pt.netCash < 0 ? RAG.bad.strong : undefined }}>
-                    {pt.netCash > 0 ? '+' : ''}{fmtMoney(pt.netCash)}
-                  </Text>
-                  <Text style={{ fontSize: 12, display: 'block', color: pt.cumulative >= 0 ? RAG.good.strong : RAG.bad.strong }}>
-                    Σ {fmtMoney(pt.cumulative)}
-                  </Text>
-                </div>
-              ))}
-            </div>
-            <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block', marginTop: 8 }}>
-              Учтено мер: {curve.measuresIncluded}
-              {curve.measuresExcludedNoStartDate > 0 && <> · без решения (не входят в расчёт): {curve.measuresExcludedNoStartDate}</>}
-            </Text>
-          </>
-        )}
-      </Card>
+      <EconHeatmapCard />
+      <EconTopRisksCard />
+      <EconPortfolioSummaryCard />
+      <EconRiskMeasureEffectCard />
+      <EconQuarterlyEffectCard />
     </Space>
-  );
-};
-
-// ════════════════════════ Карточка взаимосвязи ТС-мера-экономика-качество (БТ-322) ════════════════════════
-// Разворачивающаяся строка рискового события: сюда стягиваются все 4 стороны связи — техсбои
-// (ТС), меры, экономика (ALE — уже видна в строке таблицы) и качество (характеристики ГОСТ 25010).
-// Раньше все три связи существовали только в бэкенде (POST .../incidents|measures|subchars) —
-// фронт их никогда не вызывал, эмпти-стейт таблицы прямо просил «привяжите техсбои», а привязать
-// было нечем. Здесь — просмотр + форма привязки/отвязки по каждой из трёх связей.
-const RiskEventLinksPanel: React.FC<{ event: RiskEvent; onChanged: () => void }> = ({ event, onChanged }) => {
-  const [links, setLinks] = useState<RiskEventLinks | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [incidentOptions, setIncidentOptions] = useState<IncidentOption[]>([]);
-  const [proposalOptions, setProposalOptions] = useState<ProposalOption[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [subcharOpen, setSubcharOpen] = useState(false);
-  const [subcharForm] = Form.useForm();
-  const [incidentPickId, setIncidentPickId] = useState<string | undefined>();
-  const [measurePickId, setMeasurePickId] = useState<string | undefined>();
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [l, incs, props] = await Promise.all([
-        api<RiskEventLinks>(`/risk-events/${event.id}/links`),
-        api<IncidentOption[]>('/incidents'),
-        api<ProposalOption[]>('/governance/proposals'),
-      ]);
-      setLinks(l);
-      setIncidentOptions(incs);
-      setProposalOptions(props);
-    } catch (e: any) {
-      message.error(`Не удалось загрузить связи риска: ${e.message}`);
-    } finally { setLoading(false); }
-  }, [event.id]);
-  useEffect(() => { load(); }, [load]);
-
-  const addSubchar = async () => {
-    try {
-      const v = await subcharForm.validateFields();
-      setBusy(true);
-      await api(`/risk-events/${event.id}/subchars`, { method: 'POST', body: JSON.stringify(v) });
-      subcharForm.resetFields(); setSubcharOpen(false); await load(); onChanged();
-    } catch (e: any) {
-      if (e?.errorFields) return;
-      message.error(`Не удалось привязать характеристику: ${e.message}`);
-    } finally { setBusy(false); }
-  };
-
-  const addIncident = async () => {
-    if (!incidentPickId) return;
-    setBusy(true);
-    try {
-      await api(`/risk-events/${event.id}/incidents`, { method: 'POST', body: JSON.stringify({ incidentId: incidentPickId }) });
-      setIncidentPickId(undefined); await load(); onChanged();
-    } catch (e: any) { message.error(`Не удалось привязать техсбой: ${e.message}`); }
-    finally { setBusy(false); }
-  };
-
-  const addMeasure = async () => {
-    if (!measurePickId) return;
-    setBusy(true);
-    try {
-      await api(`/risk-events/${event.id}/measures`, { method: 'POST', body: JSON.stringify({ proposalId: measurePickId }) });
-      setMeasurePickId(undefined); await load(); onChanged();
-    } catch (e: any) { message.error(`Не удалось привязать меру: ${e.message}`); }
-    finally { setBusy(false); }
-  };
-
-  const unlink = async (kind: 'subchars' | 'incidents' | 'measures', linkId: string) => {
-    setBusy(true);
-    try {
-      await api(`/risk-events/${event.id}/${kind}/${linkId}`, { method: 'DELETE' });
-      await load(); onChanged();
-    } catch (e: any) { message.error(`Не удалось отвязать: ${e.message}`); }
-    finally { setBusy(false); }
-  };
-
-  if (loading || !links) return <div style={{ padding: SPACE.base }}><Spin size="small" /></div>;
-
-  const linkedIncidentIds = new Set(links.incidents.map((i) => i.incidentId));
-  const linkedProposalIds = new Set(links.measures.map((m) => m.proposalId));
-
-  return (
-    <Space direction="vertical" size="middle" style={{ width: '100%', padding: `${SPACE.tight}px ${SPACE.base}px` }}>
-      <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
-        Взаимосвязь этого риска: техсбои (ТС) → экономика (ALE {fmtMoney(event.aleAvg)}/год, см. столбцы выше) → качество
-        (характеристики) → меры по устранению.
-      </Text>
-
-      <div>
-        <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>Качество — привязанные характеристики</Text>
-        <div style={{ marginTop: SPACE.tight }}>
-          <Space wrap size={[8, 8]}>
-            {links.subchars.map((s) => (
-              <Tag key={s.id} closable onClose={() => unlink('subchars', s.id)}>{s.characteristic} · {s.subcharacteristic}</Tag>
-            ))}
-            {!subcharOpen ? (
-              <Button size="small" icon={<PlusOutlined />} onClick={() => setSubcharOpen(true)}>Привязать характеристику</Button>
-            ) : (
-              <Form form={subcharForm} layout="inline" onFinish={addSubchar} style={{ display: 'flex', alignItems: 'flex-start' }}>
-                <Form.Item name="characteristic" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-                  <Input placeholder="Характеристика" size="small" style={{ width: 160 }} />
-                </Form.Item>
-                <Form.Item name="subcharacteristic" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-                  <Input placeholder="Подхарактеристика" size="small" style={{ width: 170 }} />
-                </Form.Item>
-                <Button size="small" type="primary" htmlType="submit" loading={busy}>Добавить</Button>
-                <Button size="small" onClick={() => { setSubcharOpen(false); subcharForm.resetFields(); }}>Отмена</Button>
-              </Form>
-            )}
-          </Space>
-        </div>
-      </div>
-
-      <div>
-        <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>Технические сбои (ТС)</Text>
-        <div style={{ marginTop: SPACE.tight }}>
-          {links.incidents.length === 0 ? (
-            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Не привязано ни одного техсбоя.</Text>
-          ) : (
-            <Space direction="vertical" size={4} style={{ width: '100%' }}>
-              {links.incidents.map((i) => (
-                <Space key={i.id} style={{ justifyContent: 'space-between', width: '100%' }} wrap>
-                  <Text style={{ fontSize: TYPE.bodySm.fontSize }}>
-                    {i.title} · {i.systemName} · {dayjs(i.occurredAt).format('DD.MM.YYYY')}
-                  </Text>
-                  <Space size={8}>
-                    {i.costTotal != null && <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, ...numericText }}>{fmtMoney(i.costTotal)}</Text>}
-                    <Button size="small" type="text" danger onClick={() => unlink('incidents', i.id)}>Отвязать</Button>
-                  </Space>
-                </Space>
-              ))}
-            </Space>
-          )}
-          <Space style={{ marginTop: SPACE.tight }} wrap>
-            <Select
-              size="small" showSearch style={{ width: 320 }} placeholder="Выбрать техсбой"
-              value={incidentPickId} onChange={setIncidentPickId}
-              filterOption={(input, opt) => String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-              options={incidentOptions.filter((o) => !linkedIncidentIds.has(o.id))
-                .map((o) => ({ value: o.id, label: `${o.title} · ${o.systemName}` }))}
-            />
-            <Button size="small" onClick={addIncident} disabled={!incidentPickId} loading={busy}>Привязать</Button>
-          </Space>
-        </div>
-      </div>
-
-      <div>
-        <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>Меры</Text>
-        <div style={{ marginTop: SPACE.tight }}>
-          {links.measures.length === 0 ? (
-            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>Мер не привязано.</Text>
-          ) : (
-            <Space direction="vertical" size={4} style={{ width: '100%' }}>
-              {links.measures.map((m) => (
-                <Space key={m.id} style={{ justifyContent: 'space-between', width: '100%' }} wrap>
-                  <Text style={{ fontSize: TYPE.bodySm.fontSize }}>{m.title}</Text>
-                  <Space size={8}>
-                    <Tag>{m.status}</Tag>
-                    <Button size="small" type="text" danger onClick={() => unlink('measures', m.id)}>Отвязать</Button>
-                  </Space>
-                </Space>
-              ))}
-            </Space>
-          )}
-          <Space style={{ marginTop: SPACE.tight }} wrap>
-            <Select
-              size="small" showSearch style={{ width: 320 }} placeholder="Выбрать меру"
-              value={measurePickId} onChange={setMeasurePickId}
-              filterOption={(input, opt) => String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-              options={proposalOptions.filter((o) => !linkedProposalIds.has(o.id))
-                .map((o) => ({ value: o.id, label: `${o.riskTitle || o.metricName || 'Мера'} · ${o.systemName}` }))}
-            />
-            <Button size="small" onClick={addMeasure} disabled={!measurePickId} loading={busy}>Привязать</Button>
-          </Space>
-        </div>
-      </div>
-    </Space>
-  );
-};
+  </EconScopeProvider>
+);
 
 // ════════════════════════ Рисковые события ════════════════════════
 const RiskEventsTab: React.FC = () => {
@@ -1223,125 +772,12 @@ const ClosureTab: React.FC = () => {
 };
 
 // ════════════ Эффективность руководителей (задача 12, §7.1) — ДИАГНОСТИКА ════════════
-const ManagersTab: React.FC = () => {
-  const [d, setD] = useState<ManagerMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// Та же карточка, что и в каталоге: рейтинг доступен и как элемент любого дашборда.
+const ManagersTab: React.FC = () => (
+  <EconScopeProvider>
+    <EconManagersCard />
+  </EconScopeProvider>
+);
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true); setError(null);
-    api<ManagerMetrics>('/econ/manager-metrics')
-      .then((r) => { if (alive) setD(r); })
-      .catch((e: any) => { if (alive) setError(e.message); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-  }, []);
-
-  const rows = d?.rows ?? [];
-  const totals = useMemo(() => ({
-    owners: rows.length,
-    open: rows.reduce((s, r) => s + r.openCount, 0),
-    overdue: rows.reduce((s, r) => s + r.overdueCount, 0),
-    delta: rows.reduce((s, r) => s + r.deltaAleManaged, 0),
-    // ТЗ v19 п.13 (В-41): сколько мер вообще без оценки часов — видно ДО таблицы, чтобы не
-    // спутать «мало нагрузки» с «нагрузку никто не оценил» (не ноль молча).
-    withoutEstimate: rows.reduce((s, r) => s + r.measuresWithoutEstimate, 0),
-  }), [rows]);
-
-  const columns: ColumnsType<ManagerMetricRow> = [
-    { title: 'Владелец', dataIndex: 'owner', width: 200, sorter: sorterFor((r: ManagerMetricRow) => r.owner), render: (o: string) => <Text strong>{o}</Text> },
-    numericColumn({ title: 'Нагрузка', dataIndex: 'openCount', width: 110, sorter: sorterFor((r: ManagerMetricRow) => r.openCount) }),
-    numericColumn({
-      title: 'Просрочено', dataIndex: 'overdueCount', width: 120,
-      sorter: sorterFor((r: ManagerMetricRow) => r.overdueCount),
-      render: (v: number) => (
-        <Text style={{ color: v > 0 ? RAG.bad.strong : BRAND.inkSoft }}>{v}</Text>
-      ),
-    }),
-    numericColumn({
-      title: 'Выполнено', dataIndex: 'completedCount', width: 120,
-      sorter: sorterFor((r: ManagerMetricRow) => r.completedCount),
-      render: (v: number) => (
-        <Text style={{ color: v > 0 ? RAG.good.strong : BRAND.inkSoft }}>{v}</Text>
-      ),
-    }),
-    numericColumn({
-      title: 'Средний возраст, дн', dataIndex: 'avgAgeDays', width: 170,
-      sorter: sorterFor((r: ManagerMetricRow) => r.avgAgeDays),
-      render: (v: number | null) => fmtNum(v, 1),
-    }),
-    numericColumn({
-      title: 'Δ ALE под управлением', dataIndex: 'deltaAleManaged', width: 200,
-      sorter: sorterFor((r: ManagerMetricRow) => r.deltaAleManaged),
-      render: (v: number) => fmtMoney(v),
-    }),
-    numericColumn({
-      title: 'Доля «принять», %', dataIndex: 'acceptShare', width: 160,
-      sorter: sorterFor((r: ManagerMetricRow) => r.acceptShare),
-      // Высокая доля «принять» — сигнал: проблемы прячут вместо решения (§7.1).
-      render: (v: number) => (
-        <Text style={{ color: v >= 50 ? RAG.medium.strong : BRAND.inkSoft }}>{fmtNum(v, 1)}</Text>
-      ),
-    }),
-    numericColumn({
-      title: 'Доля компенсирующих, %', dataIndex: 'compensatingShare', width: 200,
-      sorter: sorterFor((r: ManagerMetricRow) => r.compensatingShare),
-      // Много компенсирующих — лечение симптомов вместо причин (§7.1).
-      render: (v: number) => (
-        <Text style={{ color: v >= 50 ? RAG.medium.strong : BRAND.inkSoft }}>{fmtNum(v, 1)}</Text>
-      ),
-    }),
-    numericColumn({
-      title: 'Взвеш. нагрузка', dataIndex: 'weightedLoad', width: 150,
-      sorter: sorterFor((r: ManagerMetricRow) => r.weightedLoad),
-      // ТЗ v19 п.13: характеристика × критичность ИС × часы — «5 сложных» не равны «15 лёгким».
-      render: (v: number) => fmtNum(v, 0),
-    }),
-    numericColumn({
-      title: 'Часы (оценено)', dataIndex: 'hoursEstimated', width: 140,
-      sorter: sorterFor((r: ManagerMetricRow) => r.hoursEstimated),
-      render: (v: number) => `${fmtNum(v, 1)} ч`,
-    }),
-    numericColumn({
-      title: 'Мер без оценки часов', dataIndex: 'measuresWithoutEstimate', width: 180,
-      sorter: sorterFor((r: ManagerMetricRow) => r.measuresWithoutEstimate),
-      // Отдельный счётчик (В-41): не ноль молча — иначе неоценённая нагрузка выглядит «свободной».
-      render: (v: number) => (
-        <Text style={{ color: v > 0 ? RAG.medium.strong : BRAND.inkSoft }}>{v}</Text>
-      ),
-    }),
-  ];
-
-  return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Space size="middle" wrap>
-        <KpiCard title="Руководителей" value={totals.owners} loading={loading} />
-        <KpiCard title="Открытых задач" value={totals.open} loading={loading} />
-        <KpiCard title="Просрочено" value={totals.overdue} loading={loading}
-          color={totals.overdue > 0 ? RAG.bad.strong : undefined} />
-        <KpiCard title="Δ ALE под управлением" value={fmtMln(totals.delta)} hint="₽/год"
-          loading={loading} />
-        <KpiCard title="Мер без оценки часов" value={totals.withoutEstimate} loading={loading}
-          color={totals.withoutEstimate > 0 ? RAG.medium.strong : undefined}
-          hint="не входят во взвешенную нагрузку" />
-      </Space>
-
-      <Alert type="info" showIcon
-        message="Диагностический режим — без привязки к мотивации"
-        description={d?.note ?? 'Метрики выводятся пакетом, не по одной: при прямой привязке к премии любая из них ломается (дробление мер, срок с запасом, завышение исходной оценки риска). Первые 2 квартала — наблюдение и калибровка порогов.'} />
-
-      {error && <Alert type="error" showIcon message="Ошибка загрузки" description={error} closable />}
-
-      <Card {...premiumCard('slate')} styles={{ body: { padding: 0 } }}>
-        <Table<ManagerMetricRow>
-          columns={columns} dataSource={rows} rowKey="owner" loading={loading} size="small"
-          scroll={{ x: 1750 }} pagination={{ pageSize: 15, hideOnSinglePage: true }}
-          locale={{ emptyText: 'Нет данных: метрики появятся, когда у несоответствий и мер будут указаны владельцы.' }}
-        />
-      </Card>
-    </Space>
-  );
-};
 
 export default RiskEconomicsPage;

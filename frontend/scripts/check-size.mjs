@@ -24,7 +24,11 @@ const SRC = resolve(fileURLToPath(new URL('../src/', import.meta.url)));
 /** Общий потолок для НОВЫХ файлов, КБ. */
 const DEFAULT_LIMIT_KB = 20;
 
-/** Долг на 2026-08-15: фактический размер, КБ. Уменьшать при декомпозиции. */
+/** Долг на 2026-08-15: фактический размер, КБ. Уменьшать при декомпозиции.
+ *
+ *  2026-08-26 (БТ-500): дашборды разобраны на карточки каталога — их страницы стали обёртками
+ *  над конструктором (1–2 КБ) и из бюджета убраны совсем; RiskEconomicsPage потеряла вкладку
+ *  «Дашборд стоимости» и панель связей (86 → 51 КБ) и до своего потолка ещё не дошла. */
 const SIZE_BUDGET_KB = {
   'pages/RiskEconomicsPage.tsx': 42,
   'pages/NewAssessmentPage.tsx': 36,
@@ -32,11 +36,6 @@ const SIZE_BUDGET_KB = {
   'pages/AiAssessmentPage.tsx': 32,
   'pages/ExcelReportsPage.tsx': 32,
   'store/api/apiSlice.ts': 32,
-  'pages/dashboard/TaskPlanDashboard.tsx': 30,
-  'pages/dashboard/ExecutiveDashboard.tsx': 27,
-  'pages/dashboard/IncidentsAnalyticsPage.tsx': 27,
-  'pages/dashboard/ManagerDashboard.tsx': 27,
-  'pages/DashboardPage.tsx': 24,
   'store/slices/governanceSlice.ts': 20,
 };
 

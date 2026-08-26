@@ -21,6 +21,7 @@ const QualityDynamicsPage = lazy(() => import('./pages/dashboard/QualityDynamics
 const TaskPlanDashboard = lazy(() => import('./pages/dashboard/TaskPlanDashboard'));
 const IncidentsAnalyticsPage = lazy(() => import('./pages/dashboard/IncidentsAnalyticsPage'));
 const RiskRadarPage = lazy(() => import('./pages/dashboard/RiskRadarPage'));
+const MyDashboardPage = lazy(() => import('./pages/dashboard/MyDashboardPage'));
 const AssessmentWorkspacePage = lazy(() => import('./pages/AssessmentWorkspacePage'));
 const AiAssessmentPage = lazy(() => import('./pages/AiAssessmentPage'));
 const MetricsInputPage = lazy(() => import('./pages/MetricsInputPage'));
@@ -144,6 +145,8 @@ export const App: React.FC = () => {
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/*" element={<RequireAuth><AppLayout><Suspense fallback={<PageLoader />}><Routes>
                             <Route path="dashboard" element={<DashboardRouter />} />
+                            {/* Личный дашборд (ТЗ v22, БТ-500): состав собирает сам пользователь. */}
+                            <Route path="dashboard/my" element={<RequirePermission perm="view.my_dashboard"><MyDashboardPage /></RequirePermission>} />
                             <Route path="dashboard/analytics" element={<RequirePermission perm="view.dashboard.analytics"><DashboardPage /></RequirePermission>} />
                             <Route path="dashboard/cto" element={<RequirePermission perm="view.dashboard.cto"><CtoDashboard /></RequirePermission>} />
                             <Route path="dashboard/ceo" element={<RequirePermission perm="view.dashboard.ceo"><CeoDashboard /></RequirePermission>} />

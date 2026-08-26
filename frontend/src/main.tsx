@@ -6,6 +6,7 @@ import App from './App';
 import './styles/themes.css';
 import './styles/a11y-overrides.css';
 import './styles/ui.css';
+import './styles/dashboard-grid.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
