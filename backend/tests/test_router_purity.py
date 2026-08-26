@@ -20,22 +20,26 @@ from pathlib import Path
 
 MODULES_DIR = Path(__file__).resolve().parents[1] / "app" / "modules"
 
-_ORM_CALL = re.compile(r"\b(?:select|update|delete)\(|\bdb\.execute\b|\bsession\.execute\b")
+# (?<![.\w]) — вызов НЕ через точку. Без этого условия страж считал обращением к ORM декоратор
+# маршрута @router.delete(...): \b срабатывает на границе между точкой и словом. Из-за этого
+# роутер, где нет ни одного обращения к БД, числился нарушителем (risk/event_router.py после
+# БТ-322), а бюджеты остальных были завышены ровно на число их DELETE-эндпоинтов.
+_ORM_CALL = re.compile(r"(?<![.\w])(?:select|update|delete)\(|\bdb\.execute\b|\bsession\.execute\b")
 _CROSS_IMPORT = re.compile(r"^from app\.modules\.([a-z_]+)\.(models|service|schemas)\s+import", re.M)
 
 # ── Долг на 2026-08-15. Значения — ВЕРХНЯЯ ГРАНИЦА обращений к ORM в роутере.
 # Уменьшать при рефакторинге; увеличивать нельзя.
 ORM_BUDGET: dict[str, int] = {
     "assessment/router.py": 56,
-    "assessment/ai_router.py": 19,
+    "assessment/ai_router.py": 18,
     "reporting/router.py": 18,
     "risk/router.py": 8,
-    "quality/router.py": 7,
+    "quality/router.py": 6,
     "systems/router.py": 6,
-    "iam/admin_router.py": 5,
+    "iam/admin_router.py": 4,
     "dataio/router.py": 4,
     "iam/router.py": 2,
-    "incidents/router.py": 1,
+    # incidents/router.py убран: его единственное «обращение» было декоратором @router.delete.
 }
 
 # Кросс-доменные импорты внутренностей, существующие на момент фиксации.

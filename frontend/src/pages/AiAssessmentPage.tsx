@@ -23,59 +23,15 @@ import { ragToken, solidTagStyle, BRAND } from '../theme/ragPalette';
 import { SPACE, premiumCard, accentDot, GOLD, TYPE } from '../theme/premium';
 import { numericColumn, numericText, sorterFor } from '../theme/table';
 import FieldHint from '../components/FieldHint';
+import {
+  ARRAY_FIELDS, CURVE_FIELDS, INPUT_LABEL, KIND_SCHEMAS, VERDICT_TAG, parseCsv, parseCurve,
+  type AiGroup, type AiPeriod, type AiValue,
+  type CalcOut, type ConfReport, type ConfRow, type SystemLite,
+} from './aiAssessment/aiModel';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
-// --- Типы модели 59898 (зеркало ответа /ai-assessments/ai-model) ---
-interface AiSub { name: string; metric_kind: string; inputs_schema: string[]; is_ai_specific: boolean; hint: string }
-interface AiChar { title: string; subs: AiSub[] }
-interface AiGroup { group: string; characteristics: AiChar[] }
-
-interface AiValue {
-  id: string; group_name: string; characteristic: string; subcharacteristic: string;
-  metric_kind: string; inputs: Record<string, number> | null;
-  baseline: number | null; tol_low: number | null; tol_high: number | null;
-  raw_value: number | null; normalized_x: number | null; conformant: boolean | null;
-  unmeasurable: boolean; expert_comment: string | null; is_ai_specific: boolean;
-}
-interface AiPeriod { id: string; system_id: string; system_name?: string; period: string; status: string }
-interface CalcOut { q: number | null; level: string; characteristics: Array<{ title: string; score: number }>; weighted?: boolean }
-interface ConfRow {
-  characteristic: string; subcharacteristic: string; metric_kind: string;
-  raw_value: number | null; baseline: number | null; tol_low: number | null; tol_high: number | null;
-  normalized_x: number | null; verdict: string;
-}
-interface ConfReport { q: number | null; level: string; rows: ConfRow[]; conformant_count: number; nonconformant_count: number; no_baseline_count: number }
-
-interface SystemLite { id: string; name: string; code?: string; system_kind?: string }
-
-const INPUT_LABEL: Record<string, string> = {
-  A: 'A (факт)', B: 'B (база)', TP: 'TP', TN: 'TN', FP: 'FP', FN: 'FN', score: 'Оценка 0–100',
-  y: 'y — фактические значения (CSV)', y_hat: 'ŷ — предсказания (CSV)',
-  rel: 'Релевантности по порядку выдачи (CSV)', curve: 'Точки кривой: x,y; x,y; …',
-  I: 'I — эталонное изображение (пиксели CSV)', I_hat: 'Î — реконструкция (пиксели CSV)',
-  max_i: 'MAX (динамический диапазон, напр. 255)',
-};
-// Поля-массивы вводятся текстом (CSV) и парсятся перед отправкой; curve — парами «x,y; x,y».
-const ARRAY_FIELDS = new Set(['y', 'y_hat', 'rel', 'I', 'I_hat']);
-const CURVE_FIELDS = new Set(['curve']);
-const parseCsv = (s: string): number[] => s.replace(/;/g, ',').split(',').map((p) => p.trim()).filter(Boolean).map(Number);
-const parseCurve = (s: string): number[][] => s.split(';').map((pair) => pair.trim()).filter(Boolean)
-  .map((pair) => pair.split(',').map((p) => Number(p.trim())));
-const VERDICT_TAG: Record<string, string> = {
-  'В допуске': 'green', 'Вне допуска': 'red', 'Эталон не задан': 'default',
-  'Невозможно измерить': 'default', 'Не рассчитано': 'orange',
-};
-
-// Зеркало METRIC_KINDS бэкенда (modules/quality/ai_quality_model.py) для переопределения вида метрики.
-const KIND_SCHEMAS: Record<string, string[]> = {
-  RATIO_DIRECT: ['A', 'B'], RATIO_INVERSE: ['A', 'B'],
-  ACCURACY: ['TP', 'TN', 'FP', 'FN'], PRECISION: ['TP', 'FP'], RECALL: ['TP', 'FN'],
-  SPECIFICITY: ['TN', 'FP'], F1: ['TP', 'FP', 'FN'], EXPERT_SCALE: ['score'],
-  MSE: ['y', 'y_hat'], MAE: ['y', 'y_hat'], AUC_ROC: ['curve'], AUC_PRC: ['curve'],
-  NDCG: ['rel'], PSNR: ['I', 'I_hat', 'max_i'], SSIM: ['I', 'I_hat'],
-};
 
 const AiAssessmentPage: React.FC = () => {
   const token = localStorage.getItem('token');
