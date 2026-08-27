@@ -26,20 +26,10 @@ import { ragToken, solidTagStyle, RAG, ACCENT } from '../theme/ragPalette';
 import { SPACE, TYPE } from '../theme/premium';
 import { fmtMoney, fmtNum } from '../utils/money';
 import { MeasureCardExtras } from './MeasureCardExtras';
+import MeasureEconomicsBlock from './MeasureEconomicsBlock';
+import MeasureHistoryModal from './MeasureHistoryModal';
+import MeasureManagementSummary from './MeasureManagementSummary';
 import FieldHint from './FieldHint';
-
-// ТЗ v19 п.14: карточка меры на языке топ-менеджмента (что не так → деньги/срок → решение →
-// стоимость → результат → ответственный), ≤80 слов, без формул — считает бэкенд
-// (governance/management_summary.py, персона TOP_MANAGER). Кэш по мере не нужен: бэкенд уже
-// кэширует по содержимому факта (llm/service.py generate_management_summary).
-interface ManagementSummary {
-  text: string;
-  wordCount: number;
-  hasMoney: boolean;
-  hasDeadline: boolean;
-  hasResponsible: boolean;
-  missing: string[];
-}
 
 const { Text, Paragraph } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -81,17 +71,6 @@ const STATUS_TAG: Record<ProposalStatus, { color: string; label: string }> = {
   REJECTED: { color: 'red', label: 'Отклонена' },
 };
 
-// Человекочитаемые названия полей для истории правок (аудита).
-const FIELD_LABELS: Record<string, string> = {
-  riskTitle: 'Название меры/риска',
-  rationale: 'Обоснование',
-  expectation: 'Ожидание от ЛПР',
-  owner: 'Ответственный',
-  ownerRole: 'Должность ответственного',
-  dueDate: 'Срок',
-  topComment: 'Комментарий топ-менеджера',
-};
-
 interface Props {
   open: boolean;
   proposal: Proposal | null;
@@ -105,7 +84,6 @@ const Field: React.FC<{ label: React.ReactNode; children: React.ReactNode }> = (
   </div>
 );
 
-const fmtTime = (iso: string) => new Date(iso).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
 
 export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose }) => {
   const dispatch = useAppDispatch();
@@ -120,21 +98,6 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
   useEffect(() => {
     if (open && !horizon) { fetchRosiHorizon().then(setHorizon); }
   }, [open, horizon]);
-  const [mgmtSummary, setMgmtSummary] = useState<ManagementSummary | null>(null);
-  const [mgmtLoading, setMgmtLoading] = useState(false);
-  useEffect(() => {
-    if (!open || !proposal?.id) { setMgmtSummary(null); return; }
-    let alive = true;
-    setMgmtLoading(true);
-    const token = localStorage.getItem('token');
-    fetch(`${VITE_API}/governance/proposals/${proposal.id}/management-summary`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (alive) setMgmtSummary(d); })
-      .catch(() => { if (alive) setMgmtSummary(null); })
-      .finally(() => { if (alive) setMgmtLoading(false); });
-    return () => { alive = false; };
-  }, [open, proposal?.id]);
   // Редактируемые топ-менеджментом поля (ответственный/срок) до принятия решения.
   const [editOwner, setEditOwner] = useState('');
   const [editOwnerRole, setEditOwnerRole] = useState('');
@@ -255,91 +218,18 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
         <Tag style={solidTagStyle(tok.strong)}>{p.calculatedScore}%</Tag>
       </Space>
 
-      {(mgmtLoading || mgmtSummary?.text) && (
-        <div style={{
-          background: '#F5F6F8', borderRadius: 8, padding: 12, marginBottom: 12,
-          borderInlineStart: `3px solid ${ACCENT.slate.color}`,
-        }}>
-          <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
-            <FileTextOutlined /> Для топ-менеджмента
-          </Text>
-          {mgmtLoading ? (
-            <Paragraph style={{ marginBottom: 0, marginTop: 4 }} type="secondary">Готовится…</Paragraph>
-          ) : (
-            <>
-              <Paragraph style={{ marginBottom: 0, marginTop: 4 }}>{mgmtSummary!.text}</Paragraph>
-              {mgmtSummary!.missing.length > 0 && (
-                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block', marginTop: 4 }}>
-                  Не заполнено на мере: {mgmtSummary!.missing.join(', ')} — цифры ниже неполные, не нулевые.
-                </Text>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      <MeasureManagementSummary open={open} proposalId={proposal?.id} />
 
       {hasEconomics && (
-        <div style={{ background: '#F5F6F8', borderRadius: 8, padding: 12, marginBottom: 12 }}>
-          <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
-            <DollarOutlined /> Экономика меры
-          </Text>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 4 }}>
-            {p.capex != null && (
-              <div>
-                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>CAPEX</Text>
-                <Text strong>{fmtMoney(p.capex)}</Text>
-              </div>
-            )}
-            {p.opexPerYear != null && (
-              <div>
-                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>OPEX/год</Text>
-                <Text strong>{fmtMoney(p.opexPerYear)}</Text>
-              </div>
-            )}
-            {(p.deltaAleCash != null || p.deltaAleDeferred != null || p.deltaAleCapacity != null) && (
-              <div>
-                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>ΔALE/год (снижение риска)</Text>
-                <Text strong style={{ color: RAG.good.strong }}>{fmtMoney(totalDeltaAle)}</Text>
-              </div>
-            )}
-            {p.rosi != null && (
-              <div>
-                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>
-                  ROSI{horizon ? ` за ${Math.round(horizon.months / 12 * 10) / 10} г.` : ''}
-                </Text>
-                <Text strong style={{ color: p.rosi >= 0 ? RAG.good.strong : RAG.bad.strong }}>{fmtNum(p.rosi, 2)}</Text>
-              </div>
-            )}
-            {paybackYears != null && (
-              <div>
-                <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block' }}>Окупаемость</Text>
-                <Text strong>{fmtNum(paybackYears, 1)} лет</Text>
-              </div>
-            )}
-          </div>
-          {p.rosi != null && horizon && (
-            <Text type="secondary" style={{ fontSize: TYPE.micro.fontSize, display: 'block', marginTop: 4 }}>
-              ROSI и окупаемость — за горизонт {horizon.months} мес. под ставку дисконтирования {Math.round(horizon.rate * 100)}%/год
-              (параметр контура, меняется без релиза)
-            </Text>
-          )}
-          {(p.deltaAleCash != null || p.deltaAleDeferred != null || p.deltaAleCapacity != null) && (
-            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, display: 'block', marginTop: 6 }}>
-              из них: касса {fmtMoney(p.deltaAleCash)} · отложенная {fmtMoney(p.deltaAleDeferred)} · высвобожденная мощность {fmtMoney(p.deltaAleCapacity)}
-            </Text>
-          )}
-          <Space wrap style={{ marginTop: 8 }}>
-            {p.measureType && <Tag color={ACCENT.slate.color}>{MEASURE_TYPE_LABEL[p.measureType] ?? p.measureType}</Tag>}
-            {p.verdict && VERDICT_LABEL[p.verdict] && (
-              <Tag color={VERDICT_LABEL[p.verdict].color}>Вердикт: {VERDICT_LABEL[p.verdict].label}</Tag>
-            )}
-            {!p.verdict && p.recommendedVerdict && VERDICT_LABEL[p.recommendedVerdict] && (
-              <Tag>Рекомендовано: {VERDICT_LABEL[p.recommendedVerdict].label}</Tag>
-            )}
-          </Space>
-        </div>
+        <MeasureEconomicsBlock
+          p={p}
+          totalDeltaAle={totalDeltaAle}
+          horizon={horizon}
+          paybackYears={paybackYears}
+          fmtMoney={fmtMoney}
+          fmtNum={fmtNum}
+        />
       )}
-
       {/* ТЗ v19 §17.3/17.4/17.6: LLM-ревью, цена неисполнения, системность/направление/альтернативы. */}
       <MeasureCardExtras proposal={p} canManageCard={canManageCard} canReviewLlm={canReviewLlm} />
 
@@ -473,38 +363,12 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
       )}
 
       {/* История изменений (аудит правок меры) — открывается кнопкой-иконкой */}
-      <Modal
+      <MeasureHistoryModal
         open={historyOpen}
-        onCancel={() => setHistoryOpen(false)}
-        footer={null}
-        width={560}
-        title={<Space><HistoryOutlined /> История изменений — «{p.riskTitle || p.metricName}»</Space>}
-      >
-        {history.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Правок ещё не было" />
-        ) : (
-          <List
-            size="small"
-            dataSource={[...history].reverse()}
-            renderItem={(h) => (
-              <List.Item>
-                <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                  <Space wrap size={6}>
-                    <Tag>{fmtTime(h.at)}</Tag>
-                    <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>{FIELD_LABELS[h.field] ?? h.field}</Text>
-                    <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>{h.by}</Text>
-                  </Space>
-                  <Text style={{ fontSize: TYPE.bodySm.fontSize }}>
-                    <Text delete type="secondary">{h.from || '—'}</Text>
-                    {' → '}
-                    <Text strong>{h.to || '—'}</Text>
-                  </Text>
-                </Space>
-              </List.Item>
-            )}
-          />
-        )}
-      </Modal>
+        onClose={() => setHistoryOpen(false)}
+        title={p.riskTitle || p.metricName}
+        history={history}
+      />
     </Modal>
   );
 };

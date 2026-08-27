@@ -7,6 +7,8 @@ export type DataMode = 'mock' | 'live';
 const DATA_MODE_KEY = 'asok_data_mode';
 const FEATURE_KEY = 'asok_exec_features';
 const ORDER_KEY = 'asok_nav_order';
+/** Переносы пунктов между группами меню (БТ-500): { <право>: <название группы> }. */
+const GROUPS_KEY = 'asok_nav_groups';
 const THEME_KEY = 'asok_theme';
 const FONT_KEY = 'asok_font';
 
@@ -37,6 +39,8 @@ function loadFontKey(): string {
  * видна без отдельной таблицы соответствий.
  */
 export const NAV_SECTIONS: ReadonlyArray<{ perm: string; label: string; group: string }> = [
+  // «Мой дашборд» первым в группе: это личный набор пользователя, к нему возвращаются чаще всего.
+  { perm: 'view.my_dashboard', label: 'Мой дашборд', group: 'Основное' },
   { perm: 'view.dashboard.cto', label: 'Дашборд CTO', group: 'Основное' },
   { perm: 'view.dashboard.ceo', label: 'Дашборд CEO', group: 'Основное' },
   { perm: 'view.dashboard.manager', label: 'Основное', group: 'Основное' },
@@ -93,6 +97,19 @@ export function loadOrder(): string[] {
   }
 }
 
+/** Переносы пунктов между группами меню. Пусто = пункт остаётся в своей группе из NAV_SECTIONS. */
+export function loadNavGroups(): Record<string, string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(GROUPS_KEY) || '{}');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    return Object.fromEntries(
+      Object.entries(raw as Record<string, unknown>).filter(([, v]) => typeof v === 'string'),
+    ) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
 interface UiState {
   activeModal: string | null;
   globalLoading: boolean;
@@ -105,6 +122,8 @@ interface UiState {
   hiddenSections: HiddenMap;
   /** Порядок разделов (ДЕФ-14). Ключи вне списка идут следом в исходном порядке. */
   navOrder: string[];
+  /** Пункты, перенесённые пользователем в другую группу меню (БТ-500). */
+  navGroups: Record<string, string>;
 }
 
 const uiSlice = createSlice({
@@ -117,6 +136,7 @@ const uiSlice = createSlice({
     dataMode: loadDataMode(),
     hiddenSections: loadHidden(),
     navOrder: loadOrder(),
+    navGroups: loadNavGroups(),
   } as UiState,
   reducers: {
     openModal(state, action: PayloadAction<string>) { state.activeModal = action.payload; },
@@ -141,23 +161,58 @@ const uiSlice = createSlice({
       else state.hiddenSections[perm] = true;
       localStorage.setItem(FEATURE_KEY, JSON.stringify(state.hiddenSections));
     },
-    /** Задать порядок разделов (ДЕФ-14 — перетаскивание в «Настройка»). */
+    /** Задать порядок разделов (ДЕФ-14 — перетаскивание в «Настройка» и в самом сайдбаре). */
     setNavOrder(state, action: PayloadAction<string[]>) {
       state.navOrder = action.payload;
       localStorage.setItem(ORDER_KEY, JSON.stringify(action.payload));
+    },
+    /** Перенести пункт в другую группу меню (БТ-500). */
+    setNavGroup(state, action: PayloadAction<{ perm: string; group: string | null }>) {
+      const { perm, group } = action.payload;
+      if (group === null) delete state.navGroups[perm];
+      else state.navGroups[perm] = group;
+      localStorage.setItem(GROUPS_KEY, JSON.stringify(state.navGroups));
+    },
+    /**
+     * Применить настройки меню, пришедшие с сервера (БТ-500).
+     *
+     * localStorage остаётся быстрым кэшем — он рисует меню до ответа сети и не даёт ему
+     * «прыгнуть» при загрузке. Источник истины — серверные prefs: они переносят настройку между
+     * устройствами. Гидратация происходит один раз за сессию (см. useNavPrefsHydration), поэтому
+     * правки пользователя не затираются приходящим позже ответом.
+     */
+    hydrateNavPrefs(
+      state,
+      action: PayloadAction<{ navOrder?: string[]; hiddenSections?: HiddenMap; navGroups?: Record<string, string> }>,
+    ) {
+      const { navOrder, hiddenSections, navGroups } = action.payload;
+      if (navOrder) {
+        state.navOrder = navOrder;
+        localStorage.setItem(ORDER_KEY, JSON.stringify(navOrder));
+      }
+      if (hiddenSections) {
+        state.hiddenSections = hiddenSections;
+        localStorage.setItem(FEATURE_KEY, JSON.stringify(hiddenSections));
+      }
+      if (navGroups) {
+        state.navGroups = navGroups;
+        localStorage.setItem(GROUPS_KEY, JSON.stringify(navGroups));
+      }
     },
     /** Сбросить персонализацию к виду по умолчанию. */
     resetPersonalization(state) {
       state.hiddenSections = {};
       state.navOrder = [];
+      state.navGroups = {};
       localStorage.removeItem(FEATURE_KEY);
       localStorage.removeItem(ORDER_KEY);
+      localStorage.removeItem(GROUPS_KEY);
     },
   },
 });
 
 export const {
   openModal, closeModal, setGlobalLoading, setThemeName, setFontKey, setDataMode,
-  setSectionVisible, setNavOrder, resetPersonalization,
+  setSectionVisible, setNavOrder, setNavGroup, hydrateNavPrefs, resetPersonalization,
 } = uiSlice.actions;
 export const uiReducer = uiSlice.reducer;

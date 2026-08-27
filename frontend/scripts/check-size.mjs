@@ -24,20 +24,20 @@ const SRC = resolve(fileURLToPath(new URL('../src/', import.meta.url)));
 /** Общий потолок для НОВЫХ файлов, КБ. */
 const DEFAULT_LIMIT_KB = 20;
 
-/** Долг на 2026-08-15: фактический размер, КБ. Уменьшать при декомпозиции. */
+/** Долг на 2026-08-15: фактический размер, КБ. Уменьшать при декомпозиции.
+ *
+ *  2026-08-26 (БТ-500): долг разобран полностью — нарушений потолка не осталось.
+ *   • страницы дашбордов стали обёртками над конструктором (1–2 КБ) и из бюджета убраны;
+ *   • RiskEconomicsPage разобрана на вкладки-модули: 86 → 5 КБ, тоже убрана из бюджета;
+ *   • governanceSlice отдал контракт в governanceTypes: 27 → 18 КБ, убран из бюджета;
+ *   • у остальных бюджет опущен до фактического размера — расти им больше некуда.
+ *  Оставшиеся строки — не разрешение, а верхняя граница: файл из списка не может стать больше. */
 const SIZE_BUDGET_KB = {
-  'pages/RiskEconomicsPage.tsx': 42,
-  'pages/NewAssessmentPage.tsx': 36,
+  'pages/NewAssessmentPage.tsx': 35,
   'data/mockScaleData.ts': 33,
-  'pages/AiAssessmentPage.tsx': 32,
-  'pages/ExcelReportsPage.tsx': 32,
-  'store/api/apiSlice.ts': 32,
-  'pages/dashboard/TaskPlanDashboard.tsx': 30,
-  'pages/dashboard/ExecutiveDashboard.tsx': 27,
-  'pages/dashboard/IncidentsAnalyticsPage.tsx': 27,
-  'pages/dashboard/ManagerDashboard.tsx': 27,
-  'pages/DashboardPage.tsx': 24,
-  'store/slices/governanceSlice.ts': 20,
+  'pages/AiAssessmentPage.tsx': 31,
+  'store/api/apiSlice.ts': 31,
+  'pages/ExcelReportsPage.tsx': 29,
 };
 
 const sources = globSync('**/*.{ts,tsx}', { cwd: SRC })

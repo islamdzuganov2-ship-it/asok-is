@@ -1,0 +1,90 @@
+/**
+ * dashboard-grid.css — оформление сетки конструктора дашбордов.
+ *
+ * Базовые стили react-grid-layout и react-resizable подключены здесь же (импортом из пакета),
+ * а всё, что видно глазу, переопределено через переменные темы: пакет по умолчанию рисует
+ * тёмный уголок ресайза и серую плашку-«тень», которые в тёмной теме выглядят инородно.
+ */
+@import 'react-grid-layout/css/styles.css';
+@import 'react-resizable/css/styles.css';
+
+/* Плашка-подсказка «куда встанет карточка» при перетаскивании. */
+.dash-grid .react-grid-placeholder {
+  background: rgba(185, 154, 85, 0.18);
+  border: 1.5px dashed rgba(185, 154, 85, 0.5);
+  border-radius: 16px;
+  opacity: 1;
+}
+
+/* Перетаскиваемая карточка — приподнята над остальными. */
+.dash-grid .react-grid-item.react-draggable-dragging {
+  z-index: 10;
+  box-shadow: 0 12px 32px -8px rgba(16, 24, 40, 0.35);
+}
+
+.dash-grid .react-grid-item.resizing {
+  z-index: 10;
+  opacity: 0.92;
+}
+
+/* Шапка-ручка режима редактирования. */
+.dash-card__overlay {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  background: var(--surface-tint);
+  border: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  backdrop-filter: blur(2px);
+}
+
+.dash-card__handle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: grab;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dash-card__handle:active {
+  cursor: grabbing;
+}
+
+/* В режиме редактирования содержимое карточки приглушено — читается как «сейчас не работаем
+   с данными, а раскладываем». */
+.dash-grid--editing .react-grid-item > div:last-child {
+  opacity: 0.72;
+}
+
+/* Уголок ресайза: собственный, в цветах темы — дефолтный из пакета это фоновая картинка
+   с тёмными штрихами, невидимая на тёмной теме. */
+.dash-grid--editing .react-resizable-handle::after {
+  border-color: #B99A55;
+}
+
+.dash-grid--editing .react-resizable-handle-se {
+  background-image: none;
+}
+
+.dash-grid--editing .react-resizable-handle-se::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid #B99A55;
+  border-bottom: 2px solid #B99A55;
+}
