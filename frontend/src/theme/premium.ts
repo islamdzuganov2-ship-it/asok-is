@@ -25,10 +25,12 @@ export const PREMIUM = {
   radius: 16,
   radiusSm: 12,
 
-  /** Многослойные мягкие тени — «дорогая» глубина без грязи. */
+  /** Многослойные мягкие тени — «дорогая» глубина без грязи. `cardHover` подключён глобально
+   *  в ui.css (`.ant-card-hoverable:hover`) — раньше был объявлен, но нигде не использовался,
+   *  из-за чего интерактивные карточки визуально не отвечали на наведение. */
   shadow: {
     card: 'var(--shadow-card)',
-    cardHover: '0 2px 6px rgba(16,24,40,0.06), 0 18px 40px -16px rgba(16,24,40,0.22)',
+    cardHover: 'var(--shadow-card-hover)',
     raised: '0 24px 60px -28px rgba(16,24,40,0.30)',
     inset: 'inset 0 1px 0 rgba(255,255,255,0.6)',
   },
@@ -104,9 +106,9 @@ export const SPACE = {
  */
 export const TYPE = {
   /** Заголовок страницы. Совпадает с antd `Title level={4}`. */
-  pageTitle: { fontSize: 20, fontWeight: 700, lineHeight: '28px' },
+  pageTitle: { fontSize: 20, fontWeight: 700, lineHeight: '28px', letterSpacing: -0.3 },
   /** Заголовок карточки. Совпадает с antd Card title (fontSizeLG). */
-  cardTitle: { fontSize: 16, fontWeight: 600, lineHeight: '24px' },
+  cardTitle: { fontSize: 16, fontWeight: 600, lineHeight: '24px', letterSpacing: -0.1 },
   /** Подзаголовок внутри карточки, «шапки» блоков. */
   subTitle: { fontSize: 14, fontWeight: 600, lineHeight: '22px' },
   /** Основной текст. */
@@ -121,9 +123,11 @@ export const TYPE = {
   /** Легенды графиков, метки осей, служебные метки. Мельче 11px не опускаемся. */
   micro: { fontSize: 11, fontWeight: 500, lineHeight: '16px' },
 
-  metricLg: { fontSize: 28, fontWeight: 800, lineHeight: '34px' },
-  metricMd: { fontSize: 24, fontWeight: 700, lineHeight: '30px' },
-  metricSm: { fontSize: 18, fontWeight: 700, lineHeight: '24px' },
+  // Отрицательный трекинг на крупных цифрах/заголовках — Inter Variable без него на больших
+  // кеглях выглядит рыхло (унаследовано от системных шрифтов, под которые исходно не считалось).
+  metricLg: { fontSize: 28, fontWeight: 800, lineHeight: '34px', letterSpacing: -0.6 },
+  metricMd: { fontSize: 24, fontWeight: 700, lineHeight: '30px', letterSpacing: -0.4 },
+  metricSm: { fontSize: 18, fontWeight: 700, lineHeight: '24px', letterSpacing: -0.2 },
 } as const satisfies Record<string, CSSProperties>;
 
 export type AccentKey = 'ink' | 'gold' | 'sage' | 'terracotta' | 'slate' | 'none';

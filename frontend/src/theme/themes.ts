@@ -70,6 +70,7 @@ const PREMIUM_PRESET: ThemePreset = {
     '--card-header-grad': 'linear-gradient(180deg, #FFFFFF 0%, #FBFCFD 100%)',
     '--card-header-gold': 'linear-gradient(180deg, #FCFBF6 0%, #FFFFFF 100%)',
     '--shadow-card': '0 1px 2px rgba(16,24,40,0.04), 0 10px 28px -14px rgba(16,24,40,0.14)',
+    '--shadow-card-hover': '0 2px 6px rgba(16,24,40,0.06), 0 20px 42px -16px rgba(16,24,40,0.24)',
   },
   chart: { ink: '#2B3A4B', inkSoft: '#5B6675', axis: '#5B6675', split: '#EAECEF' },
 };
@@ -101,6 +102,7 @@ const CLASSIC_PRESET: ThemePreset = {
     '--card-header-grad': 'linear-gradient(180deg, #F5F9FE 0%, #FFFFFF 100%)',
     '--card-header-gold': 'linear-gradient(180deg, #EEF4FC 0%, #FFFFFF 100%)',
     '--shadow-card': '0 1px 2px rgba(23,50,77,0.06), 0 8px 20px -12px rgba(23,50,77,0.18)',
+    '--shadow-card-hover': '0 2px 6px rgba(23,50,77,0.08), 0 18px 32px -14px rgba(23,50,77,0.28)',
   },
   chart: { ink: '#17324D', inkSoft: '#4A6076', axis: '#4A6076', split: '#DCE7F3' },
 };
@@ -137,6 +139,7 @@ const GRAPHITE_PRESET: ThemePreset = {
     '--card-header-grad': 'linear-gradient(180deg, #262B33 0%, #23272E 100%)',
     '--card-header-gold': 'linear-gradient(180deg, #2A2A26 0%, #23272E 100%)',
     '--shadow-card': '0 1px 2px rgba(0,0,0,0.35), 0 12px 30px -16px rgba(0,0,0,0.55)',
+    '--shadow-card-hover': '0 2px 8px rgba(0,0,0,0.4), 0 22px 44px -18px rgba(0,0,0,0.65)',
   },
   chart: { ink: '#C9CFD8', inkSoft: '#98A2AE', axis: '#98A2AE', split: '#313742' },
 };
@@ -153,17 +156,19 @@ export function isThemeName(v: unknown): v is ThemeName {
   return v === 'premium' || v === 'classic' || v === 'graphite';
 }
 
-// ── Шрифты: только веб-безопасные стеки (без внешней загрузки — работает офлайн в Docker) ──
+// ── Шрифты: самостоятельно хостится Inter Variable (@fontsource-variable/inter, кириллица —
+// работает офлайн в Docker, без CDN), остальные — веб-безопасные стеки на случай отката ──
 export interface FontOption { key: string; label: string; stack: string; }
 
 export const FONT_OPTIONS: FontOption[] = [
-  { key: 'system', label: 'Системный (по умолчанию)', stack: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" },
+  { key: 'inter', label: 'Inter (по умолчанию)', stack: "'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" },
+  { key: 'system', label: 'Системный', stack: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" },
   { key: 'segoe', label: 'Segoe UI (Windows)', stack: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
   { key: 'roboto', label: 'Roboto / Arial', stack: "Roboto, Arial, 'Helvetica Neue', sans-serif" },
   { key: 'georgia', label: 'Georgia (с засечками)', stack: "Georgia, 'Times New Roman', 'PT Serif', serif" },
 ];
 
-export const DEFAULT_FONT_KEY = 'system';
+export const DEFAULT_FONT_KEY = 'inter';
 
 export function fontStackOf(key: string): string {
   return (FONT_OPTIONS.find((f) => f.key === key) ?? FONT_OPTIONS[0]).stack;
