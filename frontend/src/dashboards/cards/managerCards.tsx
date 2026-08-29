@@ -21,7 +21,7 @@ import MeasureDevelopmentPanel from '../../components/MeasureDevelopmentPanel';
 import FilledJudgmentsCard from '../../components/FilledJudgmentsCard';
 import type { ProposalStatus } from '../../store/slices/governanceSlice';
 import { useManagerScope } from '../scopes/ManagerScope';
-import GridCard from '../GridCard';
+import GridCard, { FillCard } from '../GridCard';
 import AutoChart from '../AutoChart';
 
 const { Text } = Typography;
@@ -260,15 +260,16 @@ export const ManagerMeasureDevCard: React.FC = () => {
     );
   }
   // Панель приносит собственную карточку с шапкой, поэтому GridCard здесь не нужен:
-  // иначе получится карточка в карточке с двумя заголовками.
+  // иначе получится карточка в карточке с двумя заголовками. FillCard заставляет ЕЁ карточку
+  // заполнить ячейку сетки — иначе под ней пустота, растущая при увеличении карточки мышью.
   return (
-    <div style={{ height: '100%', overflow: 'auto' }}>
+    <FillCard>
       <MeasureDevelopmentPanel
         systemName={system.name}
         system={system}
         characteristic={characteristic.title}
       />
-    </div>
+    </FillCard>
   );
 };
 
@@ -361,8 +362,8 @@ export const ManagerJudgmentsCard: React.FC = () => {
     );
   }
   return (
-    <div style={{ height: '100%', overflow: 'auto' }}>
+    <FillCard>
       <FilledJudgmentsCard systemName={system.name} characteristic={characteristic.title} sub={subName} />
-    </div>
+    </FillCard>
   );
 };

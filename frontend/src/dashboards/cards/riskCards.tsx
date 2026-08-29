@@ -10,12 +10,8 @@ import React from 'react';
 import {
   RiskKpiWidget, RiskTriggersWidget, IncidentsByCategoryWidget, EconomicImpactWidget, TopSystemsWidget,
 } from '../riskWidgets';
-import GridCard from '../GridCard';
+import GridCard, { FillCard } from '../GridCard';
 import type { CardDef } from '../types';
-
-const Scroll: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div style={{ height: '100%', overflow: 'auto' }}>{children}</div>
-);
 
 const RiskKpiCard: React.FC = () => (
   <GridCard title="Ключевые показатели (техсбои)" accent="terracotta">
@@ -23,10 +19,13 @@ const RiskKpiCard: React.FC = () => (
   </GridCard>
 );
 
-const RiskTriggersCard: React.FC = () => <Scroll><RiskTriggersWidget /></Scroll>;
-const RiskEconomicImpactCard: React.FC = () => <Scroll><EconomicImpactWidget /></Scroll>;
-const RiskByCategoryCard: React.FC = () => <Scroll><IncidentsByCategoryWidget /></Scroll>;
-const RiskTopSystemsCard: React.FC = () => <Scroll><TopSystemsWidget /></Scroll>;
+// Эти четыре виджета приносят собственную <Card {...premiumCard()}> с уже нетривиальной шапкой
+// (кнопки/фильтры) — GridCard дал бы карточку в карточке. FillCard заставляет их СОБСТВЕННУЮ
+// карточку заполнить ячейку сетки вместо пустоты под ней при увеличении размера (см. CSS).
+const RiskTriggersCard: React.FC = () => <FillCard><RiskTriggersWidget /></FillCard>;
+const RiskEconomicImpactCard: React.FC = () => <FillCard><EconomicImpactWidget /></FillCard>;
+const RiskByCategoryCard: React.FC = () => <FillCard><IncidentsByCategoryWidget /></FillCard>;
+const RiskTopSystemsCard: React.FC = () => <FillCard><TopSystemsWidget /></FillCard>;
 
 const PERM = 'view.dashboard.risk';
 

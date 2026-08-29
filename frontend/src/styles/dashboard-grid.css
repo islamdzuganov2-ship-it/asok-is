@@ -88,3 +88,56 @@
   border-right: 2px solid #B99A55;
   border-bottom: 2px solid #B99A55;
 }
+
+/*
+ * .dash-fill-card (см. GridCard.tsx, компонент FillCard) — заставляет карточку, принесённую
+ * готовым компонентом (своя <Card {...premiumCard()}>), заполнить ячейку сетки вместо того,
+ * чтобы стоять на естественной высоте контента с пустотой под собой. Тот же приём, что и в
+ * самом GridCard (высота 100% + flex-колонка + скролл тела), только через селектор по потомку,
+ * а не через проп — компонент рендерит свою карточку сам, доступа к её style/styles props нет.
+ *
+ * Селектор бьёт только по ВЕРХНЕЙ карточке (`:not(.ant-card .ant-card)` — не вложена в другую
+ * .ant-card), а не по любому потомку: некоторые компоненты держат внутри себя мини-карточки —
+ * например MeasuresRegistryCard рисует «Просрочено»/«Срок ≤ 2 дней» отдельными <Card> внутри
+ * своего тела. Обычный потомковый селектор растягивал бы и их на 100% высоты ячейки — сам
+ * реестр вместо разрыва снизу получал бы разрыв ВНУТРИ (мини-карточки распирались бы под рост
+ * своего родителя).
+ *
+ * margin-top/-bottom обнулены через !important: некоторые карточки несут инлайновый
+ * `premiumCard(accent, { marginTop|marginBottom: 16 })` (отступ рассчитан на обычный поток
+ * страницы — спейсинг перед следующим виджетом), а инлайновый style всегда весомее правила из
+ * подключаемого файла — без !important здесь он просто съедал бы 16px высоты тела карточки.
+ *
+ * `.dash-fill-card > *` — «сквозной тоннель» для карточек, которые кладут свою <Card> не первым
+ * уровнем, а через собственный обёрточный <div> (пример — тот же MeasuresRegistryCard: `<div
+ * ref={rootRef}><Card>…`). Без этого правила `height:100%` на .ant-card упирается в родителя
+ * БЕЗ явной высоты (обычный <div> в потоке, не flex-item) и не резолвится — карточка откатывается
+ * на высоту по контенту. Правило избыточно (то же самое) для карточек без такой обёртки, где
+ * .ant-card и так прямой потомок — двойное применение одних и тех же свойств не ломает ничего.
+ */
+.dash-fill-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.dash-fill-card > * {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.dash-fill-card .ant-card:not(.ant-card .ant-card) {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100% !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+.dash-fill-card .ant-card:not(.ant-card .ant-card) > .ant-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
