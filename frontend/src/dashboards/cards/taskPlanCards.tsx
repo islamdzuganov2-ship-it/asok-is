@@ -18,7 +18,7 @@ import {
   useTaskPlanScope, KIND_META, HEALTH, dueDateOf, fmt, DAY, LABEL_W, RISK_DAYS,
   type Kind, type Health,
 } from '../scopes/TaskPlanScope';
-import GridCard from '../GridCard';
+import GridCard, { FillCard } from '../GridCard';
 
 const { Text } = Typography;
 
@@ -27,12 +27,12 @@ const { Text } = Typography;
 export const TaskPlanEmployeesCard: React.FC = () => {
   const { baseTasks, setOwnerFilter, setFilter, setGanttOpen } = useTaskPlanScope();
   return (
-    <div style={{ height: '100%', overflow: 'auto' }}>
+    <FillCard>
       <EmployeeEffectivenessCard
         proposals={baseTasks.map(({ p }) => p)}
         onSelectOwner={(o, status) => { setOwnerFilter(o); if (status) setFilter(status); setGanttOpen(true); }}
       />
-    </div>
+    </FillCard>
   );
 };
 

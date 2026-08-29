@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import { Alert, Badge, Button, Card, Space, Spin, Tag, Typography } from 'antd';
-import { RobotOutlined, FireOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { RobotOutlined, FireOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { RAG, ragToken, levelLabel, BRAND, critTagStyle, solidTagStyle } from '../../theme/ragPalette';
 import { GOLD, PREMIUM, TYPE, SPACE } from '../../theme/premium';
@@ -20,7 +20,7 @@ import MeasuresAiAnalyticsCard from '../../components/MeasuresAiAnalyticsCard';
 import { TechDebtCard } from '../../components/TechDebtCard';
 import EmployeeEffectivenessCard from '../../components/EmployeeEffectivenessCard';
 import { useExecScope } from '../scopes/ExecScope';
-import GridCard from '../GridCard';
+import GridCard, { FillCard } from '../GridCard';
 import AutoChart from '../AutoChart';
 
 const { Title, Text, Paragraph } = Typography;
@@ -122,13 +122,13 @@ export const ExecMeasuresAiCard: React.FC = () => {
   const { proposals, openRegistryFor } = useExecScope();
   const navigate = useNavigate();
   return (
-    <div style={{ height: '100%', overflow: 'auto' }}>
+    <FillCard>
       <MeasuresAiAnalyticsCard
         proposals={proposals}
         onOpenCharacteristic={openRegistryFor}
         onOpenInTaskPlan={(c) => navigate(`/dashboard/taskplan?characteristic=${encodeURIComponent(c)}`)}
       />
-    </div>
+    </FillCard>
   );
 };
 
@@ -196,9 +196,9 @@ export { ExecHeatmapCard } from './execHeatmapCard';
 export const ExecTechDebtCard: React.FC = () => {
   const { proposals, openMeasure } = useExecScope();
   return (
-    <div style={{ height: '100%', overflow: 'auto' }}>
+    <FillCard>
       <TechDebtCard proposals={proposals} onOpenMeasure={openMeasure} />
-    </div>
+    </FillCard>
   );
 };
 
@@ -208,12 +208,12 @@ export const ExecEmployeesCard: React.FC = () => {
   const { proposals } = useExecScope();
   const navigate = useNavigate();
   return (
-    <div style={{ height: '100%', overflow: 'auto' }}>
+    <FillCard>
       <EmployeeEffectivenessCard
         proposals={proposals}
         onSelectOwner={(o, status) => navigate(`/dashboard/taskplan?owner=${encodeURIComponent(o)}${status ? `&status=${encodeURIComponent(status)}` : ''}`)}
       />
-    </div>
+    </FillCard>
   );
 };
 
@@ -221,12 +221,13 @@ export const ExecEmployeesCard: React.FC = () => {
 
 export const ExecRegistryCard: React.FC = () => {
   const { proposals, openMeasure, registryPreset } = useExecScope();
+  // MeasuresRegistryCard приносит собственную <Card {...premiumCard('ink')}> с уже полным
+  // заголовком (счётчик, иконка) — GridCard поверх нёс бы карточку в карточке с двумя
+  // заголовками. FillCard вместо этого заставляет ЕЁ карточку заполнить ячейку сетки.
   return (
-    <GridCard title={<><UnorderedListOutlined /> Реестр мер качества</>} accent="gold" dotColor={GOLD.base}>
-      {/* В сетке карточка уже свёрнута/развёрнута размером ячейки — отдельный CollapsibleCard,
-          который был на странице, здесь только добавил бы второй заголовок. */}
+    <FillCard>
       <MeasuresRegistryCard proposals={proposals} onOpen={openMeasure} presetCharacteristic={registryPreset} />
-    </GridCard>
+    </FillCard>
   );
 };
 
