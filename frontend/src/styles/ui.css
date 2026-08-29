@@ -49,3 +49,21 @@
     display: none;
   }
 }
+
+/*
+ * Интерактивные карточки отвечают на наведение — раньше `PREMIUM.shadow.cardHover` был
+ * объявлен, но нигде не подключался: клик по карточке ничем не подсвечивался ДО клика,
+ * интерфейс читался как статичная распечатка, а не как продукт. `box-shadow` у карточки
+ * задан инлайн-стилем (premiumCard) — он всегда весомее любого CSS-селектора, включая
+ * :hover, поэтому здесь единственный оправданный !important (не лень, а способ пробить
+ * инлайн ради состояния, которого style-пропом не выразить).
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .ant-card-hoverable {
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .ant-card-hoverable:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-card-hover) !important;
+  }
+}
