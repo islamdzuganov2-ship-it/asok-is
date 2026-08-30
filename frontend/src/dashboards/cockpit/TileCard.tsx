@@ -9,7 +9,7 @@ import React from 'react';
 import { Card, Popover, Skeleton, Typography } from 'antd';
 import { RightOutlined, QuestionCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { PREMIUM, TYPE, SPACE } from '../../theme/premium';
-import { BRAND, RAG } from '../../theme/ragPalette';
+import { BRAND, RAG, MONEY_FLOW } from '../../theme/ragPalette';
 import { numericText } from '../../theme/table';
 import { useIsDarkTheme } from '../../theme/useThemeTokens';
 import type { Tone, TileValue, TileFormula } from './types';
@@ -45,6 +45,12 @@ function MiniSparkline({ series, color }: { series: number[]; color: string }) {
  * `credit`/`debit` необязательны: часть плиток — просто счётчик, не разность двух потоков.
  */
 function FormulaContent({ formula }: { formula: TileFormula }) {
+  // Экономия/издержки — своя ось смысла (тип денежного потока), отдельная от RAG (severity) —
+  // см. MONEY_FLOW в ragPalette.ts. Светлая/тёмная пара статична (не var()): единый оттенок
+  // не проходит AA сразу в обеих темах (проверено check-contrast).
+  const isDark = useIsDarkTheme();
+  const economy = isDark ? MONEY_FLOW.economy.dark : MONEY_FLOW.economy.light;
+  const cost = isDark ? MONEY_FLOW.cost.dark : MONEY_FLOW.cost.light;
   return (
     <div style={{ maxWidth: 260 }}>
       <Text style={{ ...TYPE.bodySm, display: 'block' }}>{formula.summary}</Text>
@@ -52,7 +58,7 @@ function FormulaContent({ formula }: { formula: TileFormula }) {
         <div style={{ display: 'flex', gap: SPACE.cozy, marginTop: SPACE.snug }}>
           {formula.credit?.length ? (
             <div style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ ...TYPE.micro, color: RAG.good.strong, fontWeight: 600 }}>+ прибавляет</Text>
+              <Text style={{ ...TYPE.micro, color: economy, fontWeight: 600 }}>+ прибавляет (экономия)</Text>
               <ul style={{ margin: '2px 0 0', paddingLeft: 16 }}>
                 {formula.credit.map((c) => <li key={c} style={{ ...TYPE.micro, color: BRAND.inkSoft }}>{c}</li>)}
               </ul>
@@ -60,7 +66,7 @@ function FormulaContent({ formula }: { formula: TileFormula }) {
           ) : null}
           {formula.debit?.length ? (
             <div style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ ...TYPE.micro, color: RAG.bad.strong, fontWeight: 600 }}>− вычитает</Text>
+              <Text style={{ ...TYPE.micro, color: cost, fontWeight: 600 }}>− вычитает (издержки)</Text>
               <ul style={{ margin: '2px 0 0', paddingLeft: 16 }}>
                 {formula.debit.map((d) => <li key={d} style={{ ...TYPE.micro, color: BRAND.inkSoft }}>{d}</li>)}
               </ul>
