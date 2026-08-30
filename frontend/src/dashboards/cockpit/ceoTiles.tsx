@@ -82,9 +82,10 @@ const CostTile: CockpitTile = {
                 fixHref: '/risk-economics?from=cockpit&role=ceo', fixLabel: 'Открыть риск-экономику →' },
       };
     }
-    const tone: Tone = d.portfolioAle > 10_000_000 ? 'critical' : d.portfolioAle > 2_000_000 ? 'medium' : 'high';
+    // «Издержки» по своей роли (деньги под риском) — тон не зависит от величины: небольшой
+    // ALE не «хорошая новость», это по-прежнему риск, которым надо управлять.
     return {
-      value: fmtMoneyCompact(d.portfolioAle), tone,
+      value: fmtMoneyCompact(d.portfolioAle), tone: 'critical',
       subtitle: `${d.risksCount} активных рисковых события в портфеле`,
     };
   },
@@ -188,7 +189,10 @@ const RosiTile: CockpitTile = {
     return {
       value: `${rosi >= 0 ? '+' : ''}${Math.round(rosi * 100)}`,
       unit: '%',
-      tone: rosi >= 0 ? 'high' : 'critical',
+      // Эта плитка — «экономия» по своей роли (эффект от вложений), а не severity-датчик:
+      // тон фиксирован зелёным независимо от знака ROSI, честность несёт сама цифра
+      // (отрицательный % без «+» и есть сигнал «тратим больше, чем получаем»).
+      tone: 'high',
       trend: c?.points.map((p) => p.cumulative),
       subtitle: excluded
         ? `${c?.measuresIncluded ?? 0} мер в расчёте · ${excluded} без даты старта не учтены`
@@ -229,9 +233,9 @@ const VulnerabilityTile: CockpitTile = {
     if (!s.risksCount) {
       return { value: null, tone: 'neutral', subtitle: '', empty: { reason: 'Нет активных рисковых событий в портфеле' } };
     }
-    const tone: Tone = s.residualRisk > s.totalAtRisk * 0.7 ? 'critical' : s.residualRisk > s.totalAtRisk * 0.3 ? 'medium' : 'high';
+    // «Издержки» по роли (непокрытая экспозиция) — тон не зависит от доли покрытия.
     return {
-      value: fmtMoneyCompact(s.residualRisk), tone,
+      value: fmtMoneyCompact(s.residualRisk), tone: 'critical',
       subtitle: `покрыто выполненными мерами ${fmtMoneyCompact(s.coveredByDoneMeasures)} из ${fmtMoneyCompact(s.totalAtRisk)}`,
     };
   },
@@ -374,9 +378,9 @@ const DegradationTile: CockpitTile = {
     if (!d.risksCount) {
       return { value: null, tone: 'neutral', subtitle: '', empty: { reason: 'Деградация не считается: нет активных рисковых событий' } };
     }
-    const tone: Tone = d.degradationTotal > d.portfolioAle * 0.3 ? 'critical' : d.degradationTotal > 0 ? 'medium' : 'high';
+    // «Издержки» по роли (потеря ценности при бездействии) — тон не зависит от величины.
     return {
-      value: fmtMoneyCompact(d.degradationTotal), tone,
+      value: fmtMoneyCompact(d.degradationTotal), tone: 'critical',
       subtitle: `${fmtMoneyCompact(d.degradationTotal)} в год без вмешательства, из ${fmtMoneyCompact(d.portfolioAle)} общего ALE`,
     };
   },
@@ -410,9 +414,9 @@ const TopRiskTile: CockpitTile = {
       return { value: null, tone: 'neutral', subtitle: '', empty: { reason: 'Нет рисковых событий с посчитанным ALE' } };
     }
     const r = top[0];
-    const tone: Tone = r.aleAvg > 5_000_000 ? 'critical' : r.aleAvg > 1_000_000 ? 'medium' : 'high';
+    // «Издержки» по роли (самый дорогой риск) — тон не зависит от величины.
     return {
-      value: fmtMoneyCompact(r.aleAvg), tone,
+      value: fmtMoneyCompact(r.aleAvg), tone: 'critical',
       subtitle: `${r.title}${r.system ? ` · ${r.system}` : ''}${r.regulatory ? ' · регуляторный' : ''}`,
     };
   },
