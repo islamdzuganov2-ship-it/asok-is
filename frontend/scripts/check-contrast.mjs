@@ -55,6 +55,15 @@ const RAG = {
   muted:  { color: '#8C96A0', strong: '#62707D', soft: '#F1F2F3' },
 };
 
+// Кокпит (ТЗ v21): «экономия/издержки» на попапе «Как посчитано» (TileCard.FormulaContent) —
+// light-вариант на белом/полотне, dark-вариант на элевации графита (см. MONEY_FLOW в
+// ragPalette.ts — единый оттенок не проходит AA сразу в обеих темах).
+const MONEY_FLOW = {
+  economy: { light: '#47785E', dark: '#8FC5A6' },
+  cost:    { light: '#9C3F63', dark: '#E39CBE' },
+};
+const GRAPHITE_ELEVATED = '#262B33';
+
 const LEVEL_COLORS = {
   'Высокий уровень': '#86B093',
   'Выше среднего': '#A6C29A',
@@ -116,6 +125,14 @@ for (const [key, t] of Object.entries(RAG)) {
   check(`RAG.${key}.strong — текст на soft`, t.strong, t.soft, AA_TEXT);
   check(`RAG.${key}.strong — плашка под белым текстом`, WHITE, t.strong, AA_TEXT);
   check(`RAG.${key}.color — графика (сектор/маркер) на белом`, t.color, WHITE, AA_GRAPHIC);
+}
+
+// MONEY_FLOW: light-вариант на светлых поверхностях (premium/classic), dark-вариант — на
+// элевации graphite (Popover наследует colorBgElevated темы).
+for (const [key, t] of Object.entries(MONEY_FLOW)) {
+  check(`MONEY_FLOW.${key}.light — текст на белом`, t.light, WHITE, AA_TEXT);
+  check(`MONEY_FLOW.${key}.light — текст на полотне`, t.light, CANVAS, AA_TEXT);
+  check(`MONEY_FLOW.${key}.dark — текст на элевации graphite`, t.dark, GRAPHITE_ELEVATED, AA_TEXT);
 }
 
 // Базовый текст
