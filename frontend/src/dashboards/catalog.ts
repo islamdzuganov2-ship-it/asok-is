@@ -15,6 +15,7 @@
  */
 import { lazy, type FC } from 'react';
 import { RISK_CARDS } from './cards/riskCards';
+import { COCKPIT_CARDS } from './cards/cockpitCards';
 import type { CardDef } from './types';
 
 /**
@@ -78,6 +79,12 @@ export const CARD_REGISTRY: CardDef[] = [
 
   // ─── Владелец риска ───
   ...RISK_CARDS,
+
+  // ─── Кокпит CEO/CTO (ТЗ v21) ───
+  // Как и RISK_CARDS — статически, не через lazyCard: плитки уже держат вместе метаданные
+  // (вопрос, право, формула) и логику (useValue/Detail) в одном объекте CockpitTile, разделять
+  // их ради ленивого чанка означало бы рефакторить ceoTiles.tsx/ctoTiles.tsx отдельной задачей.
+  ...COCKPIT_CARDS,
 
   // ─── Риск-радар ───
   { id: 'radar.note', title: 'Зачем нужен риск-радар', source: 'radar', perm: 'view.dashboard.risk_radar', scope: 'none', w: 12, h: 7, minW: 4, minH: 4, hint: 'Как отбираются сработавшие риски' , Component: lazyCard(() => import('./cards/radarCards'), 'RadarNoteCard') },

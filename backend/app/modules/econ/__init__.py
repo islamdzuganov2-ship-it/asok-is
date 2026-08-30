@@ -35,6 +35,11 @@ from app.modules.econ.service import (
     seed_econ_defaults,
     seed_market_benchmarks,
 )
+from app.modules.econ.acceptance_queue_service import acceptance_queue
+from app.modules.econ.dashboard_service import cost_dashboard
+from app.modules.econ.manager_metrics_service import ManagerMetricsOut, manager_metrics
+from app.modules.econ.portfolio_trend_service import portfolio_trend
+from app.modules.econ.schemas import AcceptanceQueueOut, CostDashboardOut, PortfolioTrendOut
 
 __all__ = [
     # Справочники (данные)
@@ -64,4 +69,13 @@ __all__ = [
     "resolve_support_rate",
     "compute_incident_cost",
     "config_value",
+    # Кокпит (ТЗ v21)
+    "cost_dashboard",
+    "CostDashboardOut",
+    "acceptance_queue",
+    "AcceptanceQueueOut",
+    "portfolio_trend",
+    "PortfolioTrendOut",
+    "manager_metrics",
+    "ManagerMetricsOut",
 ]

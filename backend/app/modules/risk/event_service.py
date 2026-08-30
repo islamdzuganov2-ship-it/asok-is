@@ -460,13 +460,30 @@ async def risk_measure_chain(db: AsyncSession) -> list[RiskMeasureChainRowOut]:
     ]
 
 
-async def portfolio_risk_summary(db: AsyncSession) -> PortfolioRiskSummaryOut:
+async def portfolio_risk_summary(
+    db: AsyncSession, *,
+    system_id: list[uuid.UUID] | None = None,
+    criticality: list[str] | None = None,
+    characteristic: str | None = None,
+) -> PortfolioRiskSummaryOut:
     """УК-20: «под риском / покрыто выполненными мерами / остаточный / вложения / ожидаемый
     эффект». covered_by_done_measures — ТОЛЬКО execution=DONE (см. докстринг PortfolioRiskSummaryOut);
-    expected_effect — одобренные, но ещё не выполненные (эффект в будущем, не в прошлом)."""
-    risks = (await db.execute(
-        select(RiskEvent).where(RiskEvent.status == RISK_EVENT_ACTIVE)
-    )).scalars().all()
+    expected_effect — одобренные, но ещё не выполненные (эффект в будущем, не в прошлом).
+    Сквозной разрез (ТЗ v21 §10.4): без параметров поведение не меняется (КП-ПР-7)."""
+    stmt = select(RiskEvent).where(RiskEvent.status == RISK_EVENT_ACTIVE)
+    if system_id is not None:
+        stmt = stmt.where(RiskEvent.system_id.in_(system_id))
+    risks = list((await db.execute(stmt)).scalars().all())
+
+    if criticality is not None:
+        systems = (await db.execute(select(System))).scalars().all()
+        crit_ids = {s.id for s in systems if s.criticality_class.value in criticality}
+        risks = [r for r in risks if r.system_id in crit_ids]
+    if characteristic is not None:
+        subchars = (await db.execute(select(RiskEventSubchar))).scalars().all()
+        char_event_ids = {sc.risk_event_id for sc in subchars if sc.characteristic == characteristic}
+        risks = [r for r in risks if r.id in char_event_ids]
+
     total_at_risk = round(sum(float(r.ale_avg or 0) for r in risks), 2)
     if not risks:
         return PortfolioRiskSummaryOut(

@@ -153,3 +153,9 @@ class IncidentAnalyticsOut(_CamelModel):
     release_induced_share: float           # доля сбоев категории RELEASE, %
     by_category: list[CategoryStat]
     top_systems: list[SystemStat]
+    # ТЗ v21 (КП-30, кокпит CTO): «насколько мы надёжны» — простая доступность за окно
+    # наблюдения (от первого сбоя выборки до сейчас), не строгий SLA-расчёт по договору.
+    # None при нуле сбоев — честно «не считается», не фиктивные 100%.
+    window_hours: float | None = None
+    mtbf_hours: float | None = None        # окно / число сбоев — среднее время между отказами
+    availability_pct: float | None = None  # 100 × (1 − Σ простоя / окно)

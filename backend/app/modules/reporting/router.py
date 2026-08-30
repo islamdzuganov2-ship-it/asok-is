@@ -6,6 +6,7 @@ Excel-матрицы периода, статус LLM.
 """
 import asyncio
 import os
+import re
 from datetime import datetime
 from collections import defaultdict
 from io import BytesIO
@@ -56,10 +57,26 @@ from app.modules.llm import pipeline as llm_pipeline
 from app.modules.llm import reasoning as llm_reasoning
 from app.modules.llm import selfcheck as llm_selfcheck
 from app.modules.llm import service as llm_service
+from app.modules.llm import style_guide as llm_style_guide
 from app.modules.llm.tasks import llm_selfcheck_task
-from app.modules.risk import RiskBase, risks_for_characteristics
+from app.modules.risk import (
+    PortfolioRiskSummaryOut,
+    RiskBase,
+    TriggeredRiskOut,
+    risks_for_characteristics,
+)
+from app.modules.reporting.cockpit_service import CockpitFilters, ceo_bundle, cto_bundle
 from app.modules.systems import System
+from app.shared.filters import parse_str_list, parse_uuid_list
 from app.shared.periods import period_sort_key
+from app.modules.econ import (
+    AcceptanceQueueOut,
+    CostDashboardOut,
+    ManagerMetricsOut,
+    PortfolioTrendOut,
+)
+from app.modules.governance import OverdueSummaryOut, PortfolioEffectCurveOut
+from app.modules.incidents import IncidentAnalyticsOut
 
 router = APIRouter()
 
@@ -954,3 +971,113 @@ async def export_period_pdf(period_id: UUID, db: AsyncSession = Depends(get_db),
         buf, media_type=_PDF_MEDIA,
         headers={"Content-Disposition": f"attachment; filename={fname}"},
     )
+
+
+# ═══════════════════════ Агрегатор кокпита (ТЗ v21, §10.5, КП-41) ═══════════════════════
+
+class CockpitBundleOut(_CamelOut):
+    role: str
+    generated_at: datetime
+    # CEO
+    cost_dashboard: CostDashboardOut | None = None
+    acceptance_queue: AcceptanceQueueOut | None = None
+    portfolio_summary: PortfolioRiskSummaryOut | None = None
+    effect_curve: PortfolioEffectCurveOut | None = None
+    overdue_summary: OverdueSummaryOut | None = None
+    # CTO
+    portfolio_trend_score: PortfolioTrendOut | None = None
+    incident_analytics: IncidentAnalyticsOut | None = None
+    triggered_risks: list[TriggeredRiskOut] | None = None
+    manager_metrics: ManagerMetricsOut | None = None
+
+
+@router.get("/cockpit", response_model=CockpitBundleOut)
+async def get_cockpit_bundle(
+    role: str,
+    system_id: str | None = None,
+    criticality: str | None = None,
+    characteristic: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> CockpitBundleOut:
+    """Один запрос вместо пяти-шести — общая точка отсчёта для дельт и без «прыжков» экрана
+    (§10.5). Не считает ничего сам: складывает ответы уже существующих сервисов. Видимость
+    конкретной плитки на кокпите решает фронт по праву (`CockpitTile.perm`), не этот эндпоинт —
+    так же, как и вызов эндпоинтов напрямую сегодня не проверяет права per-tile."""
+    f = CockpitFilters(
+        system_id=parse_uuid_list(system_id), criticality=parse_str_list(criticality),
+        characteristic=characteristic,
+    )
+    role_up = role.upper()
+    if role_up == "CEO":
+        data = await ceo_bundle(db, f)
+    elif role_up == "CTO":
+        data = await cto_bundle(db, f)
+    else:
+        raise HTTPException(status_code=400, detail=f"Неизвестная роль кокпита: {role}")
+    return CockpitBundleOut(role=role_up, generated_at=datetime.now(), **data)
+
+
+# ═══════════════════════ AI-резюме кокпита (ТЗ v21, §9.2, КП-42) ═══════════════════════
+
+COCKPIT_INSIGHT_SYSTEM_PROMPT = (
+    "Ты — аналитик качества информационных систем банка, пишешь ОДНУ строку для руководителя,"
+    " который смотрит на дашборд десять секунд.\n"
+    "СТРОГИЕ ПРАВИЛА: используй ТОЛЬКО переданные факты и числа — ничего не выдумывай; "
+    "не используй слова внутренней инженерной кухни (grounding, fallback, «движок правил», "
+    "«детерминированный», «трасса»); пиши деловым русским языком, без вводных фраз "
+    "(«на основе данных», «анализ показывает»).\n"
+    "ФОРМАТ: ровно одно предложение, не длиннее 25 слов, без кавычек и точки в начале."
+)
+
+_NUMBER_RE = re.compile(r"\d[\d\s]{1,}")
+
+
+class CockpitInsightIn(BaseModel):
+    role: str
+    facts: dict[str, str]
+    # Детерминированная формулировка, посчитанная фронтом из того же бандла (§9.2: «до готовности
+    # показывается детерминированная формулировка» — здесь она же служит гарантированным
+    # результатом, если LLM недоступна/занята/даёт негrounded текст).
+    fallback: str
+
+
+class CockpitInsightOut(BaseModel):
+    text: str
+    llm: bool
+
+
+def _cockpit_insight_grounded(text: str, facts: dict[str, str]) -> bool:
+    """Числа в ответе обязаны дословно встречаться среди переданных фактов (anti-hallucination,
+    тот же принцип, что и в остальном конвейере — см. llm/prompts.py SYSTEM_PROMPT п.4)."""
+    facts_blob = " ".join(facts.values())
+    for token in _NUMBER_RE.findall(text):
+        digits = token.replace(" ", "")
+        if len(digits) < 2:
+            continue  # однозначные числа («1 шт.») слишком часты, чтобы быть сигналом галлюцинации
+        if digits not in facts_blob.replace(" ", ""):
+            return False
+    return True
+
+
+@router.post("/cockpit-insight", response_model=CockpitInsightOut)
+async def cockpit_insight(
+    payload: CockpitInsightIn,
+    _: dict = Depends(require_permission("view.dashboard.ceo", "view.dashboard.cto")),
+) -> CockpitInsightOut:
+    """Одна строка управленческого вывода под заголовком кокпита (§9.2). Живой вызов — в фоне
+    (фронт уже показал `fallback` до ответа этого эндпоинта, см. CockpitInsight.tsx); модель
+    занята/недоступна/даёт негrounded или жаргонный текст → возвращаем присланный `fallback`
+    без изменений, llm=False — не блокируем «ответ за 10 секунд» ожиданием генерации."""
+    facts_block = "\n".join(f"{k}: {v}" for k, v in payload.facts.items())
+    prompt = f"Данные кокпита ({payload.role}):\n{facts_block}"
+    text = await asyncio.to_thread(
+        llm_service.complete, prompt, COCKPIT_INSIGHT_SYSTEM_PROMPT, 80, 0.2,
+    )
+    if (
+        text and text.strip()
+        and not llm_style_guide.contains_jargon(text)
+        and _cockpit_insight_grounded(text, payload.facts)
+    ):
+        return CockpitInsightOut(text=text.strip().rstrip("."), llm=True)
+    return CockpitInsightOut(text=payload.fallback, llm=False)

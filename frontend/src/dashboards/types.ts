@@ -22,6 +22,7 @@ import type React from 'react';
  *  вырванная на «Мой дашборд» карточка тащит этот скоуп с собой. */
 export type ScopeKey =
   | 'manager' | 'exec' | 'incidents' | 'taskplan' | 'dynamics' | 'analytics' | 'econ' | 'mytasks'
+  | 'cockpit'
   /** Карточка самодостаточна: сама тянет данные и держит своё состояние. */
   | 'none';
 
@@ -55,6 +56,8 @@ export interface CardDef {
   minH?: number;
   /** Короткое пояснение в каталоге — что именно показывает карточка. */
   hint?: string;
+  /** Миниатюрное превью формы карточки в каталоге (см. CardPicker) — необязательно. */
+  thumbnail?: React.ReactNode;
   Component: React.FC;
 }
 
@@ -66,7 +69,8 @@ export const cardAllowed = (def: Pick<CardDef, 'perm'>, permissions: readonly st
 
 export type DashboardKey =
   | 'exec' | 'manager' | 'analytics' | 'dynamics' | 'incidents'
-  | 'taskplan' | 'risk' | 'radar' | 'econ' | 'mytasks' | 'my';
+  | 'taskplan' | 'risk' | 'radar' | 'econ' | 'mytasks' | 'my'
+  | 'ceoCockpit' | 'ctoCockpit';
 
 export interface DashboardDef {
   key: DashboardKey;
