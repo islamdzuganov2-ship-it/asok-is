@@ -344,3 +344,32 @@ async def test_portfolio_summary_empty_when_no_risks(db_session):
     assert summary.total_at_risk == 0.0
     assert summary.risks_count == 0
     assert summary.measures_count == 0
+
+
+async def test_portfolio_summary_filters_by_system_criticality_characteristic(db_session):
+    """ТЗ v21 §10.4: сквозной разрез — system_id (списком), criticality, characteristic."""
+    mc = await _system(db_session, name="ИС-MC")
+    bo = System(name="ИС-BO", criticality_class=CriticalityClass.BUSINESS_OPERATIONAL)
+    db_session.add(bo)
+    await db_session.commit()
+    await db_session.refresh(bo)
+
+    ev_mc = await service.create_event(db_session, RiskEventCreate(code="RE-FILT-1", title="Риск MC", system_id=mc.id), "rm")
+    ev_mc.ale_avg = 100000
+    ev_bo = await service.create_event(db_session, RiskEventCreate(code="RE-FILT-2", title="Риск BO", system_id=bo.id), "rm")
+    ev_bo.ale_avg = 200000
+    await db_session.commit()
+    await service.link_subchar(db_session, ev_mc.id, SubcharLinkIn(characteristic="Надёжность", subcharacteristic="Отказоустойчивость"))
+    await service.link_subchar(db_session, ev_bo.id, SubcharLinkIn(characteristic="Переносимость", subcharacteristic="Адаптируемость"))
+
+    only_mc = await service.portfolio_risk_summary(db_session, system_id=[mc.id])
+    assert only_mc.total_at_risk == 100000.0 and only_mc.risks_count == 1
+
+    only_bo_class = await service.portfolio_risk_summary(db_session, criticality=["BUSINESS OPERATIONAL"])
+    assert only_bo_class.total_at_risk == 200000.0 and only_bo_class.risks_count == 1
+
+    only_reliability = await service.portfolio_risk_summary(db_session, characteristic="Надёжность")
+    assert only_reliability.total_at_risk == 100000.0 and only_reliability.risks_count == 1
+
+    everything = await service.portfolio_risk_summary(db_session)
+    assert everything.total_at_risk == 300000.0 and everything.risks_count == 2

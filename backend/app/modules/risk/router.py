@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
 from app.modules.iam import get_current_user, require_permission
-from app.modules.incidents import triggering_characteristics  # кросс-доменный фасад (T-16)
 from app.modules.reporting import RiskMatrix  # кросс-доменное чтение через фасад reporting
 from app.modules.risk import service
 from app.modules.risk.models import RiskBase
@@ -82,39 +81,15 @@ async def semantic_search_risks(
 
 
 @router.get("/triggered", response_model=list[TriggeredRiskOut])
-async def triggered_risks(
+async def get_triggered_risks(
     system: str | None = None,
     characteristics: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> list[TriggeredRiskOut]:
-    """Риск-триггеры (T-16): риски, «сработавшие» по текущему состоянию — проактивная защита от
-    техсбоя. Источники: (1) частые техсбои по категориям (маппинг на характеристику ISO 25010);
-    (2) явно переданные просевшие характеристики/метрики (`characteristics`, через запятую).
-    Возвращает релевантные риски из базы с пояснением, ЧЕМ сработал каждый (grounding для ЛПР/LLM).
-    """
-    char_triggers = await triggering_characteristics(db, system=system)
-    reasons: dict[str, str] = {
-        char: "техсбои: " + ", ".join(f"{lbl} ({cnt})" for lbl, cnt in cats)
-        for char, cats in char_triggers.items()
-    }
-    for c in (characteristics or "").split(","):
-        name = c.strip()
-        if name:
-            reasons.setdefault(name, "просевшая характеристика/метрика")
-    if not reasons:
-        return []
-    risks = await service.risks_for_characteristics(db, list(reasons.keys()), limit=20)
-    # Причина ищется по нормализованному имени (ё/е): ключи reasons — из маппинга (с ё),
-    # а characteristic риска может быть без ё.
-    norm_reasons = {service._norm_char(k): v for k, v in reasons.items()}
-    return [
-        TriggeredRiskOut(
-            **RiskBaseOut.model_validate(r).model_dump(),
-            triggered_by=norm_reasons.get(service._norm_char(r.characteristic), "связанный риск"),
-        )
-        for r in risks
-    ]
+    """Риск-триггеры (T-16) — см. docstring `service.triggered_risks` (ТЗ v21, КП-40: логика
+    вынесена в сервисный слой, переиспользуется агрегатором кокпита)."""
+    return await service.triggered_risks(db, system=system, characteristics=characteristics)
 
 
 @router.post("", response_model=RiskBaseOut, status_code=201)

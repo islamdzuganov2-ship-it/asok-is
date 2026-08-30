@@ -29,6 +29,15 @@ function at(rows: Array<[string, number, number, number, number]>) {
   return rows.map(([i, x, y, w, h]) => ({ i, x, y, w, h }));
 }
 
+/** Раскладка «3 в ряд» — плитки кокпита (w=4 из 12 колонок), как в прежней сетке `xs=24 sm=12 lg=8`. */
+function threeUp(ids: string[]): { i: string; x: number; y: number; w: number; h: number }[] {
+  const w = 4;
+  return ids.map((i, idx) => {
+    const def = BY_ID.get(i)!;
+    return { i, x: (idx % 3) * w, y: Math.floor(idx / 3) * def.h, w, h: def.h };
+  });
+}
+
 export const DASHBOARDS: Record<DashboardKey, DashboardDef> = {
   exec: {
     key: 'exec', label: 'Управленческий дашборд', perm: 'view.dashboard.cto',
@@ -110,6 +119,14 @@ export const DASHBOARDS: Record<DashboardKey, DashboardDef> = {
   mytasks: {
     key: 'mytasks', label: 'Мои задачи', perm: 'view.my_tasks',
     defaultLayout: stack(['mytasks.kpi', 'mytasks.table']),
+  },
+  ceoCockpit: {
+    key: 'ceoCockpit', label: 'Кокпит CEO', perm: 'view.dashboard.ceo',
+    defaultLayout: threeUp(CARD_REGISTRY.filter((c) => c.source === 'ceoCockpit').map((c) => c.id)),
+  },
+  ctoCockpit: {
+    key: 'ctoCockpit', label: 'Кокпит CTO', perm: 'view.dashboard.cto',
+    defaultLayout: threeUp(CARD_REGISTRY.filter((c) => c.source === 'ctoCockpit').map((c) => c.id)),
   },
   my: {
     key: 'my', label: 'Мой дашборд', perm: 'view.my_dashboard',

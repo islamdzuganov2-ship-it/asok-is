@@ -238,3 +238,54 @@ class BenchmarkComparisonOut(_CamelModel):
     benchmark: MarketBenchmarkOut | None = None
     delta_pct: float | None = None   # (own - benchmark) / benchmark × 100, None если сравнивать не с чем
     note: str
+
+
+# ═══════════════════════ ТЗ v21 (КП-11): очередь по матрице акцепта — кокпит CEO ═══════════════════════
+
+class AcceptanceQueueItemOut(_CamelModel):
+    kind: str                       # пока только 'NONCONFORMITY' (§15 В-КП-5 — состав уточняется)
+    id: uuid.UUID
+    title: str
+    system_name: str | None = None
+    criticality: str | None = None
+    ale: float
+    signer: str | None = None       # подписант по acceptance_matrix; None — матрица не покрывает сумму
+    waiting_days: int
+    sla_days: int
+    overdue: bool
+    vetoes: list[str] = Field(default_factory=list)   # 'regulatory' | 'catastrophe'
+
+
+class AcceptanceQueueSignerStatOut(_CamelModel):
+    signer: str
+    count: int
+    total_ale: float
+    overdue: int
+
+
+class AcceptanceMatrixEntryOut(_CamelModel):
+    max_ale: float | None
+    signer: str
+
+
+class AcceptanceQueueOut(_CamelModel):
+    items: list[AcceptanceQueueItemOut]
+    by_signer: list[AcceptanceQueueSignerStatOut]
+    matrix_applied: list[AcceptanceMatrixEntryOut]
+
+
+# ═══════════════════════ ТЗ v21 (КП-12): динамика портфельных величин ═══════════════════════
+
+class TrendPointOut(_CamelModel):
+    period: str
+    value: float
+
+
+class PortfolioTrendOut(_CamelModel):
+    metric: str
+    points: list[TrendPointOut]
+    delta_absolute: float | None = None
+    delta_relative: float | None = None
+    anomaly: bool = False
+    # §7.3 честной пустоты: заполнено, когда history пуста — не «0 без объяснения».
+    empty_reason: str | None = None

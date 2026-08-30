@@ -338,3 +338,30 @@ class EscalateIn(_CamelModel):
 class EscalationDecisionIn(_CamelModel):
     decision: str  # IGNORE / REQUEST_MEASURES
     comment: str
+
+
+# ═══════════════════════ ТЗ v21 (КП-13): просрочка и Ц_ОМ портфельно — плитка CEO «Держим ли мы слово?» ═══════════════════════
+
+class OverdueSummaryItemOut(_CamelModel):
+    proposal_id: uuid.UUID
+    title: str
+    system_name: str | None = None
+    owner: str | None = None
+    overdue_days: int
+    price_current: float | None = None
+    escalated: bool = False
+
+
+class OverdueSummaryOwnerStatOut(_CamelModel):
+    owner: str
+    count: int
+    price: float
+
+
+class OverdueSummaryOut(_CamelModel):
+    overdue_count: int
+    owners_affected: int
+    total_price_current: float
+    total_price_snapshot: float
+    by_owner: list[OverdueSummaryOwnerStatOut]
+    items: list[OverdueSummaryItemOut]

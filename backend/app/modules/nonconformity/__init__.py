@@ -7,9 +7,14 @@
 """
 from app.modules.nonconformity.models import (
     EVIDENCE_TYPES,
+    LEVEL_CRITICAL,
     LEVELS,
+    STATUS_EVALUATED,
     STATUS_FLOW,
     Nonconformity,
 )
 
-__all__ = ["Nonconformity", "STATUS_FLOW", "LEVELS", "EVIDENCE_TYPES"]
+__all__ = [
+    "Nonconformity", "STATUS_FLOW", "LEVELS", "EVIDENCE_TYPES",
+    "STATUS_EVALUATED", "LEVEL_CRITICAL",
+]

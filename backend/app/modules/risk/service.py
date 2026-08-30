@@ -8,8 +8,10 @@ from __future__ import annotations
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.incidents import triggering_characteristics
 from app.modules.risk.embeddings import embed_text
 from app.modules.risk.models import RiskBase
+from app.modules.risk.schemas import RiskBaseOut, TriggeredRiskOut
 
 
 async def search_risks(db: AsyncSession, q: str, limit: int = 5) -> list[RiskBase]:
@@ -55,6 +57,40 @@ async def risks_for_characteristics(
     )).scalars().all())
     matched = [r for r in rows if _norm_char(r.characteristic) in wanted]
     return matched[:limit]
+
+
+async def triggered_risks(
+    db: AsyncSession, *, system: str | None = None, characteristics: str | None = None,
+) -> list[TriggeredRiskOut]:
+    """Риск-триггеры (T-16): риски, «сработавшие» по текущему состоянию — проактивная защита от
+    техсбоя. Источники: (1) частые техсбои по категориям (маппинг на характеристику ISO 25010);
+    (2) явно переданные просевшие характеристики/метрики (`characteristics`, через запятую).
+    Возвращает релевантные риски из базы с пояснением, ЧЕМ сработал каждый (grounding для ЛПР/LLM).
+
+    Вынесено из router.py в сервисный слой (ТЗ v21, КП-40): нужно как переиспользуемый источник
+    данных агрегатору кокпита (/reports/cockpit), не только HTTP-эндпоинту."""
+    char_triggers = await triggering_characteristics(db, system=system)
+    reasons: dict[str, str] = {
+        char: "техсбои: " + ", ".join(f"{lbl} ({cnt})" for lbl, cnt in cats)
+        for char, cats in char_triggers.items()
+    }
+    for c in (characteristics or "").split(","):
+        name = c.strip()
+        if name:
+            reasons.setdefault(name, "просевшая характеристика/метрика")
+    if not reasons:
+        return []
+    risks = await risks_for_characteristics(db, list(reasons.keys()), limit=20)
+    # Причина ищется по нормализованному имени (ё/е): ключи reasons — из маппинга (с ё),
+    # а characteristic риска может быть без ё.
+    norm_reasons = {_norm_char(k): v for k, v in reasons.items()}
+    return [
+        TriggeredRiskOut(
+            **RiskBaseOut.model_validate(r).model_dump(),
+            triggered_by=norm_reasons.get(_norm_char(r.characteristic), "связанный риск"),
+        )
+        for r in risks
+    ]
 
 
 # ─── T-20: семантический поиск (pgvector) ───

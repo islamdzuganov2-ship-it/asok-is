@@ -8,6 +8,10 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { RootState } from '../index';
 import { logout } from '../slices/authSlice';
+import { qs as qsCockpit } from '../../utils/apiFetch';
+import type {
+    CockpitBundle, CockpitBundleArgs, CockpitInsightArgs, CockpitInsightResult,
+} from '../../dashboards/cockpit/apiTypes';
 
 export interface ProblematicSystem {
     id: string;
@@ -424,6 +428,20 @@ export const apiSlice = createApi({
             query: () => '/reports/executive-dashboard',
             providesTags: ['Dashboard'],
         }),
+        // ТЗ v21 §10.5 (КП-41): один запрос вместо пяти-шести — RTK Query дедуплицирует
+        // одинаковые аргументы САМ (несколько плиток кокпита вызывают этот хук с одним и тем же
+        // разрезом и получают ОДИН сетевой запрос), поэтому CockpitTile.useValue не меняется —
+        // каждая плитка просто читает свой ломтик уже загруженного бандла.
+        getCockpitBundle: builder.query<CockpitBundle, CockpitBundleArgs>({
+            query: ({ role, systemId, criticality, characteristic }) =>
+                `/reports/cockpit${qsCockpit({ role, system_id: systemId, criticality, characteristic })}`,
+            providesTags: ['Dashboard'],
+        }),
+        // ТЗ v21 §9.2: mutation, не query — одноразовая генерация, не кэшируем по аргументам
+        // (facts у каждого запроса свои); компонент сам решает, когда вызывать.
+        getCockpitInsight: builder.mutation<CockpitInsightResult, CockpitInsightArgs>({
+            query: (body) => ({ url: '/reports/cockpit-insight', method: 'POST', body }),
+        }),
         getExcelReports: builder.query<any, void>({
             query: () => '/reports/excel-data',
         }),
@@ -715,6 +733,8 @@ export const {
     useGetCalculatedMetricsQuery,
     useGetPeriodSummariesQuery,
     useGetExecutiveDashboardQuery,
+    useGetCockpitBundleQuery,
+    useGetCockpitInsightMutation,
     useGetSystemsQuery,
     useImportAssessmentExcelMutation,
     useImportWorkbookMutation,

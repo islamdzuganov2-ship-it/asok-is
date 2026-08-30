@@ -326,6 +326,20 @@ async def analytics(db: AsyncSession, *, system: str | None = None) -> IncidentA
     )[:10]
 
     release_count = len(cat_rows.get(CATEGORY_RELEASE, []))
+
+    # ТЗ v21 (КП-30): MTBF/доступность за окно наблюдения (от первого сбоя выборки до сейчас).
+    # Приблизительно (не строгий SLA-расчёт по договору), но не выдумано: при нуле сбоев —
+    # None, а не фиктивные 100% (§7.3 честной пустоты).
+    window_hours = mtbf_hours = availability_pct = None
+    if rows:
+        earliest = min(r.occurred_at for r in rows)
+        now = datetime.now(timezone.utc)
+        occurred = earliest if earliest.tzinfo else earliest.replace(tzinfo=timezone.utc)
+        window_hours = max((now - occurred).total_seconds() / 3600, 1.0)
+        mtbf_hours = round(window_hours / total, 1)
+        downtime_hours = sum(float(r.downtime_minutes or 0) for r in rows) / 60
+        availability_pct = round(max(0.0, min(100.0, 100 * (1 - downtime_hours / window_hours))), 2)
+
     return IncidentAnalyticsOut(
         total=total,
         open_count=len(open_rows),
@@ -335,4 +349,7 @@ async def analytics(db: AsyncSession, *, system: str | None = None) -> IncidentA
         release_induced_share=round(release_count / total * 100, 1) if total else 0.0,
         by_category=by_category,
         top_systems=top_systems,
+        window_hours=round(window_hours, 1) if window_hours is not None else None,
+        mtbf_hours=mtbf_hours,
+        availability_pct=availability_pct,
     )

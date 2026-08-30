@@ -19,6 +19,7 @@ import { DynamicsScopeProvider, DynamicsScopeToolbar } from './DynamicsScope';
 import { AnalyticsScopeProvider, AnalyticsScopeToolbar } from './AnalyticsScope';
 import { MyTasksScopeProvider, MyTasksScopeToolbar } from './MyTasksScope';
 import { EconScopeProvider, EconScopeToolbar } from './EconScope';
+import { CockpitScopeProvider, CockpitScopeToolbar } from './CockpitScope';
 
 interface ScopeEntry {
   key: ScopeKey;
@@ -37,6 +38,7 @@ const SCOPES: ScopeEntry[] = [
   { key: 'analytics', Provider: AnalyticsScopeProvider, Toolbar: AnalyticsScopeToolbar },
   { key: 'mytasks', Provider: MyTasksScopeProvider, Toolbar: MyTasksScopeToolbar },
   { key: 'econ', Provider: EconScopeProvider, Toolbar: EconScopeToolbar },
+  { key: 'cockpit', Provider: CockpitScopeProvider, Toolbar: CockpitScopeToolbar },
 ];
 
 export const ScopeHost: React.FC<{ scopes: Set<ScopeKey>; children: React.ReactNode }> = ({ scopes, children }) => (

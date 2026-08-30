@@ -100,6 +100,7 @@ export const CardPicker: React.FC<CardPickerProps> = ({
                       background: present ? PREMIUM.surfaceTint : 'transparent',
                     }}
                   >
+                    {c.thumbnail}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ color: BRAND.ink, fontWeight: 500 }}>{c.title}</div>
                       {c.hint && <Text type="secondary" style={TYPE.caption}>{c.hint}</Text>}
