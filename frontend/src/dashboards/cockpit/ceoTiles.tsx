@@ -437,7 +437,10 @@ const TopRiskTile: CockpitTile = {
   },
 };
 
+// Порядок = порядок в сетке по умолчанию (registry.tsx строит раскладку из этого списка,
+// 3 в ряд). ROSI — второй, а не третий: единственная плитка-«экономия» среди денежных,
+// не должна прятаться в третьей колонке, которую на многих экранах не видно без прокрутки.
 export const CEO_TILES: CockpitTile[] = [
-  CostTile, AcceptanceTile, RosiTile, VulnerabilityTile, ClosureTile, RegulatorTile,
+  CostTile, RosiTile, AcceptanceTile, VulnerabilityTile, ClosureTile, RegulatorTile,
   DegradationTile, TopRiskTile,
 ];
