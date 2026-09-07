@@ -6,14 +6,17 @@
  * шторки L2 «разложение» — иначе каждая плитка держала бы свой Drawer, и открытая на «Мой
  * дашборд» плитка не знала бы, как показать разбор клика.
  *
- * Полоса сквозного фильтра (период/ИС/критичность) — из ТЗ v21 — сюда сознательно не перенесена
- * (см. границы задачи): плитки работают на `DEFAULT_SLICE` (весь портфель), как и остальные
- * дашборды конструктора выглядят по умолчанию, пока пользователь ничего не настраивал.
+ * Сквозной разрез (ТЗ v21 §3, КП-01…КП-10) живёт в адресной строке, а не здесь: скоуп только
+ * читает его через `useSlice()` и раздаёт плиткам. Панель управления разрезом — `SliceBar`
+ * в `CockpitScopeToolbar`: конструктор рендерит панели активных скоупов над сеткой, поэтому
+ * фильтр появляется ровно там, где на дашборде есть плитки кокпита, и нигде больше.
  */
 import React, { createContext, useContext, useState } from 'react';
 import { Drawer, Typography } from 'antd';
 import { PREMIUM, SPACE } from '../../theme/premium';
-import { DEFAULT_SLICE, type Slice } from '../../store/slice/sliceTypes';
+import { isSliceEmpty, type Slice } from '../../store/slice/sliceTypes';
+import { useSlice, sliceSummaryText } from '../../store/slice/sliceUrl';
+import SliceBar from '../../components/SliceBar';
 import { CEO_TILES } from '../cockpit/ceoTiles';
 import { CTO_TILES } from '../cockpit/ctoTiles';
 import type { CockpitTile } from '../cockpit/types';
@@ -39,10 +42,11 @@ export function useCockpitScope(): CockpitScopeValue {
 
 export const CockpitScopeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [openTileId, setOpenTileId] = useState<string | null>(null);
+  const [slice] = useSlice();
   const openTile = openTileId ? ALL_TILES.get(openTileId) ?? null : null;
 
   return (
-    <Ctx.Provider value={{ slice: DEFAULT_SLICE, setOpenTile: setOpenTileId }}>
+    <Ctx.Provider value={{ slice, setOpenTile: setOpenTileId }}>
       {children}
       <Drawer
         open={!!openTile}
@@ -53,10 +57,12 @@ export const CockpitScopeProvider: React.FC<{ children: React.ReactNode }> = ({ 
       >
         {openTile && (
           <>
+            {/* Разбор наследует тот же разрез, что и плитка: цифра в шторке обязана совпадать
+                с цифрой на карточке, иначе разложение объясняет не то число. */}
             <Text type="secondary" style={{ display: 'block', marginBottom: SPACE.base }}>
-              Разрез: весь портфель
+              Разрез: {isSliceEmpty(slice) ? 'весь портфель' : sliceSummaryText(slice)}
             </Text>
-            <openTile.Detail slice={DEFAULT_SLICE} />
+            <openTile.Detail slice={slice} />
           </>
         )}
       </Drawer>
@@ -64,4 +70,4 @@ export const CockpitScopeProvider: React.FC<{ children: React.ReactNode }> = ({ 
   );
 };
 
-export const CockpitScopeToolbar: React.FC = () => null;
+export const CockpitScopeToolbar: React.FC = () => <SliceBar />;

@@ -77,7 +77,7 @@ async def get_cell_detail(
 @router.get("/heatmap-money-layer", response_model=list[HeatmapMoneyCellOut])
 async def get_heatmap_money_layer(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.heatmap_money_layer(db)
 
@@ -87,7 +87,7 @@ async def get_heatmap_money_layer(
 @router.get("/chain", response_model=list[RiskMeasureChainRowOut])
 async def get_risk_measure_chain(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.risk_measure_chain(db)
 
@@ -98,7 +98,7 @@ async def get_portfolio_risk_summary(
     criticality: str | None = None,
     characteristic: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.portfolio_risk_summary(
         db, system_id=parse_uuid_list(system_id), criticality=parse_str_list(criticality),

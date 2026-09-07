@@ -12,12 +12,15 @@ import GridDashboard from '../../dashboards/GridDashboard';
 import CockpitInsight from '../../dashboards/cockpit/CockpitInsight';
 import { useGetCockpitBundleQuery } from '../../store/api/apiSlice';
 import { cockpitBundleArgs } from '../../dashboards/cockpit/bundleArgs';
-import { DEFAULT_SLICE } from '../../store/slice/sliceTypes';
+import { useSlice } from '../../store/slice/sliceUrl';
 import { GOLD } from '../../theme/premium';
 
 const CtoDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { data: bundle } = useGetCockpitBundleQuery(cockpitBundleArgs('CTO', DEFAULT_SLICE));
+  // Тот же разрез, что у плиток (CockpitScope читает его из URL) — иначе AI-резюме говорило бы
+  // про весь портфель, пока плитки показывают суженный срез. RTK Query дедуплицирует запрос.
+  const [slice] = useSlice();
+  const { data: bundle } = useGetCockpitBundleQuery(cockpitBundleArgs('CTO', slice));
   return (
     <GridDashboard
       dashboardKey="ctoCockpit"
