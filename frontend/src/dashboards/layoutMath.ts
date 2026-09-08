@@ -69,3 +69,41 @@ export function nextFreeRow(layout: CardLayout[]): number {
  *  они не нужны и мешают сравнению «изменилось ли». */
 export const geometryOf = (layout: CardLayout[]): CardLayout[] =>
   layout.map(({ i, x, y, w, h }) => ({ i, x, y, w, h }));
+
+/**
+ * Автовыравнивание: плотно упаковывает карточки в сетку, не трогая их ширину/высоту —
+ * только x/y. Skyline-эвристика (bottom-left fill): для каждой карточки, от самой крупной
+ * к самой мелкой, ищем самую верхнюю (а при равенстве — самую левую) свободную позицию.
+ *
+ * Крупные карточки идут первыми не просто так: если пускать мелкие вперёд, они успевают
+ * растащить верхние строки по кусочкам, и широким карточкам, поставленным позже, буквально
+ * негде встать вплотную — результат рыхлый, с дырами. Приоритет по высоте, а не только по
+ * ширине, потому что именно высота определяет, насколько «дорого» карточка блокирует колонку.
+ *
+ * Между карточками одного размера порядок — по исходной позиции (y, затем x): визуальный
+ * порядок, который пользователь уже выстроил, не перемешивается без нужды.
+ */
+export function autoArrange(layout: CardLayout[]): CardLayout[] {
+  const skyline = new Array(GRID_COLS).fill(0);
+  const ordered = [...layout].sort((a, b) => (
+    (b.h - a.h) || (b.w - a.w) || (a.y - b.y) || (a.x - b.x)
+  ));
+
+  const placed = ordered.map((row) => {
+    const w = Math.min(row.w, GRID_COLS);
+    let bestX = 0;
+    let bestY = Infinity;
+    for (let x = 0; x <= GRID_COLS - w; x += 1) {
+      let y = 0;
+      for (let c = x; c < x + w; c += 1) y = Math.max(y, skyline[c]);
+      if (y < bestY) { bestY = y; bestX = x; }
+    }
+    for (let c = bestX; c < bestX + w; c += 1) skyline[c] = bestY + row.h;
+    return { ...row, x: bestX, y: bestY };
+  });
+
+  // Возвращаем в исходном порядке карточек — геометрия уже плотная, порядок массива важен
+  // только для стабильности сравнений/тестов, на отрисовку (ключ — row.i) он не влияет.
+  const byId = new Map(placed.map((row) => [row.i, row]));
+  return layout.map((row) => byId.get(row.i)!);
+}

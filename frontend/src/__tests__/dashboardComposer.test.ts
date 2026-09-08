@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  layoutFromWidgets, sanitize, nextFreeRow, geometryOf, type CardMeta,
+  layoutFromWidgets, sanitize, nextFreeRow, geometryOf, autoArrange, type CardMeta,
 } from '../dashboards/layoutMath';
 import { cardAllowed, GRID_COLS } from '../dashboards/types';
 import { fullNavOrder, groupOfPerm, moveNavItem, type NavSection } from '../constants/navOrderMath';
@@ -99,6 +99,82 @@ describe('раскладка дашборда: слияние с каталог�
   it('cardAllowed: пустой список прав не открывает ничего', () => {
     expect(cardAllowed({ perm: 'view.dashboard.risk' }, [])).toBe(false);
     expect(cardAllowed({ perm: ['a', 'b'] }, ['b'])).toBe(true);
+  });
+});
+
+/** Пересекаются ли две карточки в 12-колоночной сетке (общая площадь по x и по y). */
+const overlaps = (a: { x: number; y: number; w: number; h: number }, b: typeof a): boolean =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+describe('автовыравнивание карточек (skyline-упаковка)', () => {
+  it('не меняет w/h — только позицию', () => {
+    const layout = [
+      { i: 'a', x: 0, y: 20, w: 6, h: 5 },
+      { i: 'b', x: 6, y: 0, w: 4, h: 8 },
+    ];
+    const rows = autoArrange(layout);
+    expect(rows.find((r) => r.i === 'a')).toMatchObject({ w: 6, h: 5 });
+    expect(rows.find((r) => r.i === 'b')).toMatchObject({ w: 4, h: 8 });
+  });
+
+  it('карточки не накладываются друг на друга и не выходят за пределы 12 колонок', () => {
+    const layout = [
+      { i: 'a', x: 0, y: 0, w: 12, h: 5 },
+      { i: 'b', x: 0, y: 5, w: 6, h: 11 },
+      { i: 'c', x: 6, y: 5, w: 6, h: 8 },
+      { i: 'd', x: 0, y: 16, w: 4, h: 6 },
+      { i: 'e', x: 4, y: 16, w: 4, h: 6 },
+      { i: 'f', x: 8, y: 13, w: 4, h: 3 },
+    ];
+    const rows = autoArrange(layout);
+    rows.forEach((r) => {
+      expect(r.x).toBeGreaterThanOrEqual(0);
+      expect(r.x + r.w).toBeLessThanOrEqual(GRID_COLS);
+    });
+    for (let i = 0; i < rows.length; i += 1) {
+      for (let j = i + 1; j < rows.length; j += 1) {
+        expect(overlaps(rows[i], rows[j])).toBe(false);
+      }
+    }
+  });
+
+  it('плотнее (или так же плотно), чем было — по максимальной высоте раскладки', () => {
+    // Дыра между b и c: c можно было бы поднять на строку выше.
+    const layout = [
+      { i: 'a', x: 0, y: 0, w: 12, h: 4 },
+      { i: 'b', x: 0, y: 4, w: 6, h: 6 },
+      { i: 'c', x: 6, y: 6, w: 6, h: 6 },
+    ];
+    const before = layout.reduce((max, r) => Math.max(max, r.y + r.h), 0);
+    const rows = autoArrange(layout);
+    const after = rows.reduce((max, r) => Math.max(max, r.y + r.h), 0);
+    expect(after).toBeLessThanOrEqual(before);
+    // b и c (h=6) идут первыми как более высокие и встают рядом на первую строку,
+    // a (h=4) — под ними: итоговая высота 6 + 4 = 10 против исходных 4 + 6 = 10 с дырой сбоку.
+    expect(after).toBe(10);
+  });
+
+  it('уже плотная раскладка не меняется (идемпотентность результата)', () => {
+    const layout = [
+      { i: 'a', x: 0, y: 0, w: 6, h: 8 },
+      { i: 'b', x: 6, y: 0, w: 6, h: 8 },
+      { i: 'c', x: 0, y: 8, w: 12, h: 4 },
+    ];
+    const once = autoArrange(layout);
+    const twice = autoArrange(once);
+    expect(twice).toEqual(once);
+  });
+
+  it('пустая раскладка остаётся пустой', () => {
+    expect(autoArrange([])).toEqual([]);
+  });
+
+  it('возвращает карточки в исходном порядке массива — порядок значения не имеет, но так стабильнее сравнивать', () => {
+    const layout = [
+      { i: 'z', x: 0, y: 0, w: 6, h: 4 },
+      { i: 'a', x: 6, y: 0, w: 6, h: 4 },
+    ];
+    expect(autoArrange(layout).map((r) => r.i)).toEqual(['z', 'a']);
   });
 });
 
