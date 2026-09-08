@@ -117,6 +117,16 @@ class Settings(BaseSettings):
     # Теперь просроченный/подделанный токен — всегда 401, независимо от режима.
     DEMO_AUTH_BYPASS: bool = False
 
+    # ИБ-07 (SEC-12, docs/SECURITY_AUDIT_RF_2026-09-08.md): /docs и /openapi.json отдают анониму
+    # полную карту 171 эндпоинта и схемы данных. По умолчанию открыты (как и раньше) — это
+    # удобно для локальной разработки и не поднимает риск само по себе, пока стенд не
+    # опубликован наружу. ПЕРЕД показом по публичной ссылке (профили tunnel/tunnel-named/
+    # tunnel-ngrok/webserver, см. docker-compose.yml) — выставить API_DOCS_ENABLED=false
+    # в .env перед запуском туннеля (см. чек-лист в docs/REMOTE_ACCESS.md). Автоматической
+    # привязки к профилю нет: local-dev и публичный показ используют один и тот же
+    # docker-compose.override.yml, поэтому это осознанный ручной шаг, а не настройка по умолчанию.
+    API_DOCS_ENABLED: bool = True
+
     # Загрузки
     UPLOAD_DIR: str = "uploads"
 

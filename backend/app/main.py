@@ -41,10 +41,14 @@ if _security_issues:
             + "; ".join(_security_issues)
         )
 
+# ИБ-07 (SEC-12): при API_DOCS_ENABLED=false /docs, /redoc и /openapi.json не регистрируются
+# вообще (не просто скрыты) — openapi_url=None убирает и саму JSON-схему, не только Swagger UI.
+_docs_enabled = settings.API_DOCS_ENABLED
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    docs_url="/docs",
+    docs_url="/docs" if _docs_enabled else None,
     redoc_url=None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
 app.add_middleware(
