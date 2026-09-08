@@ -13,8 +13,13 @@ services:
       POSTGRES_DB: asok_is
       POSTGRES_USER: asok_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-asok_pass123}
-    ports:
-      - "5432:5432"
+    # ИБ-05a (SEC-10, docs/SECURITY_AUDIT_RF_2026-09-08.md): порт на хост НЕ публикуется.
+    # backend/celery_worker достают postgres по имени сервиса внутри сети asok_net — им
+    # `ports:` не нужен, он открывает БД наружу (в т.ч. в интернет при любом из 4 профилей
+    # публикации: tunnel/tunnel-named/tunnel-ngrok/webserver). Нужен временный доступ с хоста
+    # (DB GUI) — `docker compose exec postgres psql -U asok_user asok_is`, либо личный,
+    # НЕ коммитимый оверлей (docker-compose -f docker-compose.yml -f docker-compose.override.yml
+    # -f docker-compose.local.yml up), а не правка этого файла или отслеживаемого override.yml.
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -29,8 +34,11 @@ services:
     image: redis:7-alpine
     container_name: asok_redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # ИБ-05a (SEC-10): порт на хост не публикуется — та же логика, что у postgres выше.
+    # Redis здесь без пароля (requirepass), поэтому открытый на хост/интернет порт — прямой
+    # путь к записи произвольных файлов через CONFIG SET/EVAL. Пароль Redis — отдельная задача
+    # ИБ-22 (docs/BACKLOG_ИБ.md), она меняет REDIS_URL сразу в трёх местах и непроверяема без
+    # поднятого Docker-стека, поэтому в этот гейт не вошла.
     volumes:
       - redisdata:/data
     healthcheck:
