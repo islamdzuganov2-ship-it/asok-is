@@ -58,6 +58,7 @@
 | [BACKLOG.md](./BACKLOG.md) | Инициативы BL-001…BL-006 и статус задач |
 | [CODE_REVIEW_2026-07-06.md](./CODE_REVIEW_2026-07-06.md) | Код-ревью, задачи T-01…T-20, бизнес-разрывы |
 | [SECURITY_ANALYSIS.md](./SECURITY_ANALYSIS.md) | Находки безопасности S1–S11 |
+| [SECURITY_AUDIT_RF_2026-09-08.md](./SECURITY_AUDIT_RF_2026-09-08.md) | Аудит ИБ по требованиям РФ: анализаторы, находки SEC-01…SEC-23, ограничения, бэклог ИБ-01…ИБ-46 |
 | [LLM_SETUP.md](./LLM_SETUP.md) | Установка и настройка LLM |
 | [LLM_TRAINING.md](./LLM_TRAINING.md) | Уровни обучения модели, конвейер LoRA |
 | [REMOTE_ACCESS.md](./REMOTE_ACCESS.md) | Выбор варианта удалённого доступа |
