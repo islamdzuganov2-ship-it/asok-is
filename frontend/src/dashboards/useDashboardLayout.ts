@@ -26,7 +26,7 @@ import {
 } from '../store/api/apiSlice';
 import { cardById } from './registry';
 import {
-  layoutFromWidgets, sanitize, nextFreeRow, geometryOf, type CardLookup,
+  layoutFromWidgets, sanitize, nextFreeRow, geometryOf, autoArrange, type CardLookup,
 } from './layoutMath';
 import type { CardLayout, DashboardKey } from './types';
 
@@ -49,6 +49,8 @@ interface UseDashboardLayoutResult {
   revert: () => void;
   /** Вернуться к штатной раскладке дашборда (кнопка «Сбросить»). */
   resetToDefault: () => void;
+  /** Плотно упаковать текущие карточки по сетке (кнопка «Автовыравнивание»). */
+  autoAlign: () => void;
 }
 
 export function useDashboardLayout(
@@ -124,6 +126,10 @@ export function useDashboardLayout(
     setDraft(sanitize(defaultLayout, permissions, lookup));
   }, [defaultLayout, permissions]);
 
+  const autoAlign = useCallback(() => {
+    setDraft((prev) => autoArrange(prev));
+  }, []);
+
   return {
     layout: draft,
     dirty,
@@ -135,5 +141,6 @@ export function useDashboardLayout(
     save,
     revert,
     resetToDefault,
+    autoAlign,
   };
 }
