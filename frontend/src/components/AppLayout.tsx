@@ -28,6 +28,7 @@ import { ROUTE_BY_PERM, ICON_BY_PERM } from '../constants/navMeta';
 import { groupOfPerm } from '../constants/navOrderMath';
 import { roleLabel } from '../constants/roles';
 import NotificationBell from './NotificationBell';
+import CommandPalette from './CommandPalette';
 import { PREMIUM, GOLD, TYPE, SPACE } from '../theme/premium';
 import { BRAND } from '../theme/ragPalette';
 
@@ -49,6 +50,20 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const [collapsed, setCollapsed] = useState(false);
+    // ТЗ v21 §4 (КП-38): командная строка Ctrl+K / ⌘K. Слушатель глобальный, а не на странице —
+    // строка доступна из любого раздела, не только с кокпита. preventDefault обязателен:
+    // иначе Chrome уводит фокус в адресную строку и модалка открывается «вслепую».
+    const [paletteOpen, setPaletteOpen] = useState(false);
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                setPaletteOpen((v) => !v);
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
     const navigate = useNavigate();
     const location = useLocation();
     const dispatch = useAppDispatch();
@@ -298,6 +313,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     {children}
                 </Content>
             </Layout>
+            <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
         </Layout>
     );
 };

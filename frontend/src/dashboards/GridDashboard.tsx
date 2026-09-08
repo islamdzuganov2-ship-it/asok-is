@@ -16,7 +16,7 @@
  */
 import React, { useMemo, useState } from 'react';
 import { Alert, Button, Empty, Popconfirm, Space, Spin, Typography } from 'antd';
-import { EditOutlined, CheckOutlined, PlusOutlined, CloseOutlined, HolderOutlined, UndoOutlined } from '@ant-design/icons';
+import { EditOutlined, CheckOutlined, PlusOutlined, CloseOutlined, HolderOutlined, UndoOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import RGL, { WidthProvider, type Layout } from 'react-grid-layout';
 import { useSelector } from 'react-redux';
 import { message } from '../theme/appMessage';
@@ -90,7 +90,7 @@ export const GridDashboard: React.FC<GridDashboardProps> = ({
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const {
-    layout, dirty, saving, customized, setLayout, addCard, removeCard, save, revert, resetToDefault,
+    layout, dirty, saving, customized, setLayout, addCard, removeCard, save, revert, resetToDefault, autoAlign,
   } = useDashboardLayout(dashboardKey, def.defaultLayout, editing);
 
   // Какие скоупы поднимать — по карточкам, которые реально на экране.
@@ -219,6 +219,13 @@ export const GridDashboard: React.FC<GridDashboardProps> = ({
             {editing ? (
               <>
                 <Button icon={<PlusOutlined />} onClick={() => setPickerOpen(true)}>Добавить карточку</Button>
+                <Button
+                  icon={<ThunderboltOutlined />}
+                  onClick={() => { autoAlign(); message.success('Карточки выровнены по сетке'); }}
+                  title="Плотно расставить карточки по сетке — без изменения их размера"
+                >
+                  Автовыравнивание
+                </Button>
                 {customized && (
                   <Popconfirm
                     title="Вернуть стандартную раскладку?"

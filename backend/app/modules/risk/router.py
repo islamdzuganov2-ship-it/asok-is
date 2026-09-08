@@ -33,7 +33,7 @@ async def list_risks(
     q: str | None = None,
     limit: int = Query(1000, ge=1, le=10000),  # ДЕФ-24: потолок выборки
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risks")),
 ) -> list[RiskBase]:
     stmt = select(RiskBase)
     if status != "all":
@@ -61,7 +61,7 @@ async def search_risks(
     q: str = Query(..., min_length=2),
     limit: int = 5,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risks")),
 ) -> list[RiskBase]:
     """Лексический поиск для LLM-grounding (по тексту/ключевым словам). Оставлен неизменным."""
     return await service.search_risks(db, q, limit)
@@ -72,7 +72,7 @@ async def semantic_search_risks(
     q: str = Query(..., min_length=2),
     limit: int = 5,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risks")),
 ) -> list[RiskBase]:
     """Семантический поиск базы рисков (T-20): косинусная близость эмбеддингов через pgvector.
     Находит риск по смыслу/морфологии, а не только по точному вхождению слова (в отличие от
@@ -85,7 +85,7 @@ async def get_triggered_risks(
     system: str | None = None,
     characteristics: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.dashboard.risk_radar", "view.dashboard.risk", "view.dashboard.cto")),
 ) -> list[TriggeredRiskOut]:
     """Риск-триггеры (T-16) — см. docstring `service.triggered_risks` (ТЗ v21, КП-40: логика
     вынесена в сервисный слой, переиспользуется агрегатором кокпита)."""

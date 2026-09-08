@@ -2,7 +2,11 @@
 REST API домена econ (BL-007) — /api/v1/econ.
 
 Справочники риск-экономического контура + финпараметры. RBAC:
-- чтение — всем аутентифицированным (аналитик читает ставки/стоимости при вводе);
+- ВСЁ чтение домена — по праву `view.risk_economics`. Раньше хватало аутентификации, и роль
+  EXECUTOR, которой деньги показывать нельзя по §17.8/УК-58, читала портфельный ALE в обход
+  RBAC (ДЕФ-42, закрыто 2026-09-07, страж `tests/test_money_rbac.py`). Аналитик по-прежнему
+  читает ставки/стоимости при вводе: у TEST_ANALYST это право есть, а EXECUTOR — единственная
+  роль без него;
 - справочники (БП, связи, C_мин, ставки) ведёт риск-менеджер / менеджер по качеству;
 - финпараметры (ставка дисконта, пороги, риск-аппетит, матрица акцепта) — риск-менеджер / админ (SoD).
 Доменные исключения маппятся на HTTP обработчиком в main.py.
@@ -61,7 +65,7 @@ async def get_cost_dashboard(
     criticality: str | None = None,
     characteristic: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> CostDashboardOut:
     """Агрегаты для CTO/CEO: портфельный ALE, тепловая карта, топ рисков, воронка, деградация.
     Сквозной разрез (ТЗ v21 §10.4): без параметров поведение не меняется (КП-ПР-7). system_id/
@@ -81,7 +85,7 @@ async def get_acceptance_queue(
     criticality: str | None = None,
     characteristic: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> AcceptanceQueueOut:
     """Очередь решений по матрице акцепта (плитка CEO «Что требует моей подписи?», КП-23.2)."""
     return await acceptance_queue(
@@ -97,7 +101,7 @@ async def get_portfolio_trend(
     system_id: str | None = None,
     criticality: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> PortfolioTrendOut:
     """Динамика портфельных величин между периодами (плитки CEO 5.1 и CTO «Что просело», КП-24/КП-31)."""
     return await portfolio_trend(
@@ -111,7 +115,7 @@ async def get_portfolio_trend(
 @router.get("/manager-metrics", response_model=ManagerMetricsOut)
 async def get_manager_metrics(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> ManagerMetricsOut:
     """По владельцам: нагрузка/просрочка/выполнено, ΔALE под управлением, доли решений (без мотивации)."""
     return await manager_metrics(db)
@@ -123,7 +127,7 @@ async def get_manager_metrics(
 async def get_subchar_weights(
     criticality: str = "BUSINESS_CRITICAL",
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> WeightsResult:
     """Гибрид-веса: α·профиль(класс ИС) + (1−α)·фактика(доля в ALE), α=max(α_min, N₀/(N₀+N)).
     Отдельный советчик — интегральный Score НЕ пересчитывается (решение заказчика)."""
@@ -136,7 +140,7 @@ async def get_subchar_weights(
 async def get_measure_catalog(
     characteristic: str | None = None,
     subcharacteristic: str | None = None,
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> list[CatalogEntryOut]:
     """Типовые связки риск↔подхарактеристика↔мера (устраняющая/компенсирующая). Методологическая
     константа: помогает аналитику при разборе несоответствия. Score/данные не меняет."""
@@ -148,7 +152,7 @@ async def get_measure_catalog(
 @router.get("/config", response_model=list[EconConfigItem])
 async def get_config(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> list:
     return await service.get_config(db)
 
@@ -169,7 +173,7 @@ async def set_config(
 @router.get("/enterprise-profile", response_model=EnterpriseProfileOut)
 async def get_enterprise_profile(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.get_enterprise_profile(db)
 
@@ -191,7 +195,7 @@ async def update_enterprise_profile(
 @router.get("/business-processes", response_model=list[BusinessProcessOut])
 async def list_business_processes(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> list:
     return await service.list_business_processes(db)
 
@@ -220,7 +224,7 @@ async def update_business_process(
 async def get_bp_cost(
     bp_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.get_bp_cost(db, bp_id)
 
@@ -241,7 +245,7 @@ async def upsert_bp_cost(
 async def list_system_bps(
     system_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> list:
     return await service.list_system_bps(db, system_id)
 
@@ -262,7 +266,7 @@ async def link_system_bp(
 async def list_rates(
     system_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> list:
     return await service.list_rates(db, system_id=system_id)
 
@@ -294,7 +298,7 @@ async def update_rate(
 async def list_benchmarks(
     kind: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> list:
     return await service.list_benchmarks(db, kind=kind)
 
@@ -313,7 +317,7 @@ async def create_benchmark(
 async def compare_bp_benchmark(
     bp_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.compare_business_process(db, bp_id)
 
@@ -322,6 +326,6 @@ async def compare_bp_benchmark(
 async def compare_rate_benchmark(
     rate_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.compare_support_rate(db, rate_id)

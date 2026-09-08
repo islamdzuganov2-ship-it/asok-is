@@ -24,7 +24,7 @@ from sqlalchemy.orm import selectinload
 
 from app.infrastructure.database import get_db
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
-from app.modules.iam import get_current_user, require_permission
+from app.modules.iam import get_current_user, get_role_permissions, require_permission
 from app.modules.llm import brain as llm_brain
 from app.modules.quality import (
     CHARACTERISTICS,
@@ -372,7 +372,7 @@ async def system_insight(
 async def get_period_excel_matrices(
     period_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.reports")),
 ) -> FullExcelMatricesOut:
     period = await db.get(AssessmentPeriod, period_id)
     if period is None:
@@ -465,7 +465,7 @@ def _score_to_bucket(value: float | None) -> int:
 
 @router.get("/executive-dashboard", response_model=DashboardDataOut)
 async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
-                                  _: dict = Depends(get_current_user)) -> DashboardDataOut:
+                                  _: dict = Depends(require_permission("view.dashboard.cto", "view.dashboard.ceo", "view.dashboard.analytics", "view.assessments"))) -> DashboardDataOut:
     result = await db.execute(
         select(AssessmentValue)
         .options(
@@ -727,7 +727,7 @@ def _period_starts_before(period: str, iso_datetime: str) -> bool:
 
 @router.get("/system-dynamics", response_model=SystemDynamicsOut)
 async def system_dynamics(system_id: UUID, db: AsyncSession = Depends(get_db),
-                          _: dict = Depends(get_current_user)) -> SystemDynamicsOut:
+                          _: dict = Depends(require_permission("view.reports", "view.dashboard.dynamics"))) -> SystemDynamicsOut:
     """Динамика качества ИС по периодам (T-15 — эффективность мер + live-режим «Динамики качества»).
 
     Интегральный показатель и средние по 8 характеристикам (ISO 25010) за каждый квартал в
@@ -998,21 +998,38 @@ async def get_cockpit_bundle(
     criticality: str | None = None,
     characteristic: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ) -> CockpitBundleOut:
     """Один запрос вместо пяти-шести — общая точка отсчёта для дельт и без «прыжков» экрана
-    (§10.5). Не считает ничего сам: складывает ответы уже существующих сервисов. Видимость
-    конкретной плитки на кокпите решает фронт по праву (`CockpitTile.perm`), не этот эндпоинт —
-    так же, как и вызов эндпоинтов напрямую сегодня не проверяет права per-tile."""
+    (§10.5). Не считает ничего сам: складывает ответы уже существующих сервисов.
+
+    RBAC — пофайловый, а не «всё или ничего» (закрыто 2026-09-07, тест `test_cockpit_rbac.py`).
+    Раньше эндпоинт довольствовался аутентификацией, и это был обход RBAC: роль EXECUTOR имеет
+    права на дашборды `dynamics`/`incidents`/`risk_radar`, значит могла добавить CTO-плитки на
+    «Мой дашборд» и получить весь бандл, включая `managerMetrics` с ΔALE по руководителям —
+    при том что деньги ей не показывают намеренно (ТЗ v19 §17.8, УК-58).
+
+    Правило: бандл CEO целиком денежный → требует `view.risk_economics`. В бандле CTO денежная
+    только часть (`managerMetrics`) → она обнуляется для тех, у кого права нет; надёжность,
+    динамика балла и риск-триггеры остаются доступны. Обнулённое поле фронт отрабатывает
+    штатной «честной пустотой» (§7.3) — плитка и так закрыта правом на клиенте."""
     f = CockpitFilters(
         system_id=parse_uuid_list(system_id), criticality=parse_str_list(criticality),
         characteristic=characteristic,
     )
+    roles = current_user.get("roles") or []
+    granted = await get_role_permissions(db, roles[0] if roles else "")
+    can_see_money = "view.risk_economics" in granted
+
     role_up = role.upper()
     if role_up == "CEO":
+        if not can_see_money:
+            raise HTTPException(status_code=403, detail="Missing permission: view.risk_economics")
         data = await ceo_bundle(db, f)
     elif role_up == "CTO":
         data = await cto_bundle(db, f)
+        if not can_see_money:
+            data["managerMetrics"] = None
     else:
         raise HTTPException(status_code=400, detail=f"Неизвестная роль кокпита: {role}")
     return CockpitBundleOut(role=role_up, generated_at=datetime.now(), **data)

@@ -37,3 +37,21 @@ export const DEFAULT_SLICE: Slice = {
   subcharacteristic: null,
   owner: null,
 };
+
+/** Разрез не сужен — показанная цифра относится ко всему портфелю. */
+export function isSliceEmpty(s: Slice): boolean {
+  return s.period === 'latest' && s.systems.length === 0 && s.criticality.length === 0
+    && !s.characteristic && !s.subcharacteristic && !s.owner;
+}
+
+/** Число активных фильтров — для чипа «Разрез (N)» на свёрнутой панели (ТЗ v21 §3.4). */
+export function activeFilterCount(s: Slice): number {
+  let n = 0;
+  if (s.period !== 'latest') n += 1;
+  if (s.systems.length) n += 1;
+  if (s.criticality.length) n += 1;
+  if (s.characteristic) n += 1;
+  if (s.subcharacteristic) n += 1;
+  if (s.owner) n += 1;
+  return n;
+}

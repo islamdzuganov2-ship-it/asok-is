@@ -120,7 +120,7 @@ def _avg_measured(vals: list[float]) -> float:
 
 @router.get("/dashboard")
 async def get_dashboard(db: AsyncSession = Depends(get_db),
-                        _: dict = Depends(get_current_user)):
+                        _: dict = Depends(require_permission("view.assessments", "view.dashboard.manager", "view.dashboard.analytics"))):
     systems_result = await db.execute(
         select(System).where(System.is_active.is_(True), System.is_deleted.is_(False)).order_by(System.name)
     )
@@ -368,7 +368,7 @@ async def list_assessment_periods(
     system_id: UUID | None = None,
     limit: int = Query(500, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.assessments", "view.dashboard.analytics", "view.dashboard.dynamics", "view.ai_assessments")),
 ) -> list[AssessmentPeriod]:
     stmt = select(AssessmentPeriod).join(System).where(System.is_deleted.is_(False)).order_by(
         AssessmentPeriod.created_at.desc()
@@ -386,7 +386,7 @@ async def list_period_summaries(
     system_id: UUID | None = None,
     limit: int = Query(500, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.assessments", "view.dashboard.analytics", "view.dashboard.dynamics")),
 ) -> list[PeriodSummaryOut]:
     """Сводка по периодам: сколько подхарактеристик модели заполнено и полна ли оценка.
 
@@ -446,7 +446,7 @@ async def list_period_summaries(
 
 @router.get("/{period_id}/metrics", response_model=List[EditableMetricOut])
 async def get_assessment_metrics(period_id: UUID, db: AsyncSession = Depends(get_db),
-                                 _: dict = Depends(get_current_user)):
+                                 _: dict = Depends(require_permission("view.assessments", "view.reports", "quality.weights.edit"))):
     await _require_period(db, period_id)
     result = await db.execute(
         select(AssessmentValue, MetricCatalog)
@@ -536,7 +536,7 @@ async def save_assessment_metrics(
 
 @router.get("/{period_id}/calculated", response_model=List[CalculatedMetricOut])
 async def get_calculated_metrics(period_id: UUID, db: AsyncSession = Depends(get_db),
-                                 _: dict = Depends(get_current_user)):
+                                 _: dict = Depends(require_permission("view.assessments", "view.dashboard.analytics"))):
     await _require_period(db, period_id)
     result = await db.execute(
         select(AssessmentValue, MetricCatalog)
@@ -740,7 +740,7 @@ async def reopen_assessment(
 
 @router.get("/{period_id}/judgments", response_model=JudgmentsStatusOut)
 async def get_judgments(period_id: UUID, db: AsyncSession = Depends(get_db),
-                        _: dict = Depends(get_current_user)) -> JudgmentsStatusOut:
+                        _: dict = Depends(require_permission("view.assessments"))) -> JudgmentsStatusOut:
     """Профессиональные суждения периода + полнота (обязательны по всем 31 подхарактеристике)."""
     await _require_period(db, period_id)
     rows = list((await db.execute(
@@ -842,7 +842,7 @@ async def _gate_context(db: AsyncSession, period: AssessmentPeriod) -> tuple:
 
 @router.get("/{period_id}/judgment-conclusion")
 async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(get_db),
-                                  current_user: dict = Depends(get_current_user)) -> dict:
+                                  current_user: dict = Depends(require_permission("view.assessments"))) -> dict:
     """Заключение по профсуждениям через КОНВЕЙЕР многоаспектного рассуждения (BL-005).
 
     ISO 25010/38500: факты входа → проблема → первопричина → уточняющие вопросы → ролевые
@@ -943,7 +943,7 @@ async def get_judgment_conclusion(period_id: UUID, db: AsyncSession = Depends(ge
 
 @router.get("/judgments-status")
 async def judgments_status(db: AsyncSession = Depends(get_db),
-                           _: dict = Depends(get_current_user)) -> list[dict]:
+                           _: dict = Depends(require_permission("view.assessments"))) -> list[dict]:
     """Периоды с активной оценкой, где проф. суждения заполнены НЕ полностью.
 
     Для уведомлений менеджера по качеству: на каких системах есть пустые проф. суждения.
@@ -1000,7 +1000,7 @@ async def judgments_pending(
     all_periods: bool = False,
     limit: int = 1000,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.assessments")),
 ) -> list[PendingJudgmentOut]:
     """T-48: метрики оценки, по которым НЕ внесено профессиональное суждение.
 
@@ -1095,7 +1095,7 @@ async def judgments_filled(
     system_name: str | None = None,
     limit: int = Query(1000, ge=1, le=10000),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.assessments")),
 ) -> list[dict]:
     """Заполненные профессиональные суждения (со связкой характеристика + система + период).
 
