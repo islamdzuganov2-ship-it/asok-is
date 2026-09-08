@@ -2,8 +2,11 @@
 REST API рискового события (BL-007, RE-08/09) — /api/v1/risk-events.
 
 Числовой контур риска (ARO/ALE), отдельно от /risks (база знаний). RBAC: реестр рисков ведёт
-владелец риска (RISK_MANAGER) / админ; чтение — всем аутентифицированным (§6.1: риск-менеджер видит
-весь портфель, но НЕ меняет Score — это в контуре оценки).
+владелец риска (RISK_MANAGER) / админ (§6.1: риск-менеджер видит весь портфель, но НЕ меняет
+Score — это в контуре оценки). Чтение — по праву `view.risk_economics` либо `view.dashboard.risk`;
+чисто денежные срезы (`/heatmap-money-layer`, `/chain`, `/portfolio-summary`) — только по
+`view.risk_economics`. Формулировка «чтение всем аутентифицированным» действовала до ДЕФ-42
+(2026-09-07): она давала роли EXECUTOR портфельный ALE вопреки §17.8/УК-58.
 """
 from __future__ import annotations
 
@@ -45,7 +48,7 @@ async def list_events(
     system_id: uuid.UUID | None = None,
     category: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics", "view.dashboard.risk")),
 ) -> list:
     return await service.list_events(db, status=status, system_id=system_id, category=category)
 
@@ -67,7 +70,7 @@ async def get_cell_detail(
     system_name: str,
     characteristic: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics", "view.dashboard.risk")),
 ):
     return await service.cell_detail(db, system_name, characteristic)
 
@@ -77,7 +80,7 @@ async def get_cell_detail(
 @router.get("/heatmap-money-layer", response_model=list[HeatmapMoneyCellOut])
 async def get_heatmap_money_layer(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.heatmap_money_layer(db)
 
@@ -87,7 +90,7 @@ async def get_heatmap_money_layer(
 @router.get("/chain", response_model=list[RiskMeasureChainRowOut])
 async def get_risk_measure_chain(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.risk_measure_chain(db)
 
@@ -98,7 +101,7 @@ async def get_portfolio_risk_summary(
     criticality: str | None = None,
     characteristic: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.portfolio_risk_summary(
         db, system_id=parse_uuid_list(system_id), criticality=parse_str_list(criticality),
@@ -110,7 +113,7 @@ async def get_portfolio_risk_summary(
 async def get_event(
     event_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics", "view.dashboard.risk")),
 ):
     return await service.get_or_404(db, event_id)
 
@@ -131,7 +134,7 @@ async def update_event(
 async def get_event_links(
     event_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics", "view.dashboard.risk")),
 ):
     return await service.get_links(db, event_id)
 

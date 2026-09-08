@@ -182,7 +182,7 @@ async def upload_excel(
 
 @router.get("/tasks/{task_id}")
 async def get_task_status(task_id: str,
-                          _: dict = Depends(get_current_user)) -> dict[str, object]:
+                          _: dict = Depends(require_permission("dataio.import"))) -> dict[str, object]:
     result = AsyncResult(task_id, app=celery_app)
     payload: dict[str, object] = {"task_id": task_id, "status": result.status}
     if result.ready():
