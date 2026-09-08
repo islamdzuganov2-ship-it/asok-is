@@ -38,7 +38,7 @@ async def list_incidents(
     severity: str | None = None,
     status: str | None = None,  # open | resolved
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.dashboard.incidents", "incidents.edit", "view.dashboard.risk")),
 ) -> list:
     return await service.list_incidents(db, system=system, category=category, severity=severity, status=status)
 
@@ -47,7 +47,7 @@ async def list_incidents(
 async def incident_analytics(
     system: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.dashboard.incidents", "incidents.edit", "view.dashboard.risk")),
 ) -> IncidentAnalyticsOut:
     return await service.analytics(db, system=system)
 
@@ -55,7 +55,7 @@ async def incident_analytics(
 @router.get("/categories", response_model=IncidentCategoriesOut)
 async def incident_categories(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.dashboard.incidents", "incidents.edit", "view.dashboard.risk")),
 ) -> IncidentCategoriesOut:
     """Справочник первопричин (T-37): базовые + пользовательские «Другое» для выпадающего списка формы."""
     return await service.list_categories(db)

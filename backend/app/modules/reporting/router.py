@@ -372,7 +372,7 @@ async def system_insight(
 async def get_period_excel_matrices(
     period_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.reports")),
 ) -> FullExcelMatricesOut:
     period = await db.get(AssessmentPeriod, period_id)
     if period is None:
@@ -465,7 +465,7 @@ def _score_to_bucket(value: float | None) -> int:
 
 @router.get("/executive-dashboard", response_model=DashboardDataOut)
 async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
-                                  _: dict = Depends(get_current_user)) -> DashboardDataOut:
+                                  _: dict = Depends(require_permission("view.dashboard.cto", "view.dashboard.ceo", "view.dashboard.analytics", "view.assessments"))) -> DashboardDataOut:
     result = await db.execute(
         select(AssessmentValue)
         .options(
@@ -727,7 +727,7 @@ def _period_starts_before(period: str, iso_datetime: str) -> bool:
 
 @router.get("/system-dynamics", response_model=SystemDynamicsOut)
 async def system_dynamics(system_id: UUID, db: AsyncSession = Depends(get_db),
-                          _: dict = Depends(get_current_user)) -> SystemDynamicsOut:
+                          _: dict = Depends(require_permission("view.reports", "view.dashboard.dynamics"))) -> SystemDynamicsOut:
     """Динамика качества ИС по периодам (T-15 — эффективность мер + live-режим «Динамики качества»).
 
     Интегральный показатель и средние по 8 характеристикам (ISO 25010) за каждый квартал в

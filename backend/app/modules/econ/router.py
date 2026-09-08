@@ -2,14 +2,11 @@
 REST API домена econ (BL-007) — /api/v1/econ.
 
 Справочники риск-экономического контура + финпараметры. RBAC:
-- чтение ДЕНЕЖНЫХ агрегатов и справочников (портфельный ALE, очередь акцепта, тренд портфеля,
-  метрики руководителей, ставки, бенчмарки, стоимость БП) — по праву `view.risk_economics`.
-  Раньше хватало аутентификации, и роль EXECUTOR, которой деньги показывать нельзя по
-  §17.8/УК-58, читала портфельный ALE в обход RBAC (закрыто 2026-09-07, тест
-  `test_econ_rbac.py`). Аналитик по-прежнему читает ставки/стоимости при вводе: у
-  TEST_ANALYST это право есть;
-- чтение методологических констант (веса-советчик, каталог мер, профиль предприятия,
-  перечень БП) — всем аутентифицированным: денег не содержат;
+- ВСЁ чтение домена — по праву `view.risk_economics`. Раньше хватало аутентификации, и роль
+  EXECUTOR, которой деньги показывать нельзя по §17.8/УК-58, читала портфельный ALE в обход
+  RBAC (ДЕФ-42, закрыто 2026-09-07, страж `tests/test_money_rbac.py`). Аналитик по-прежнему
+  читает ставки/стоимости при вводе: у TEST_ANALYST это право есть, а EXECUTOR — единственная
+  роль без него;
 - справочники (БП, связи, C_мин, ставки) ведёт риск-менеджер / менеджер по качеству;
 - финпараметры (ставка дисконта, пороги, риск-аппетит, матрица акцепта) — риск-менеджер / админ (SoD).
 Доменные исключения маппятся на HTTP обработчиком в main.py.
@@ -130,7 +127,7 @@ async def get_manager_metrics(
 async def get_subchar_weights(
     criticality: str = "BUSINESS_CRITICAL",
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> WeightsResult:
     """Гибрид-веса: α·профиль(класс ИС) + (1−α)·фактика(доля в ALE), α=max(α_min, N₀/(N₀+N)).
     Отдельный советчик — интегральный Score НЕ пересчитывается (решение заказчика)."""
@@ -143,7 +140,7 @@ async def get_subchar_weights(
 async def get_measure_catalog(
     characteristic: str | None = None,
     subcharacteristic: str | None = None,
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> list[CatalogEntryOut]:
     """Типовые связки риск↔подхарактеристика↔мера (устраняющая/компенсирующая). Методологическая
     константа: помогает аналитику при разборе несоответствия. Score/данные не меняет."""
@@ -155,7 +152,7 @@ async def get_measure_catalog(
 @router.get("/config", response_model=list[EconConfigItem])
 async def get_config(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> list:
     return await service.get_config(db)
 
@@ -176,7 +173,7 @@ async def set_config(
 @router.get("/enterprise-profile", response_model=EnterpriseProfileOut)
 async def get_enterprise_profile(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ):
     return await service.get_enterprise_profile(db)
 
@@ -198,7 +195,7 @@ async def update_enterprise_profile(
 @router.get("/business-processes", response_model=list[BusinessProcessOut])
 async def list_business_processes(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> list:
     return await service.list_business_processes(db)
 
@@ -248,7 +245,7 @@ async def upsert_bp_cost(
 async def list_system_bps(
     system_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics")),
 ) -> list:
     return await service.list_system_bps(db, system_id)
 

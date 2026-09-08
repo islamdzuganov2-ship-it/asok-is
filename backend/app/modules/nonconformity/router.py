@@ -41,7 +41,7 @@ async def list_nonconformities(
     status: str | None = None,
     include_demo: bool = True,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics", "nonconformity.edit")),
 ) -> list:
     return await service.list_nonconformities(db, system=system, status=status, include_demo=include_demo)
 
@@ -50,7 +50,7 @@ async def list_nonconformities(
 async def closure_funnel(
     include_demo: bool = True,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics", "nonconformity.edit")),
 ) -> ClosureFunnelOut:
     return await service.closure_funnel(db, include_demo=include_demo)
 
@@ -68,7 +68,7 @@ async def create_nonconformity(
 async def get_nonconformity(
     nc_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("view.risk_economics", "nonconformity.edit")),
 ):
     return await service.get_or_404(db, nc_id)
 
