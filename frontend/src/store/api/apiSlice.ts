@@ -347,6 +347,22 @@ export interface PermissionDef { key: string; group: string; label: string; desc
 export interface PermissionCatalog { groups: string[]; permissions: PermissionDef[]; roles: string[] }
 export type PermissionMatrix = Record<string, string[]>;
 export interface MandatorySectionsOut { permissions: string[] }
+import type { MoneyCell } from '../../dashboards/cockpit/lensMath';
+export type { MoneyCell };
+
+/**
+ * Статус встроенной LLM + признак демо-данных бэкенда (`GET /reports/llm-status`).
+ * `demo_data` (КП-43, ТЗ-21 §9.1) — бэкенд запущен в DEMO_MODE, т.е. БД наполнена демо-набором.
+ * Плитки кокпита всегда читают бэкенд, поэтому честная плашка «Демонстрационные данные» над ними
+ * опирается на этот признак, а не на клиентский тумблер «Демо/LLM».
+ */
+export interface LlmStatusOut {
+    enabled?: boolean;
+    available: boolean;
+    loading?: boolean;
+    demo_data?: boolean;
+    profile?: { name?: string; file_name?: string; architecture?: string; n_gpu_layers?: number } | null;
+}
 
 // Персональные настройки пользователя — форма поля в ./preferencesTypes.
 import type { UserPrefs, PreferencesResponse } from './preferencesTypes';
@@ -684,6 +700,13 @@ export const apiSlice = createApi({
             invalidatesTags: ['Permissions', 'MyPermissions'],
         }),
         // ТЗ v20 п.10 — разделы, обязательные для всех пользователей (фиксирует SUPER_ADMIN).
+        getLlmStatus: builder.query<LlmStatusOut, void>({
+            query: () => '/reports/llm-status',
+        }),
+        // Денежный слой теплокарты (УК-11): ALE / ΔALE / покрытие по ячейкам «ИС × характеристика».
+        getHeatmapMoneyLayer: builder.query<MoneyCell[], void>({
+            query: () => '/risk-events/heatmap-money-layer',
+        }),
         getMandatorySections: builder.query<MandatorySectionsOut, void>({
             query: () => '/iam/mandatory-sections',
             providesTags: ['Permissions'],
@@ -764,6 +787,8 @@ export const {
     useGetPermissionMatrixQuery,
     useSetRolePermissionsMutation,
     useGetMandatorySectionsQuery,
+    useGetLlmStatusQuery,
+    useGetHeatmapMoneyLayerQuery,
     useSetMandatorySectionsMutation,
     useGetMyPreferencesQuery,
     usePutMyPreferencesMutation,

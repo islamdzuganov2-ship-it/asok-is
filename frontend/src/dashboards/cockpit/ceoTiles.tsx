@@ -13,11 +13,13 @@
  */
 import React from 'react';
 import { Table, Tag, Typography, Space } from 'antd';
-import { Link } from 'react-router-dom';
 import { RightOutlined } from '@ant-design/icons';
+import L3Link from './L3Link';
 import type { CockpitTile, TileValue, Tone } from './types';
 import type { Slice } from '../../store/slice/sliceTypes';
-import { useGetCockpitBundleQuery } from '../../store/api/apiSlice';
+import { useGetCockpitBundleQuery, useGetHeatmapMoneyLayerQuery, useGetSystemsQuery } from '../../store/api/apiSlice';
+import { lensOf } from '../../store/slice/sliceTypes';
+import { moneyBySystem, sortForLens } from './lensMath';
 import { cockpitBundleArgs } from './bundleArgs';
 import { useSingleSystemName } from './useSliceSystemName';
 import { fmtMoney, fmtMoneyCompact } from '../../utils/money';
@@ -41,7 +43,7 @@ function useCeoBundle(slice: Slice) {
 function l3Link(href: string, label: string) {
   return (
     <div style={{ marginTop: 12 }}>
-      <Link to={href}>{label} <RightOutlined style={{ fontSize: 11 }} /></Link>
+      <L3Link href={href}>{label} <RightOutlined style={{ fontSize: 11 }} /></L3Link>
     </div>
   );
 }
@@ -243,6 +245,22 @@ const VulnerabilityTile: CockpitTile = {
     const { data } = useCeoBundle(slice);
     const sysName = useSingleSystemName(slice);
     const radarHref = `/dashboard/risk-radar?from=cockpit&role=ceo${sysName ? `&system=${encodeURIComponent(sysName)}` : ''}`;
+    // Денежная линза (ТЗ-21 §3.1): ALE — из бандла (уже с учётом разреза); ΔALE и покрытие —
+    // из денежного слоя теплокарты, свёрнутого по ИС. Балл качества у этой плитки не имеет
+    // смысла (вопрос про деньги), поэтому в линзе «балл» показывается ALE.
+    const lens = lensOf(slice, 'ale');
+    const moneyLens = lens === 'delta' || lens === 'coverage';
+    const { data: layer } = useGetHeatmapMoneyLayerQuery(undefined, { skip: !moneyLens });
+    const { data: systemsResp } = useGetSystemsQuery(undefined, { skip: !moneyLens || !slice.systems.length });
+    if (moneyLens) {
+      const names = new Set((systemsResp?.items ?? []).filter((s) => slice.systems.includes(s.id)).map((s) => s.name));
+      const cells = (layer ?? []).filter((c) => !slice.systems.length || names.has(c.systemName));
+      const rows = sortForLens(moneyBySystem(cells), lens).slice(0, 5);
+      const column = lens === 'delta'
+        ? { title: 'ΔALE мерами, ₽/год', dataIndex: 'delta', render: (v: number) => fmtMoney(v) }
+        : { title: 'Покрытие мерами, % ALE', dataIndex: 'coveragePct', render: (v: number | null) => (v === null ? 'нет ALE' : `${v}%`) };
+      return detailTable(rows, [{ title: 'ИС', dataIndex: 'system' }, column], 'Нет данных', { href: radarHref, label: 'Риск-радар' });
+    }
     return detailTable(
       (data?.costDashboard?.bySystem ?? []).slice(0, 5),
       [

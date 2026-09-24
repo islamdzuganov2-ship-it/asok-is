@@ -15,7 +15,9 @@ import {
   layoutFromWidgets, sanitize, nextFreeRow, geometryOf, autoArrange, rowsOf, type CardMeta,
 } from '../dashboards/layoutMath';
 import { cardAllowed, GRID_COLS } from '../dashboards/types';
-import { fullNavOrder, groupOfPerm, moveNavItem, type NavSection } from '../constants/navOrderMath';
+import {
+  fullNavOrder, groupOfPerm, moveNavItem, normalizeNavGroups, NAV_GROUPS, type NavSection,
+} from '../constants/navOrderMath';
 
 // Мини-каталог: три карточки риск-дашборда и одна управленческая (доступна CTO ИЛИ CEO).
 const CARDS: Record<string, CardMeta> = {
@@ -179,12 +181,12 @@ describe('автовыравнивание карточек (skyline-упако�
 });
 
 const SECTIONS: NavSection[] = [
-  { perm: 'my', group: 'Основное' },
-  { perm: 'cto', group: 'Основное' },
-  { perm: 'manager', group: 'Основное' },
-  { perm: 'incidents', group: 'Сбор и анализ данных' },
-  { perm: 'reports', group: 'Сбор и анализ данных' },
-  { perm: 'taskplan', group: 'Формирование техдолга' },
+  { perm: 'my', group: 'Моя картина' },
+  { perm: 'cto', group: 'Моя картина' },
+  { perm: 'manager', group: 'Моя картина' },
+  { perm: 'incidents', group: 'Работа с данными' },
+  { perm: 'reports', group: 'Работа с данными' },
+  { perm: 'taskplan', group: 'Разрезы' },
 ];
 
 describe('порядок пунктов левого меню', () => {
@@ -203,29 +205,52 @@ describe('порядок пунктов левого меню', () => {
   });
 
   it('перетаскивание ставит пункт ПЕРЕД целевым', () => {
-    const { navOrder } = moveNavItem('taskplan', 'Основное', 'cto', SECTIONS, [], {});
+    const { navOrder } = moveNavItem('taskplan', 'Моя картина', 'cto', SECTIONS, [], {});
     expect(navOrder.indexOf('taskplan')).toBe(navOrder.indexOf('cto') - 1);
   });
 
   it('перенос в другую группу запоминается, возврат в родную — стирается', () => {
-    const moved = moveNavItem('taskplan', 'Основное', 'cto', SECTIONS, [], {});
-    expect(moved.navGroups.taskplan).toBe('Основное');
-    expect(groupOfPerm('taskplan', SECTIONS, moved.navGroups)).toBe('Основное');
+    const moved = moveNavItem('taskplan', 'Моя картина', 'cto', SECTIONS, [], {});
+    expect(moved.navGroups.taskplan).toBe('Моя картина');
+    expect(groupOfPerm('taskplan', SECTIONS, moved.navGroups)).toBe('Моя картина');
 
     // Возврат в штатную группу не пишет переопределение, равное дефолту, — оно удаляется.
-    const back = moveNavItem('taskplan', 'Формирование техдолга', null, SECTIONS, moved.navOrder, moved.navGroups);
+    const back = moveNavItem('taskplan', 'Разрезы', null, SECTIONS, moved.navOrder, moved.navGroups);
     expect(back.navGroups).not.toHaveProperty('taskplan');
-    expect(groupOfPerm('taskplan', SECTIONS, back.navGroups)).toBe('Формирование техдолга');
+    expect(groupOfPerm('taskplan', SECTIONS, back.navGroups)).toBe('Разрезы');
   });
 
   it('дроп на пустую область группы отправляет пункт в конец списка', () => {
-    const { navOrder } = moveNavItem('my', 'Формирование техдолга', null, SECTIONS, [], {});
+    const { navOrder } = moveNavItem('my', 'Разрезы', null, SECTIONS, [], {});
     expect(navOrder[navOrder.length - 1]).toBe('my');
   });
 
   it('перестановка не теряет и не дублирует пункты', () => {
-    const { navOrder } = moveNavItem('reports', 'Основное', 'manager', SECTIONS, [], {});
+    const { navOrder } = moveNavItem('reports', 'Моя картина', 'manager', SECTIONS, [], {});
     expect([...navOrder].sort()).toEqual(SECTIONS.map((s) => s.perm).sort());
+  });
+});
+
+
+describe('перегруппировка меню по глубине (КП-37)', () => {
+  it('штатные группы — ровно три группы по глубине раскрытия', () => {
+    expect([...NAV_GROUPS]).toEqual(['Моя картина', 'Разрезы', 'Работа с данными']);
+  });
+
+  it('перенос, сохранённый под СТАРЫМ названием группы, переводится, а не теряет пункт', () => {
+    // Пользователь до релиза перенёс «План задач» в «Основное» — теперь это «Моя картина».
+    expect(groupOfPerm('taskplan', SECTIONS, { taskplan: 'Основное' })).toBe('Моя картина');
+    expect(normalizeNavGroups({ taskplan: 'Основное' }, SECTIONS)).toEqual({ taskplan: 'Моя картина' });
+  });
+
+  it('перенос в несуществующую группу отбрасывается — пункт возвращается в штатную', () => {
+    expect(groupOfPerm('reports', SECTIONS, { reports: 'Удалённая группа' })).toBe('Работа с данными');
+    expect(normalizeNavGroups({ reports: 'Удалённая группа' }, SECTIONS)).toEqual({});
+  });
+
+  it('старое название, совпавшее после перевода со штатной группой, удаляется как мусор', () => {
+    // «Отчёты» были перенесены в «Сбор и анализ данных» (= своя группа после перевода).
+    expect(normalizeNavGroups({ reports: 'Сбор и анализ данных' }, SECTIONS)).toEqual({});
   });
 });
 

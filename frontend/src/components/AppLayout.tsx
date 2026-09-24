@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Badge, Button, Dropdown, Layout, Menu, Spin, Switch, Tooltip, Typography } from 'antd';
+import { Button, Dropdown, Layout, Menu, Spin, Typography } from 'antd';
 import {
     LogoutOutlined,
     SettingOutlined,
     UserOutlined,
-    RobotOutlined,
     TeamOutlined,
     SafetyOutlined,
     ExperimentOutlined,
@@ -19,16 +18,18 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { RootState } from '../store';
 import { useAppDispatch } from '../store/hooks';
 import { logout, setPermissions } from '../store/slices/authSlice';
-import { setDataMode, NAV_SECTIONS } from '../store/slices/uiSlice';
+import { NAV_SECTIONS } from '../store/slices/uiSlice';
 import { syncProposals } from '../store/slices/governanceSlice';
-import { useGetMyPermissionsQuery, useGetMandatorySectionsQuery } from '../store/api/apiSlice';
+import { useGetMyPermissionsQuery, useGetMandatorySectionsQuery, useGetLlmStatusQuery } from '../store/api/apiSlice';
 import { useNavPrefsHydration } from '../hooks/useNavPreferences';
 import SidebarNavEditor from './SidebarNavEditor';
 import { ROUTE_BY_PERM, ICON_BY_PERM } from '../constants/navMeta';
-import { groupOfPerm } from '../constants/navOrderMath';
+import { groupOfPerm, NAV_GROUPS } from '../constants/navOrderMath';
 import { roleLabel } from '../constants/roles';
 import NotificationBell from './NotificationBell';
 import CommandPalette from './CommandPalette';
+import { DataModeToggle, headerToggleVisible } from './DataModeToggle';
+import BackToCockpit from './BackToCockpit';
 import { PREMIUM, GOLD, TYPE, SPACE } from '../theme/premium';
 import { BRAND } from '../theme/ragPalette';
 
@@ -38,8 +39,6 @@ import { BRAND } from '../theme/ragPalette';
 const groupLabel = (text: string) => (
     <span style={{ ...TYPE.micro, fontWeight: 600, letterSpacing: 1.4, textTransform: 'uppercase', color: 'rgba(233,220,190,0.7)' }}>{text}</span>
 );
-
-const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -101,30 +100,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         return () => window.removeEventListener('focus', onFocus);
     }, [dataMode, dispatch]);
 
-    // Статус встроенной LLM (для индикатора рядом с переключателем): готовность + паспорт модели.
-    const [llmReady, setLlmReady] = useState<boolean | null>(null);
-    const [llmStatus, setLlmStatus] = useState<any>(null);
-    useEffect(() => {
-        let alive = true;
-        // Токен обязателен: обход аутентификации выключен по умолчанию (ДЕФ-02).
-        const token = localStorage.getItem('token');
-        fetch(`${VITE_API}/reports/llm-status`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d) => { if (alive) { setLlmStatus(d); setLlmReady(d ? !!d.available : false); } })
-            .catch(() => { if (alive) { setLlmStatus(null); setLlmReady(false); } });
-        return () => { alive = false; };
-    }, [dataMode]);
-
-    const prof = llmStatus?.profile;
-    const modelDesc = prof
-        ? `${prof.name || prof.file_name}${prof.architecture ? ` · ${prof.architecture}` : ''} · ${prof.n_gpu_layers ? 'GPU' : 'CPU'}`
-        : '';
-    const llmStatusColor = llmReady === null ? 'default' : llmReady ? 'green' : 'gold';
-    const llmStatusText = llmReady === null
-        ? 'Проверка LLM…'
-        : llmReady ? `LLM загружена: ${modelDesc || 'модель'}` : 'LLM не загружена — будет честный fallback';
+    // Статус встроенной LLM (индикатор у переключателя) — общий RTK-запрос с плашкой демо-данных
+    // кокпита (КП-43); перечитывается при смене режима, как и прежний ручной fetch.
+    const { refetch: refetchLlmStatus } = useGetLlmStatusQuery(undefined, { skip: !role });
+    useEffect(() => { if (role) refetchLlmStatus(); }, [dataMode, role, refetchLlmStatus]);
 
     // До загрузки прав пользователя — экран-заглушка (гейтинг маршрутов зависит от permissions).
     if (!permissionsLoaded) {
@@ -150,8 +129,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     // щёлкал тумблер, и ничего не происходило. Персонализация — поверх RBAC, а не вместо:
     // право остаётся верхней границей.
     //
-    // ДЕФ-11 (БТ-038, T-25): группы названы как в ТЗ — «Основное», «Сбор и анализ данных»,
-    // «Формирование техдолга».
+    // КП-37 (ТЗ-21 §8.2): группы по глубине раскрытия — «Моя картина», «Разрезы»,
+    // «Работа с данными» (NAV_GROUPS). Прежние группы ДЕФ-11 делили меню по типу артефакта.
     // ДЕФ-14 (БТ-445): порядок внутри группы задаёт пользователь перетаскиванием; ключи, для
     // которых порядок не задан, идут следом в исходном порядке NAV_SECTIONS.
     //
@@ -178,9 +157,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const itemsOfGroup = (groupName: string) => sectionsOfGroup(groupName)
         .map((sec) => mi(ROUTE_BY_PERM[sec.perm], ICON_BY_PERM[sec.perm], sec.label));
 
-    const mainItems = itemsOfGroup('Основное');
-    const dataItems = itemsOfGroup('Сбор и анализ данных');
-    const techDebtItems = itemsOfGroup('Формирование техдолга');
     const adminItems = [
         ...(has('view.admin.users') ? [mi('/admin/users', <TeamOutlined />, 'Пользователи')] : []),
         ...(has('view.admin.permissions') ? [mi('/admin/permissions', <SafetyOutlined />, 'Права')] : []),
@@ -195,9 +171,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const settingsItems = has('view.settings') ? [mi('/admin/flags', <SettingOutlined />, 'Настройка')] : [];
 
     const menuItems = [
-        ...group('Основное', mainItems),
-        ...group('Сбор и анализ данных', dataItems),
-        ...group('Формирование техдолга', techDebtItems),
+        ...NAV_GROUPS.flatMap((g) => group(g, itemsOfGroup(g))),
         ...group('Администрирование', adminItems),
         ...settingsItems,
     ];
@@ -283,19 +257,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                         Система оценки качества
                     </Title>
                     <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.base, minWidth: 0, flex: '0 1 auto' }}>
-                        <Tooltip title={`${llmStatusText}. Переключатель источника данных дашбордов.`}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.snug, flex: '0 0 auto' }}>
-                                <Badge color={llmStatusColor} />
-                                <RobotOutlined style={{ color: dataMode === 'live' ? BRAND.ink : BRAND.inkSoft }} />
-                                <Text type="secondary" className="header-mode-label" style={TYPE.caption}>Демо</Text>
-                                <Switch
-                                    size="small"
-                                    checked={dataMode === 'live'}
-                                    onChange={(v) => dispatch(setDataMode(v ? 'live' : 'mock'))}
-                                />
-                                <Text type="secondary" className="header-mode-label" style={TYPE.caption}>LLM</Text>
-                            </div>
-                        </Tooltip>
+                        {/* КП-43 (ТЗ-21 §9.1): на кокпитах тумблер в шапке — только у администраторов;
+                            остальным переключение доступно в «Настройка». */}
+                        {headerToggleVisible(location.pathname, role) && <DataModeToggle />}
                         <NotificationBell />
                         <Dropdown menu={userMenu} placement="bottomRight">
                             <Button
@@ -310,6 +274,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     </div>
                 </Header>
                 <Content style={{ margin: 0, background: 'transparent', padding: 24, minHeight: 'calc(100vh - 64px)' }}>
+                    {/* КП-39 (ТЗ-21 §7.5): «← К кокпиту» на глубокой странице, открытой из шторки. */}
+                    <BackToCockpit />
                     {children}
                 </Content>
             </Layout>

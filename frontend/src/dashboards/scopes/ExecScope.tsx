@@ -8,7 +8,7 @@
  * Все модалки (карточка ИС, решение по мере, «меры на одобрение», «все системы») держит скоуп:
  * иначе карточка «Тепловая карта», унесённая на «Мой дашборд», кликалась бы в пустоту.
  */
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector, shallowEqual } from 'react-redux';
 import { useSearchParams } from 'react-router-dom';
 import type { RootState } from '../../store';
@@ -18,6 +18,8 @@ import { fmtMoney } from '../../utils/money';
 import { ActionInsightModal } from '../../components/ActionInsightModal';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
 import type { HeatmapSortState } from '../../components/LevelHeatmap';
+import { lensOf, type Lens } from '../../store/slice/sliceTypes';
+import { useSlice } from '../../store/slice/sliceUrl';
 import { QUALITY_MODEL } from '../../constants/qualityModel';
 import { useCharacteristicWeights } from '../../hooks/useCharacteristicWeights';
 import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
@@ -39,7 +41,8 @@ interface HeatmapMoneyCell {
   systemName: string; characteristic: string;
   totalAle: number; totalDeltaAle: number; coveragePct: number;
 }
-export type MoneyMode = 'score' | 'ale' | 'delta' | 'coverage';
+// Режим теплокарты = денежная линза разреза (ТЗ-21 §3.1): живёт в адресной строке (`lens`).
+export type MoneyMode = Lens;
 export const MONEY_MODE_OPTIONS: { value: MoneyMode; label: string }[] = [
   { value: 'score', label: 'Балл качества' },
   { value: 'ale', label: 'ALE под риском' },
@@ -184,7 +187,11 @@ export const ExecScopeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
 
-  const [moneyMode, setMoneyMode] = useState<MoneyMode>('score');
+  // Денежная линза — в адресной строке (ТЗ-21 §3.1): режим теплокарты пересылается ссылкой
+  // и совпадает с линзой, выбранной на кокпите. В демо-режиме денежного слоя нет — только балл.
+  const [slice, patchSlice] = useSlice();
+  const moneyMode: MoneyMode = isLive ? lensOf(slice, 'score') : 'score';
+  const setMoneyMode = useCallback((m: MoneyMode) => patchSlice({ lens: m }), [patchSlice]);
   const [moneyLayer, setMoneyLayer] = useState<HeatmapMoneyCell[] | null>(null);
   const [moneyLoading, setMoneyLoading] = useState(false);
 
@@ -194,8 +201,6 @@ export const ExecScopeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (c) { setShowRegistry(true); setRegistryPreset(c); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => { if (!isLive) setMoneyMode('score'); }, [isLive]);
 
   useEffect(() => {
     if (!isLive || moneyMode === 'score' || moneyLayer !== null) return;

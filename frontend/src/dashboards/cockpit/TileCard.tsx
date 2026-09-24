@@ -13,6 +13,7 @@ import { BRAND, RAG, MONEY_FLOW } from '../../theme/ragPalette';
 import { numericText } from '../../theme/table';
 import { useIsDarkTheme } from '../../theme/useThemeTokens';
 import type { Tone, TileValue, TileFormula } from './types';
+import L3Link from './L3Link';
 
 const { Text } = Typography;
 
@@ -138,9 +139,11 @@ const TileCard: React.FC<TileCardProps> = ({ question, value, formula, onClick }
             <span>{value.empty.reason}</span>
           </Text>
           {value.empty.fixHref && (
-            <a href={value.empty.fixHref} style={{ ...TYPE.micro, display: 'block', marginTop: SPACE.tight }} onClick={(e) => e.stopPropagation()}>
+            // SPA-переход с адресом возврата (КП-39): раньше `<a href>` перезагружал страницу
+            // и терял разрез — «← К кокпиту» возвращала бы на чистый кокпит.
+            <L3Link href={value.empty.fixHref} stopPropagation style={{ ...TYPE.micro, display: 'block', marginTop: SPACE.tight }}>
               {value.empty.fixLabel ?? 'Заполнить →'}
-            </a>
+            </L3Link>
           )}
         </div>
       ) : (

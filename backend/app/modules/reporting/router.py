@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.infrastructure.config import settings
 from app.infrastructure.database import get_db
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
 from app.modules.iam import get_current_user, get_role_permissions, require_permission
@@ -83,8 +84,13 @@ router = APIRouter()
 
 @router.get("/llm-status")
 async def get_llm_status(_: dict = Depends(get_current_user)) -> dict:
-    """Статус встроенной LLM: паспорт загруженной модели (архитектура/контекст) + мозг."""
-    return llm_service.model_info()
+    """Статус встроенной LLM: паспорт загруженной модели (архитектура/контекст) + мозг.
+
+    `demo_data` (ТЗ-21 §9.1, КП-43): бэкенд работает на демо-наборе (DEMO_MODE). Плитки кокпита
+    читают бэкенд всегда, независимо от клиентского тумблера «Демо/LLM», поэтому честная плашка
+    «Демонстрационные данные» над ними опирается на этот признак. Данных оценки не раскрывает.
+    """
+    return {**llm_service.model_info(), "demo_data": settings.DEMO_MODE}
 
 
 @router.get("/llm-models")

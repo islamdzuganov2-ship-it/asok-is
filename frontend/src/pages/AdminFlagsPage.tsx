@@ -6,15 +6,18 @@ import { RootState } from '../store';
 import { setSectionVisible, setNavOrder, resetPersonalization, NAV_SECTIONS } from '../store/slices/uiSlice';
 import { useGetMandatorySectionsQuery } from '../store/api/apiSlice';
 import { useSaveNavPrefs } from '../hooks/useNavPreferences';
+import { NAV_GROUPS } from '../constants/navOrderMath';
 import { accentDot, pageContainer, pageTitle, GOLD, PREMIUM, SPACE } from '../theme/premium';
 import { RAG, BRAND } from '../theme/ragPalette';
 import ThemeSettingsCard from '../components/ThemeSettingsCard';
+import { DataModeToggle } from '../components/DataModeToggle';
 
 const { Title, Text } = Typography;
 
 // Мини-превью «Аналитика сбоев» — донат первопричин + столбцы MTTR.
 
-const GROUPS = ['Основное', 'Сбор и анализ данных', 'Формирование техдолга'];
+// КП-37: группы — единый список NAV_GROUPS (меню, режим «Порядок» и этот экран).
+const GROUPS: readonly string[] = NAV_GROUPS;
 
 const AdminFlagsPage: React.FC = () => {
   const dispatch = useDispatch();
@@ -82,6 +85,21 @@ const AdminFlagsPage: React.FC = () => {
       <div style={{ marginTop: 16 }}>
         <ThemeSettingsCard />
       </div>
+
+      {/* КП-43 (ТЗ-21 §9.1): на кокпитах тумблер «Демо/LLM» из шапки убран для неадминистративных
+          ролей — переключение остаётся здесь, осознанным действием, а не случайным кликом. */}
+      <Card
+        title="Источник данных дашбордов"
+        style={{ marginTop: 16, borderColor: PREMIUM.border, borderRadius: PREMIUM.radius, boxShadow: PREMIUM.shadow.card }}
+      >
+        <Space direction="vertical" size={SPACE.snug}>
+          <DataModeToggle />
+          <Text type="secondary">
+            «Демо» — демонстрационный набор для презентации; «LLM» — реальные данные и выводы
+            встроенной модели. Плитки кокпитов всегда показывают данные сервера.
+          </Text>
+        </Space>
+      </Card>
 
       <Title level={5} style={{ marginTop: 24, marginBottom: 4 }}>Состав и порядок разделов</Title>
       <Text type="secondary">

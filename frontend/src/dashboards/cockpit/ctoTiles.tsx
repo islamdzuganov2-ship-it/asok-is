@@ -9,8 +9,8 @@
  */
 import React, { useState } from 'react';
 import { Table, Typography, Space } from 'antd';
-import { Link } from 'react-router-dom';
 import { RightOutlined } from '@ant-design/icons';
+import L3Link from './L3Link';
 import { useSelector, shallowEqual } from 'react-redux';
 import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 import { MeasureDecisionModal } from '../../components/MeasureDecisionModal';
@@ -56,7 +56,7 @@ function useSliceSystemNames(slice: Slice): Set<string> | null {
 function l3Link(href: string, label: string) {
   return (
     <div style={{ marginTop: 12 }}>
-      <Link to={href}>{label} <RightOutlined style={{ fontSize: 11 }} /></Link>
+      <L3Link href={href}>{label} <RightOutlined style={{ fontSize: 11 }} /></L3Link>
     </div>
   );
 }
