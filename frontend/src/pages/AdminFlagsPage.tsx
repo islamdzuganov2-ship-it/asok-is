@@ -21,7 +21,7 @@ const AdminFlagsPage: React.FC = () => {
   const ui = useSelector((s: RootState) => s.ui);
   const permissions = useSelector((s: RootState) => s.auth.permissions);
   const [dragged, setDragged] = React.useState<string | null>(null);
-  // БТ-500: та же настройка, что и в сайдбаре, — пишем её и на сервер, чтобы не расходилась
+  // Меню (без ТЗ, ТЗ-23 §5): та же настройка, что и в сайдбаре, — пишем её и на сервер, чтобы не расходилась
   // между устройствами и с режимом «Порядок» в левом меню.
   const saveNavPrefs = useSaveNavPrefs();
   // ТЗ v20 п.10: разделы, зафиксированные супер-администратором как обязательные для всех —

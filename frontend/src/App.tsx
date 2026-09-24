@@ -145,7 +145,7 @@ export const App: React.FC = () => {
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/*" element={<RequireAuth><AppLayout><Suspense fallback={<PageLoader />}><Routes>
                             <Route path="dashboard" element={<DashboardRouter />} />
-                            {/* Личный дашборд (ТЗ v22, БТ-500): состав собирает сам пользователь. */}
+                            {/* Личный дашборд (ТЗ-22, КД-22): состав собирает сам пользователь. */}
                             <Route path="dashboard/my" element={<RequirePermission perm="view.my_dashboard"><MyDashboardPage /></RequirePermission>} />
                             <Route path="dashboard/analytics" element={<RequirePermission perm="view.dashboard.analytics"><DashboardPage /></RequirePermission>} />
                             <Route path="dashboard/cto" element={<RequirePermission perm="view.dashboard.cto"><CtoDashboard /></RequirePermission>} />

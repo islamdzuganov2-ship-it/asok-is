@@ -7,7 +7,7 @@ export type DataMode = 'mock' | 'live';
 const DATA_MODE_KEY = 'asok_data_mode';
 const FEATURE_KEY = 'asok_exec_features';
 const ORDER_KEY = 'asok_nav_order';
-/** Переносы пунктов между группами меню (БТ-500): { <право>: <название группы> }. */
+/** Переносы пунктов между группами меню (без ТЗ, ТЗ-23 §5): { <право>: <название группы> }. */
 const GROUPS_KEY = 'asok_nav_groups';
 const THEME_KEY = 'asok_theme';
 const FONT_KEY = 'asok_font';
@@ -129,7 +129,7 @@ interface UiState {
   hiddenSections: HiddenMap;
   /** Порядок разделов (ДЕФ-14). Ключи вне списка идут следом в исходном порядке. */
   navOrder: string[];
-  /** Пункты, перенесённые пользователем в другую группу меню (БТ-500). */
+  /** Пункты, перенесённые пользователем в другую группу меню (без ТЗ, ТЗ-23 §5). */
   navGroups: Record<string, string>;
 }
 
@@ -173,7 +173,7 @@ const uiSlice = createSlice({
       state.navOrder = action.payload;
       localStorage.setItem(ORDER_KEY, JSON.stringify(action.payload));
     },
-    /** Перенести пункт в другую группу меню (БТ-500). */
+    /** Перенести пункт в другую группу меню (без ТЗ, ТЗ-23 §5). */
     setNavGroup(state, action: PayloadAction<{ perm: string; group: string | null }>) {
       const { perm, group } = action.payload;
       if (group === null) delete state.navGroups[perm];
@@ -181,7 +181,7 @@ const uiSlice = createSlice({
       localStorage.setItem(GROUPS_KEY, JSON.stringify(state.navGroups));
     },
     /**
-     * Применить настройки меню, пришедшие с сервера (БТ-500).
+     * Применить настройки меню, пришедшие с сервера (без ТЗ, ТЗ-23 §5).
      *
      * localStorage остаётся быстрым кэшем — он рисует меню до ответа сети и не даёт ему
      * «прыгнуть» при загрузке. Источник истины — серверные prefs: они переносят настройку между

@@ -243,7 +243,8 @@ class BenchmarkComparisonOut(_CamelModel):
 # ═══════════════════════ ТЗ v21 (КП-11): очередь по матрице акцепта — кокпит CEO ═══════════════════════
 
 class AcceptanceQueueItemOut(_CamelModel):
-    kind: str                       # пока только 'NONCONFORMITY' (§15 В-КП-5 — состав уточняется)
+    kind: str                       # пока только 'NONCONFORMITY'; RISK_ACCEPTANCE/MEASURE — после
+                                    # ответа на открытый вопрос №5 ТЗ-21 §15 (подписант «правления»)
     id: uuid.UUID
     title: str
     system_name: str | None = None

@@ -79,7 +79,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const mandatorySet = new Set(mandatorySections?.permissions ?? []);
     const userRole = role || 'GUEST';
 
-    // БТ-500: порядок меню едет за пользователем между устройствами (серверные prefs).
+    // Порядок меню (без ТЗ, ТЗ-23 §5) едет за пользователем между устройствами (серверные prefs).
     useNavPrefsHydration();
     // Режим «Настроить меню»: пункты перетаскиваются прямо в сайдбаре, в т.ч. между группами.
     const [navEditing, setNavEditing] = useState(false);
@@ -166,7 +166,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         return i < 0 ? Number.MAX_SAFE_INTEGER : i;
     };
     // Группа пункта — по умолчанию из NAV_SECTIONS, но пользователь мог перенести пункт
-    // в другую группу перетаскиванием в сайдбаре (БТ-500).
+    // в другую группу перетаскиванием в сайдбаре (без ТЗ, ТЗ-23 §5).
     const groupOf = (perm: string) => groupOfPerm(perm, NAV_SECTIONS, navGroups);
 
     /** Секции группы в пользовательском порядке — общий источник и для меню, и для режима правки. */

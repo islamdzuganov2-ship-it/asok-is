@@ -1,5 +1,5 @@
 /**
- * layoutMath.ts — чистые операции над раскладкой дашборда.
+ * layoutMath.ts — чистые операции над раскладкой дашборда (ТЗ-22, КД-15, КД-21).
  *
  * Вынесены из useDashboardLayout отдельным модулем без импорта реестра: каталог карточек тянет
  * за собой все их модули (antd, ECharts), а правила слияния раскладки к React отношения не имеют
@@ -106,4 +106,24 @@ export function autoArrange(layout: CardLayout[]): CardLayout[] {
   // только для стабильности сравнений/тестов, на отрисовку (ключ — row.i) он не влияет.
   const byId = new Map(placed.map((row) => [row.i, row]));
   return layout.map((row) => byId.get(row.i)!);
+}
+
+/**
+ * Раскладка «N в ряд» равной ширины (кокпиты — по 3 плитки w=4).
+ *
+ * Высота ряда — по САМОЙ ВЫСОКОЙ карточке ряда, `y` следующего ряда — накопленная сумма высот
+ * рядов (Р-14, ревью 2026-09-07). Прежний `threeUp()` брал `floor(idx/3) × h` текущей карточки:
+ * при разновысоких плитках следующий ряд наезжал на высокую карточку предыдущего (react-grid-layout
+ * расталкивал их непредсказуемо) или оставлял дыры. Высота каждой карточки сохраняется своя.
+ */
+export function rowsOf(ids: string[], perRow: number, heightOf: (id: string) => number): CardLayout[] {
+  const w = Math.floor(GRID_COLS / perRow);
+  const out: CardLayout[] = [];
+  let y = 0;
+  for (let start = 0; start < ids.length; start += perRow) {
+    const row = ids.slice(start, start + perRow);
+    row.forEach((i, col) => out.push({ i, x: col * w, y, w, h: heightOf(i) }));
+    y += Math.max(...row.map(heightOf));
+  }
+  return out;
 }

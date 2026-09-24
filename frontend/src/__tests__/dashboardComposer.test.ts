@@ -1,5 +1,5 @@
 /**
- * dashboardComposer.test.ts — инварианты конструктора дашбордов (ТЗ v22, БТ-500).
+ * dashboardComposer.test.ts — инварианты конструктора дашбордов (ТЗ-22, КД-24).
  *
  * Проверяются две вещи, которые ломаются молча и потому опаснее всего:
  *  1) слияние сохранённой раскладки с каталогом — карточка без права или выкинутая из релиза
@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  layoutFromWidgets, sanitize, nextFreeRow, geometryOf, autoArrange, type CardMeta,
+  layoutFromWidgets, sanitize, nextFreeRow, geometryOf, autoArrange, rowsOf, type CardMeta,
 } from '../dashboards/layoutMath';
 import { cardAllowed, GRID_COLS } from '../dashboards/types';
 import { fullNavOrder, groupOfPerm, moveNavItem, type NavSection } from '../constants/navOrderMath';
@@ -226,5 +226,37 @@ describe('порядок пунктов левого меню', () => {
   it('перестановка не теряет и не дублирует пункты', () => {
     const { navOrder } = moveNavItem('reports', 'Основное', 'manager', SECTIONS, [], {});
     expect([...navOrder].sort()).toEqual(SECTIONS.map((s) => s.perm).sort());
+  });
+});
+
+describe('раскладка «N в ряд» (Р-14)', () => {
+  const H: Record<string, number> = { a: 8, b: 12, c: 8, d: 8, e: 5 };
+  const heightOf = (id: string) => H[id];
+
+  it('ряд занимает высоту самой высокой карточки — следующий ряд не наезжает', () => {
+    const rows = rowsOf(['a', 'b', 'c', 'd', 'e'], 3, heightOf);
+    const at = Object.fromEntries(rows.map((r) => [r.i, r]));
+    expect(at.a).toMatchObject({ x: 0, y: 0, w: 4, h: 8 });
+    expect(at.b).toMatchObject({ x: 4, y: 0, w: 4, h: 12 });
+    expect(at.c).toMatchObject({ x: 8, y: 0, w: 4, h: 8 });
+    // Второй ряд начинается под самой высокой (b, h=12), а не под «своей» высотой 8.
+    expect(at.d).toMatchObject({ x: 0, y: 12 });
+    expect(at.e).toMatchObject({ x: 4, y: 12, h: 5 });
+  });
+
+  it('ни одна пара карточек не пересекается при разновысоких плитках', () => {
+    const rows = rowsOf(['e', 'b', 'a', 'c', 'd'], 3, heightOf);
+    for (const p of rows) {
+      for (const q of rows) {
+        if (p.i === q.i) continue;
+        const overlap = p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h;
+        expect(overlap).toBe(false);
+      }
+    }
+  });
+
+  it('равновысокие плитки дают прежнюю раскладку (регресса для кокпитов нет)', () => {
+    const rows = rowsOf(['a', 'c', 'd', 'a2'], 3, () => 8);
+    expect(rows.map((r) => [r.x, r.y])).toEqual([[0, 0], [4, 0], [8, 0], [0, 8]]);
   });
 });

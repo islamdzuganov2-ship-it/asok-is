@@ -33,9 +33,7 @@ CLOSED_FOR_EXECUTOR = [
     # Рисковые события — view.risk_economics / view.dashboard.risk
     "/risk-events",
     "/risk-events/by-cell?system_name=X&characteristic=Y",
-    # Оценки — view.assessments и права дашбордов
-    "/assessments/dashboard",
-    "/assessments/periods",
+    # Оценки — view.assessments (суждения)
     "/assessments/judgments-status",
     "/assessments/judgments-pending",
     # Несоответствия — view.risk_economics / nonconformity.edit
@@ -46,6 +44,15 @@ CLOSED_FOR_EXECUTOR = [
     "/econ/business-processes",
     "/econ/measure-catalog",
 ]
+#: Чтения, которые открывает любое из прав «аналитический дашборд / оценки / основное
+#: менеджера». `view.dashboard.analytics` по умолчанию есть у ВСЕХ редактируемых ролей, включая
+#: EXECUTOR (ДЕФ-10: «тот же состав дашбордов, что у топ-менеджера»), поэтому EXECUTOR для них
+#: не отрицательный пробник — это легитимный доступ. Закрытость проверяется ролью без прав.
+CLOSED_FOR_ROLE_WITHOUT_RIGHTS = [
+    "/assessments/dashboard",
+    "/assessments/periods",
+]
+
 # `/reports/system-dynamics` сюда не входит намеренно: у него обязательный `system_id`,
 # и без него FastAPI ответит 422 раньше, чем сработает проверка права — тест проверял бы
 # валидацию параметров, а не RBAC.
@@ -96,7 +103,15 @@ async def test_executor_denied_domain_reads(aclient, db_session, path):
     assert r.status_code == 403, f"{path} отдал {r.status_code}: {r.text[:200]}"
 
 
-@pytest.mark.parametrize("path", CLOSED_FOR_EXECUTOR)
+@pytest.mark.parametrize("path", CLOSED_FOR_ROLE_WITHOUT_RIGHTS)
+async def test_role_without_rights_denied_assessment_reads(aclient, db_session, path):
+    """Роль, которой в матрице не выдано ни одного права, получает 403, а не данные оценки."""
+    await ps.seed_rbac_defaults(db_session)
+    r = await aclient.get(f"{API}{path}", headers=_auth("NO_RIGHTS_ROLE"))
+    assert r.status_code == 403, f"{path} отдал {r.status_code}: {r.text[:200]}"
+
+
+@pytest.mark.parametrize("path", CLOSED_FOR_EXECUTOR + CLOSED_FOR_ROLE_WITHOUT_RIGHTS)
 async def test_entitled_role_still_reads(aclient, db_session, path):
     """Роль с правами читает то же самое — закрытие не сломало легитимный доступ.
 

@@ -5,6 +5,7 @@
  * дашборд выглядит ровно как до конструктора. Сам каталог карточек — в catalog.ts.
  */
 import { CARD_REGISTRY } from './catalog';
+import { rowsOf } from './layoutMath';
 import { GRID_COLS, type CardDef, type DashboardDef, type DashboardKey } from './types';
 
 export { CARD_REGISTRY };
@@ -29,13 +30,9 @@ function at(rows: Array<[string, number, number, number, number]>) {
   return rows.map(([i, x, y, w, h]) => ({ i, x, y, w, h }));
 }
 
-/** Раскладка «3 в ряд» — плитки кокпита (w=4 из 12 колонок), как в прежней сетке `xs=24 sm=12 lg=8`. */
-function threeUp(ids: string[]): { i: string; x: number; y: number; w: number; h: number }[] {
-  const w = 4;
-  return ids.map((i, idx) => {
-    const def = BY_ID.get(i)!;
-    return { i, x: (idx % 3) * w, y: Math.floor(idx / 3) * def.h, w, h: def.h };
-  });
+/** Раскладка «3 в ряд» — плитки кокпита; высота ряда по самой высокой плитке (см. layoutMath.rowsOf). */
+function threeUp(ids: string[]) {
+  return rowsOf(ids, 3, (i) => BY_ID.get(i)!.h);
 }
 
 export const DASHBOARDS: Record<DashboardKey, DashboardDef> = {
