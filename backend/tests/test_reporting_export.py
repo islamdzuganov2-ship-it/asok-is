@@ -18,6 +18,10 @@ from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
 from app.modules.quality import QUALITY_PAIRS, FormulaType, MetricCatalog, calculate_metric, map_to_level
 from app.modules.reporting.models import DefectMatrix, QualityPlanMatrix, RiskMatrix
 from app.modules.reporting.router import export_period_xlsx
+
+# Вызов обработчика напрямую, мимо FastAPI: пользователь передаётся явно — выгрузка
+# пишет событие в журнал ИБ (ИБ-08) от его имени.
+_USER = {"id": "00000000-0000-0000-0000-0000000000aa", "username": "analyst", "roles": ["TEST_ANALYST"]}
 from app.modules.systems import CriticalityClass, System
 
 SHEETS = ["Характеристики качества", "Риски", "Недостатки", "План качества"]
@@ -90,7 +94,7 @@ async def test_export_xlsx_has_four_sheets_with_data(db_session):
     ))
     await db_session.flush()
 
-    response = await export_period_xlsx(period.id, db_session)
+    response = await export_period_xlsx(period.id, db_session, _USER)
     assert response.media_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     assert f"asok_report_{period.period}.xlsx" in response.headers["Content-Disposition"]
 
@@ -121,7 +125,7 @@ async def test_export_xlsx_empty_registers_still_valid(db_session):
     metrics = await _metrics(db_session)
     period = await _period(db_session, system, metrics)
 
-    wb = await _read_xlsx(await export_period_xlsx(period.id, db_session))
+    wb = await _read_xlsx(await export_period_xlsx(period.id, db_session, _USER))
     assert wb.sheetnames == SHEETS
     assert wb["Риски"].max_row == 1          # только шапка
     assert wb["Недостатки"].max_row == 1
@@ -130,5 +134,5 @@ async def test_export_xlsx_empty_registers_still_valid(db_session):
 
 async def test_export_xlsx_unknown_period_404(db_session):
     with pytest.raises(HTTPException) as err:
-        await export_period_xlsx(uuid.uuid4(), db_session)
+        await export_period_xlsx(uuid.uuid4(), db_session, _USER)
     assert err.value.status_code == 404

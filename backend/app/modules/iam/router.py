@@ -1,65 +1,24 @@
 """
-REST API домена iam — аутентификация (ТЗ v13): /login, /refresh.
+REST API домена iam — аутентификация (ТЗ v13): /login, /refresh, /logout.
+
+Логика — в auth_service (анти-брутфорс ИБ-10, сессии ИБ-12, журнал ИБ-08); здесь только
+перевод исключений в HTTP.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi.security import HTTPAuthorizationCredentials
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.config import settings
 from app.infrastructure.database import get_db
-from app.modules.iam.models import User
-from app.modules.iam.schemas import LoginRequest, TokenRefreshRequest
-from app.modules.iam.security import (
-    create_access_token,
-    create_refresh_token,
-    decode_token,
-    verify_password,
-)
+from app.modules.iam import auth_service
+from app.modules.iam.auth_service import DEMO_USERS  # noqa: F401 — обратная совместимость импорта
+from app.modules.iam.deps import get_current_user, security
+from app.modules.iam.schemas import LoginRequest, LogoutRequest, TokenRefreshRequest
+from app.modules.iam.security import decode_token
 
 router = APIRouter()
 
-DEMO_USERS = {
-    "superadmin": {
-        "id": "00000000-0000-0000-0000-000000000000",
-        "username": "superadmin",
-        "password": "Super123!",
-        "role": "SUPER_ADMIN",
-        "full_name": "Супер-администратор",
-    },
-    "admin": {
-        "id": "00000000-0000-0000-0000-000000000001",
-        "username": "admin",
-        "password": "Admin123!",
-        "role": "ADMIN",
-        "full_name": "Демо-доступ",
-    },
-    "analyst": {
-        "id": "00000000-0000-0000-0000-000000000002",
-        "username": "analyst",
-        "password": "Analyst123!",
-        "role": "TEST_ANALYST",
-        "full_name": "Демо-доступ",
-    },
-    "manager": {
-        "id": "00000000-0000-0000-0000-000000000003",
-        "username": "manager",
-        "password": "Manager123!",
-        "role": "QUALITY_MANAGER",
-        "full_name": "Демо-доступ",
-    },
-}
-
-
-def _token_response(user: dict) -> dict[str, str]:
-    token_payload = {"sub": user["id"], "role": user["role"], "username": user["username"]}
-    return {
-        "access_token": create_access_token(token_payload),
-        "refresh_token": create_refresh_token(token_payload),
-        "token_type": "bearer",
-        "username": user["username"],
-        "role": user["role"],
-        "full_name": user.get("full_name") or user["username"],
-    }
+_UNAUTHORIZED = {"WWW-Authenticate": "Bearer"}
 
 
 @router.post("/login")
@@ -67,45 +26,44 @@ async def login(
     payload: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    # Демо-учётки активны ТОЛЬКО в DEMO_MODE. В проде — никаких встроенных паролей
-    # (требование к управлению учётными данными, ГОСТ Р 57580, 152-ФЗ).
-    if settings.DEMO_MODE:
-        demo_user = DEMO_USERS.get(payload.username)
-        if demo_user and payload.password == demo_user["password"]:
-            return _token_response(demo_user)
-
-    result = await db.execute(select(User).where(User.username == payload.username))
-    user = result.scalar_one_or_none()
-    if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+    try:
+        return await auth_service.login(db, payload.username, payload.password)
+    except auth_service.LoginLocked as exc:
+        # 429 + Retry-After (ИБ-10): клиент видит, сколько ждать; пароль при блокировке не
+        # проверяется вовсе — ответ не выдаёт, угадан ли он.
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return _token_response(
-        {
-            "id": str(user.id),
-            "username": user.username,
-            "role": user.role,
-            "full_name": user.full_name,
-        }
-    )
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Слишком много неудачных попыток входа. Повторите позже.",
+            headers={"Retry-After": str(max(1, exc.retry_after))},
+        ) from exc
+    except auth_service.InvalidCredentials as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials", headers=_UNAUTHORIZED,
+        ) from exc
 
 
 @router.post("/refresh")
-async def refresh_token(payload: TokenRefreshRequest) -> dict[str, str]:
+async def refresh_token(payload: TokenRefreshRequest, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     try:
-        token = decode_token(payload.refresh_token, expected_type="refresh")
-    except Exception as exc:
+        return await auth_service.refresh(db, payload.refresh_token)
+    except auth_service.RefreshDenied as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers=_UNAUTHORIZED,
         ) from exc
-    return {
-        "access_token": create_access_token({"sub": token.sub, "role": token.role, "username": token.username}),
-        "refresh_token": create_refresh_token({"sub": token.sub, "role": token.role, "username": token.username}),
-        "token_type": "bearer",
-        "role": token.role,
-    }
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    payload: LogoutRequest | None = None,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    _: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Серверный выход (ИБ-12): текущий access и вся сессия (с её refresh) отзываются."""
+    try:
+        access = decode_token(credentials.credentials, expected_type="access")
+    except (JWTError, KeyError, ValueError, AttributeError) as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, headers=_UNAUTHORIZED) from exc
+    await auth_service.logout(db, access, payload.refresh_token if payload else None)

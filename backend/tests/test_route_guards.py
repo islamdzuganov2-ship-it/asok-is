@@ -39,6 +39,8 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # мешало бы (персональные настройки должны быть у всех ролей).
 SELF_SCOPED_WRITES = {
     "/api/v1/iam/me/preferences",
+    # ИБ-12: серверный выход — отзывает ТОЛЬКО собственную сессию (sid текущего токена).
+    "/api/v1/auth/logout",
 }
 
 

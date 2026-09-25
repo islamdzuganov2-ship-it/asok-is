@@ -34,6 +34,7 @@ const RiskEconomicsPage = lazy(() => import('./pages/RiskEconomicsPage'));
 const UsersAdminPage = lazy(() => import('./pages/admin/UsersAdminPage'));
 const PermissionsMatrixPage = lazy(() => import('./pages/admin/PermissionsMatrixPage'));
 const LlmQualityPage = lazy(() => import('./pages/admin/LlmQualityPage'));
+const AuditLogPage = lazy(() => import('./pages/admin/AuditLogPage'));
 const MeasureDepartmentsPage = lazy(() => import('./pages/admin/MeasureDepartmentsPage'));
 const WeightsEditorPage = lazy(() => import('./pages/admin/WeightsEditorPage'));
 
@@ -173,6 +174,7 @@ export const App: React.FC = () => {
                             <Route path="admin/measure-departments" element={<RequirePermission perm="admin.permissions.manage"><MeasureDepartmentsPage /></RequirePermission>} />
                             <Route path="admin/weights" element={<RequirePermission perm="quality.weights.edit"><WeightsEditorPage /></RequirePermission>} />
                             <Route path="admin/llm-quality" element={<RequirePermission perm="view.admin.llm_quality"><LlmQualityPage /></RequirePermission>} />
+                            <Route path="admin/audit" element={<RequirePermission perm="view.admin.audit"><AuditLogPage /></RequirePermission>} />
                             <Route index element={<Navigate to="/dashboard" replace />} />
                             {/* ДЕФ-36: неизвестный URL внутри лэйаута рендерил пустую область
                                 без единого сообщения. Уводим на посадочную страницу роли. */}

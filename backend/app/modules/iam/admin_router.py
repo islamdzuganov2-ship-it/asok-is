@@ -4,7 +4,12 @@ REST API администрирования доступа (BL-008): управ�
 Монтируется под /iam. Доступ:
   · пользователи   — право admin.users.manage (по умолчанию только у SUPER_ADMIN);
   · матрица прав   — чтение view.admin.permissions, запись admin.permissions.manage;
-  · /me/permissions — любому аутентифицированному (фронт берёт свой набор прав).
+  · /me/permissions — любому аутентифицированному (фронт берёт свой набор прав);
+  · журнал ИБ      — чтение view.admin.audit (только SUPER_ADMIN, ИБ-08).
+
+ИБ-08/ИБ-12: изменения пользователей и прав пишутся в журнал событий ИБ; смена роли,
+блокировка, сброс пароля и удаление отзывают все сессии пользователя (токены, выданные
+до изменения, перестают приниматься сразу, а не по истечении TTL).
 """
 import uuid
 
@@ -13,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
+from app.modules.iam import audit, sessions
 from app.modules.iam.deps import get_current_user, require_permission
 from app.modules.iam.models import User, UserPreference
 from app.modules.iam.permissions import PERMISSIONS, group_order
@@ -25,6 +31,7 @@ from app.modules.iam.permissions_service import (
     set_role_permissions,
 )
 from app.modules.iam.schemas import (
+    AuditEventOut,
     MandatorySectionsIn,
     MandatorySectionsOut,
     MePermissionsOut,
@@ -133,13 +140,17 @@ async def update_role_permissions(
     role: str,
     payload: RolePermsIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("admin.permissions.manage")),
+    current_user: dict = Depends(require_permission("admin.permissions.manage")),
 ) -> dict[str, list[str]]:
     _validate_role(role)
+    before = set(await get_role_permissions(db, role))
     try:
         saved = await set_role_permissions(db, role, payload.permissions)
     except BuiltinRoleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await audit.record(db, audit.RBAC_MATRIX_CHANGE, user=current_user, entity_type="role", entity_key=role,
+                       old={"removed": sorted(before - set(saved))}, new={"added": sorted(set(saved) - before)})
+    await db.commit()
     return {role: saved}
 
 
@@ -159,9 +170,15 @@ async def list_mandatory_sections(
 async def update_mandatory_sections(
     payload: MandatorySectionsIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("admin.mandatory_sections.manage")),
+    current_user: dict = Depends(require_permission("admin.mandatory_sections.manage")),
 ) -> MandatorySectionsOut:
-    return MandatorySectionsOut(permissions=await set_mandatory_sections(db, payload.permissions))
+    before = set(await get_mandatory_sections(db))
+    saved = await set_mandatory_sections(db, payload.permissions)
+    await audit.record(db, audit.RBAC_MANDATORY_CHANGE, user=current_user, entity_type="mandatory_sections",
+                       entity_key="*", old={"removed": sorted(before - set(saved))},
+                       new={"added": sorted(set(saved) - before)})
+    await db.commit()
+    return MandatorySectionsOut(permissions=saved)
 
 
 # ═══════════════════════ Пользователи ═══════════════════════
@@ -181,7 +198,7 @@ async def list_users(
 async def create_user(
     payload: UserCreateIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("admin.users.manage")),
+    current_user: dict = Depends(require_permission("admin.users.manage")),
 ) -> UserAdminOut:
     _validate_role(payload.role)
     dup = (await db.execute(select(User).where(User.username == payload.username))).scalar_one_or_none()
@@ -195,6 +212,9 @@ async def create_user(
         role=payload.role,
     )
     db.add(user)
+    await db.flush()
+    await audit.record(db, audit.USER_CREATE, user=current_user, entity_type="user", entity_id=user.id,
+                       new={"username": user.username, "role": user.role, "email": user.email})
     await db.commit()
     await db.refresh(user)
     return _user_out(user)
@@ -219,6 +239,7 @@ async def update_user(
     current_user: dict = Depends(require_permission("admin.users.manage")),
 ) -> UserAdminOut:
     user = await _get_user_or_404(db, user_id)
+    before = {"role": user.role, "full_name": user.full_name, "is_active": user.is_active}
     if payload.role is not None:
         _validate_role(payload.role)
         user.role = payload.role
@@ -229,7 +250,20 @@ async def update_user(
         if not payload.is_active and str(user.id) == str(current_user.get("id")):
             raise HTTPException(status_code=400, detail="Нельзя деактивировать собственную учётную запись")
         user.is_active = payload.is_active
+    after = {"role": user.role, "full_name": user.full_name, "is_active": user.is_active}
+    changed = {k for k in after if after[k] != before[k]}
+    if changed:
+        await audit.record(db, audit.USER_UPDATE, user=current_user, entity_type="user", entity_id=user.id,
+                           old={k: before[k] for k in changed}, new={k: after[k] for k in changed})
+    # Смена роли или блокировка — принудительный разлогин (ИБ-12): права сессии выданы под
+    # старую роль, заблокированный не должен дорабатывать остаток TTL токена.
+    force_logout = "role" in changed or ("is_active" in changed and not user.is_active)
+    if force_logout:
+        await audit.record(db, audit.USER_SESSIONS_REVOKED, user=current_user, entity_type="user",
+                           entity_id=user.id, new={"reason": "role_changed" if "role" in changed else "blocked"})
     await db.commit()
+    if force_logout:
+        await sessions.revoke_user(str(user.id))
     await db.refresh(user)
     return _user_out(user)
 
@@ -239,11 +273,15 @@ async def reset_password(
     user_id: str,
     payload: PasswordResetIn,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("admin.users.manage")),
+    current_user: dict = Depends(require_permission("admin.users.manage")),
 ) -> dict:
     user = await _get_user_or_404(db, user_id)
     user.password_hash = get_password_hash(payload.password)
+    # Пароль в журнал не пишется — только факт сброса (audit._SECRET_FIELDS).
+    await audit.record(db, audit.USER_PASSWORD_RESET, user=current_user, entity_type="user", entity_id=user.id)
     await db.commit()
+    # Старые сессии держали доступ по старому паролю — после сброса они не должны жить.
+    await sessions.revoke_user(str(user.id))
     return {"ok": True}
 
 
@@ -258,5 +296,23 @@ async def delete_user(
         raise HTTPException(status_code=400, detail="Нельзя удалить собственную учётную запись")
     user.is_active = False
     user.soft_delete()
+    await audit.record(db, audit.USER_DELETE, user=current_user, entity_type="user", entity_id=user.id,
+                       old={"username": user.username, "role": user.role})
     await db.commit()
+    await sessions.revoke_user(str(user.id))
     return {"ok": True}
+
+
+# ═══════════════════════ Журнал событий ИБ (ИБ-08) ═══════════════════════
+
+@router.get("/audit-log", response_model=list[AuditEventOut])
+async def audit_log(
+    action: str | None = None,
+    username: str | None = None,
+    limit: int = 200,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("view.admin.audit")),
+) -> list[AuditEventOut]:
+    """Последние события журнала ИБ (новые сверху). Только суперадминистратор."""
+    rows = await audit.list_events(db, action=action, username=username, limit=max(1, min(limit, 1000)))
+    return [AuditEventOut.model_validate(r, from_attributes=True) for r in rows]

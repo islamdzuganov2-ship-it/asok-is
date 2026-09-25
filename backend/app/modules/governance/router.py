@@ -43,7 +43,7 @@ from app.modules.governance.schemas import (
     SystemicScopeIn,
     TaskUpdateIn,
 )
-from app.modules.iam import get_current_user, get_role_permissions, require_permission, resolve_user_id
+from app.modules.iam import audit, get_current_user, get_role_permissions, require_permission, resolve_user_id
 
 router = APIRouter()
 
@@ -123,7 +123,9 @@ async def approve_proposal(
     """§17.1/17.2: полное право решает любую меру; «минорное» — только ниже порога маршрутизации
     (проверяется в service.decide через can_self_decide)."""
     p = await service.get_or_404(db, pid)
-    return await service.decide(db, p, True, (payload.comment if payload else None), _username(user), user=user)
+    out = await service.decide(db, p, True, (payload.comment if payload else None), _username(user), user=user)
+    await _audit_decision(db, user, pid, approved=True, comment=payload.comment if payload else None)
+    return out
 
 
 @router.post("/proposals/{pid}/reject", response_model=ProposalOut)
@@ -133,7 +135,17 @@ async def reject_proposal(
     user: dict = Depends(require_permission("governance.decide", "governance.decide.minor")),
 ):
     p = await service.get_or_404(db, pid)
-    return await service.decide(db, p, False, (payload.comment if payload else None), _username(user), user=user)
+    out = await service.decide(db, p, False, (payload.comment if payload else None), _username(user), user=user)
+    await _audit_decision(db, user, pid, approved=False, comment=payload.comment if payload else None)
+    return out
+
+
+async def _audit_decision(db: AsyncSession, user: dict, pid: uuid.UUID, *, approved: bool, comment: str | None) -> None:
+    """ИБ-08: решение по мере — событие журнала ИБ (кто одобрил/отклонил и с каким комментарием).
+    Пишется после фиксации решения сервисом: неуспешное решение (SoD, порог) до сюда не доходит."""
+    await audit.record(db, audit.MEASURE_DECISION, user=user, entity_type="proposal", entity_id=pid,
+                       new={"approved": approved, "comment": comment})
+    await db.commit()
 
 
 @router.patch("/proposals/{pid}/meta", response_model=ProposalOut)
@@ -210,7 +222,11 @@ async def decide_escalation(
     db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.decide")),
 ):
     p = await service.get_or_404(db, pid)
-    return await service.decide_escalation(db, p, payload.decision, payload.comment, _username(user))
+    out = await service.decide_escalation(db, p, payload.decision, payload.comment, _username(user))
+    await audit.record(db, audit.MEASURE_ESCALATION_DECISION, user=user, entity_type="proposal", entity_id=pid,
+                       new={"decision": payload.decision, "comment": payload.comment})
+    await db.commit()
+    return out
 
 
 @router.post("/proposals/{pid}/resolve-escalation", response_model=ProposalOut)

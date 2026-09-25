@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.config import settings
 from app.infrastructure.database import get_db
+from app.modules.iam import sessions
 from app.modules.iam.permissions_service import get_role_permissions
 from app.modules.iam.security import decode_token
 
@@ -50,13 +51,24 @@ async def get_current_user(
         )
 
     try:
-        payload = decode_token(credentials.credentials)
+        # Только access: refresh-токен в заголовке Authorization не должен открывать API
+        # (token-type confusion; до ИБ-12 тип здесь не проверялся).
+        payload = decode_token(credentials.credentials, expected_type="access")
     except (JWTError, KeyError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+    # ИБ-12: отозванный токен (выход, блокировка, смена роли, сброс пароля, кража refresh)
+    # — 401 так же, как просроченный: фронт уводит на вход.
+    if await sessions.is_revoked(payload):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     return {
         "id": payload.sub,

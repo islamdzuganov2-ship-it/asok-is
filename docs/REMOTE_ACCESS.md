@@ -87,6 +87,9 @@ docker compose stop tunnel tunnel-named tunnel-ngrok
    где стенд разворачивался из старого клона.
 3. **Закрыть `/docs`.** В `.env` (корень репозитория) выставить `API_DOCS_ENABLED=false`
    **до** `docker compose --profile ... up -d`.
+   **Пароль Redis (ИБ-Ф1).** В том же `.env` задать `REDIS_PASSWORD` (не значение по умолчанию
+   `asok_redis_dev`; сгенерировать — `python -c "import secrets; print(secrets.token_urlsafe(32))"`)
+   и пересоздать `redis`, `backend`, `celery_worker` — пароль подставляется во все три.
 4. **Закрыть саму ссылку** — рекомендуемый способ зависит от варианта:
    - **Вариант 2 (named tunnel, рекомендуется для показа):** Cloudflare **Zero Trust →
      Access → Applications → Add an application → Self-hosted**, домен `asok.asokis.ai`,

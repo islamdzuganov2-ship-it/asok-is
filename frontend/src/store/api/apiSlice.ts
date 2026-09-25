@@ -347,6 +347,24 @@ export interface PermissionDef { key: string; group: string; label: string; desc
 export interface PermissionCatalog { groups: string[]; permissions: PermissionDef[]; roles: string[] }
 export type PermissionMatrix = Record<string, string[]>;
 export interface MandatorySectionsOut { permissions: string[] }
+
+/** Событие журнала ИБ (ИБ-08, `GET /iam/audit-log`, только SUPER_ADMIN). */
+export interface AuditEvent {
+    id: string;
+    created_at: string;
+    user_id: string | null;
+    username: string | null;
+    action: string;
+    outcome: string | null;
+    entity_type: string | null;
+    entity_id: string | null;
+    entity_key: string | null;
+    old_values: Record<string, unknown> | null;
+    new_values: Record<string, unknown> | null;
+    ip_address: string | null;
+    user_agent: string | null;
+    request_id: string | null;
+}
 import type { MoneyCell } from '../../dashboards/cockpit/lensMath';
 export type { MoneyCell };
 
@@ -700,6 +718,9 @@ export const apiSlice = createApi({
             invalidatesTags: ['Permissions', 'MyPermissions'],
         }),
         // ТЗ v20 п.10 — разделы, обязательные для всех пользователей (фиксирует SUPER_ADMIN).
+        getAuditLog: builder.query<AuditEvent[], { action?: string; username?: string }>({
+            query: ({ action, username }) => ({ url: '/iam/audit-log', params: { action, username, limit: 500 } }),
+        }),
         getLlmStatus: builder.query<LlmStatusOut, void>({
             query: () => '/reports/llm-status',
         }),
@@ -788,6 +809,7 @@ export const {
     useSetRolePermissionsMutation,
     useGetMandatorySectionsQuery,
     useGetLlmStatusQuery,
+    useGetAuditLogQuery,
     useGetHeatmapMoneyLayerQuery,
     useSetMandatorySectionsMutation,
     useGetMyPreferencesQuery,

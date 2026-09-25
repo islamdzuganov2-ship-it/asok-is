@@ -1,8 +1,14 @@
 """
 Криптография домена iam (ТЗ v13): хэширование паролей и JWT (access/refresh).
 Каноническое место; app.core.security — shim отсюда.
+
+ИБ-12 (SEC-05): у каждого токена есть `jti` (идентификатор для отзыва), `sid` (сессия —
+общая для access и всей цепочки ротируемых refresh одного входа) и `iat` (время выдачи —
+для отзыва «всех токенов пользователя, выданных до момента X»). Проверка отзыва —
+в iam/sessions.py, вызывается из get_current_user и /auth/refresh.
 """
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
@@ -29,20 +35,31 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
+def _claims(data: Dict, token_type: str, lifetime: timedelta) -> Dict:
+    now = datetime.now(timezone.utc)
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (
-        expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
-    to_encode.update({"exp": expire, "type": "access"})
-    return jwt.encode(to_encode, _jwt_secret(), algorithm=settings.JWT_ALGORITHM)
+    to_encode.update({
+        "exp": now + lifetime,
+        # NumericDate с миллисекундами: отзыв пользователя сравнивает iat с моментом отзыва,
+        # и вход сразу после отзыва (в ту же секунду) не должен считаться «выданным до».
+        "iat": round(now.timestamp(), 3),
+        "type": token_type,
+        "jti": uuid.uuid4().hex,
+        # sid приходит из вызывающего кода (пара access+refresh одного входа и все ротации
+        # refresh делят одну сессию); если не передан — новая сессия.
+        "sid": to_encode.get("sid") or uuid.uuid4().hex,
+    })
+    return to_encode
+
+
+def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
+    lifetime = expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    return jwt.encode(_claims(data, "access", lifetime), _jwt_secret(), algorithm=settings.JWT_ALGORITHM)
 
 
 def create_refresh_token(data: Dict) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
-    return jwt.encode(to_encode, _jwt_secret(), algorithm=settings.JWT_ALGORITHM)
+    lifetime = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    return jwt.encode(_claims(data, "refresh", lifetime), _jwt_secret(), algorithm=settings.JWT_ALGORITHM)
 
 
 def decode_token(token: str, expected_type: Optional[str] = None) -> TokenPayload:
@@ -60,4 +77,8 @@ def decode_token(token: str, expected_type: Optional[str] = None) -> TokenPayloa
         role=payload.get("role", ""),
         exp=int(payload["exp"]),
         username=payload.get("username"),
+        jti=payload.get("jti"),
+        sid=payload.get("sid"),
+        iat=payload.get("iat"),
+        type=payload.get("type"),
     )

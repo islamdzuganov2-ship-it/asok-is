@@ -10,6 +10,9 @@ from fastapi.responses import JSONResponse
 from app.api.v1.api import api_router
 from app.infrastructure.config import settings
 from app.infrastructure.database import AsyncSessionLocal, import_models
+from app.infrastructure.logging_config import setup_logging
+from app.infrastructure.request_context import RequestContextMiddleware
+from app.infrastructure.security_headers import SecurityHeadersMiddleware
 from app.modules.econ import seed_econ_defaults, seed_market_benchmarks
 from app.modules.iam import seed_rbac_defaults
 from app.modules.llm import service as llm_service
@@ -26,6 +29,9 @@ from app.shared.exceptions import (
 # тестовому conftest для create_all тестовой БД (ТЗ v13).
 import_models()
 
+# ИБ-09: единая конфигурация логов (уровень, JSON, request_id, маскирование ПДн/секретов) —
+# до первых сообщений приложения, иначе ранние строки ушли бы в лог без маскирования.
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # Контроль безопасности конфигурации. В проде (DEMO_MODE=false) дефолтные секреты
@@ -61,6 +67,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ИБ-13: заголовки безопасности на каждом ответе; ИБ-08/09: request_id, IP и User-Agent в
+# контексте запроса (журнал ИБ и строки лога). Порядок: последний добавленный — внешний, поэтому
+# контекст запроса оборачивает всё остальное, включая CORS и заголовки.
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(api_router, prefix="/api/v1")
 

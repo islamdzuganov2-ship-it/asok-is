@@ -21,5 +21,6 @@ def test_clean_config_has_no_issues():
     s = Settings(
         JWT_SECRET_KEY="a-sufficiently-long-random-production-secret-key-123456",
         DATABASE_URL="postgresql+asyncpg://u:Str0ng-Prod-Pass@db:5432/asok",
+        REDIS_URL="redis://:Str0ng-Redis-Pass@redis:6379/0",
     )
     assert s.security_issues() == []

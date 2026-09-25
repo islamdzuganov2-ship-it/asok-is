@@ -55,6 +55,9 @@ PERMISSIONS: list[Permission] = [
     Permission("view.admin.permissions", "Администрирование", "Раздел «Права»"),
     Permission("view.admin.llm_quality", "Администрирование", "Раздел «Качество LLM»",
                "Дашборд самооценки LLM-подсистемы по ISO/IEC 25010 (только суперадминистратор)"),
+    Permission("view.admin.audit", "Администрирование", "Журнал событий ИБ",
+               "ИБ-08: входы и неудачные входы, выходы, изменения прав и пользователей, решения по "
+               "мерам, выгрузки. Только суперадминистратор — журнал раскрывает действия всех ролей"),
     # Действия (запись/операции)
     Permission("systems.edit", "Оценка", "Заводить и править реестр ИС",
                "Создание системы в реестре — точка входа сценария «Новая оценка»"),
@@ -100,6 +103,7 @@ PROTECTED_SUPERADMIN_PERMISSIONS: frozenset[str] = frozenset({
     "view.admin.users", "view.admin.permissions",
     "admin.users.manage", "admin.permissions.manage",
     "view.admin.llm_quality", "llm.quality.run",
+    "view.admin.audit",
     "admin.mandatory_sections.manage",
     "quality.weights.edit",
 })

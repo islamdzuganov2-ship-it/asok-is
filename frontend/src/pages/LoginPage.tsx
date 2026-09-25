@@ -5,10 +5,14 @@ import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { setCredentials } from '../store/slices/authSlice';
+import { loginErrorText } from '../utils/serverLogout';
 import { premiumCard, PREMIUM, GOLD, TYPE, SPACE } from '../theme/premium';
 import { BRAND } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
+
+/** Ответ сервера на вход, который надо показать пользователю как есть. */
+class LoginError extends Error {}
 
 interface LoginResponse {
     access_token: string;
@@ -33,7 +37,8 @@ export const LoginPage: React.FC = () => {
                 },
             );
             if (!response.ok) {
-                throw new Error('Login failed');
+                // ИБ-10: 429 — вход временно заблокирован после серии неудач; говорим, сколько ждать.
+                throw new LoginError(loginErrorText(response.status, response.headers.get('Retry-After')));
             }
 
             const data = (await response.json()) as LoginResponse;
@@ -46,8 +51,9 @@ export const LoginPage: React.FC = () => {
             );
             message.success('Успешный вход в систему');
             navigate('/dashboard', { replace: true });
-        } catch {
-            message.error('Ошибка авторизации. Проверьте логин и пароль.');
+        } catch (err) {
+            // Сетевой сбой (TypeError от fetch) — общий текст, а не «Failed to fetch».
+            message.error(err instanceof LoginError ? err.message : loginErrorText(0, null));
         } finally {
             setLoading(false);
         }

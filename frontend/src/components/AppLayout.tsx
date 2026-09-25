@@ -11,6 +11,7 @@ import {
     SlidersOutlined,
     HolderOutlined,
     CheckOutlined,
+    AuditOutlined,
     // ExperimentOutlined — под развитие: иконка пункта «Оценка СИИ» (пока не выведен в меню).
 } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
@@ -30,6 +31,7 @@ import NotificationBell from './NotificationBell';
 import CommandPalette from './CommandPalette';
 import { DataModeToggle, headerToggleVisible } from './DataModeToggle';
 import BackToCockpit from './BackToCockpit';
+import { serverLogout } from '../utils/serverLogout';
 import { PREMIUM, GOLD, TYPE, SPACE } from '../theme/premium';
 import { BRAND } from '../theme/ragPalette';
 
@@ -167,6 +169,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         // Пункт виден только суперадминистратору: право view.admin.llm_quality исключительное
         // и матрицей другим ролям не выдаётся (ТЗ v18 п.10).
         ...(has('view.admin.llm_quality') ? [mi('/admin/llm-quality', <ExperimentOutlined />, 'Качество LLM')] : []),
+        // ИБ-08: журнал событий ИБ — исключительное право суперадминистратора.
+        ...(has('view.admin.audit') ? [mi('/admin/audit', <AuditOutlined />, 'Журнал ИБ')] : []),
     ];
     const settingsItems = has('view.settings') ? [mi('/admin/flags', <SettingOutlined />, 'Настройка')] : [];
 
@@ -177,6 +181,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     ];
 
     const handleLogout = () => {
+        // ИБ-12: сначала отзываем токен на сервере, затем чистим клиентское состояние.
+        serverLogout(localStorage.getItem('token'));
         dispatch(logout());
         navigate('/login');
     };

@@ -25,7 +25,7 @@ from sqlalchemy.orm import selectinload
 from app.infrastructure.config import settings
 from app.infrastructure.database import get_db
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
-from app.modules.iam import get_current_user, get_role_permissions, require_permission
+from app.modules.iam import audit, get_current_user, get_role_permissions, require_permission
 from app.modules.llm import brain as llm_brain
 from app.modules.quality import (
     CHARACTERISTICS,
@@ -886,7 +886,7 @@ async def _load_period_matrices(db: AsyncSession, period_id: UUID):
 
 @router.get("/export/{period_id}/xlsx")
 async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db),
-                             _: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
+                             user: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
     """Выгрузка реестров периода в .xlsx (T-14): характеристики качества, риски, недостатки, план.
 
     Управленческая выгрузка «одним файлом» (4 листа) — то, что в ТЗ v11 R2.1 просилось экспортом
@@ -927,6 +927,10 @@ async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db)
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
+    # ИБ-08: выгрузка реестров (в т.ч. ФИО ответственных) — событие журнала ИБ.
+    await audit.record(db, audit.REPORT_EXPORT, user=user, entity_type="assessment_period", entity_id=period_id,
+                       new={"format": "xlsx", "period": period.period})
+    await db.commit()
     fname = f"asok_report_{period.period}.xlsx".replace(" ", "_")
     return StreamingResponse(
         buf, media_type=_XLSX_MEDIA,
@@ -936,7 +940,7 @@ async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db)
 
 @router.get("/export/{period_id}/pdf")
 async def export_period_pdf(period_id: UUID, db: AsyncSession = Depends(get_db),
-                            _: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
+                            user: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
     """Сводный отчёт периода одним PDF (ДЕФ-18, T-14, БТ-283).
 
     Экспорт в xlsx работал, PDF — нет, хотя в требованиях он стоял рядом («экспорт xlsx +
@@ -972,6 +976,9 @@ async def export_period_pdf(period_id: UUID, db: AsyncSession = Depends(get_db),
     buf = await asyncio.to_thread(
         _build_summary_pdf, period.period, system.name if system else "—", blocks,
     )
+    await audit.record(db, audit.REPORT_EXPORT, user=user, entity_type="assessment_period", entity_id=period_id,
+                       new={"format": "pdf", "period": period.period})
+    await db.commit()
     fname = f"asok_report_{period.period}.pdf".replace(" ", "_")
     return StreamingResponse(
         buf, media_type=_PDF_MEDIA,

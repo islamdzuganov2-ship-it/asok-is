@@ -17,7 +17,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
-from app.modules.iam import get_current_user, require_permission, resolve_user_id
+from app.modules.iam import audit, get_current_user, require_permission, resolve_user_id
 from app.modules.quality.models import FormulaType, MetricCatalog, WeightSetVersion
 from app.modules.quality.schemas import (
     CharWeightRow,
@@ -162,7 +162,12 @@ async def recompute_weights(
     до применения). apply=false (по умолчанию) — только отчёт, ничего не пишет. apply=true —
     активирует версию весов (если изменилась) и записывает снапшоты по каждой (ИС, период)."""
     created_by = await resolve_user_id(db, current_user.get("id"))
-    return await recompute_and_snapshot(db, apply=apply, created_by=created_by)
+    report = await recompute_and_snapshot(db, apply=apply, created_by=created_by)
+    if apply:
+        await audit.record(db, audit.WEIGHTS_CHANGE, user=current_user, entity_type="weight_set_version",
+                           entity_key="recompute", new={"apply": True})
+        await db.commit()
+    return report
 
 
 def _rows_to_char_dict(rows: list[CharWeightRow]) -> dict[str, float]:
@@ -216,6 +221,10 @@ async def put_weight_editor(
         db, profile=payload.profile, char_weights=char_dict, subchar_within=sub_dict,
         note=payload.note, created_by=created_by,
     )
+    # ИБ-08: правка весов меняет Score КАЖДОЙ ИС профиля — событие журнала ИБ.
+    await audit.record(db, audit.WEIGHTS_CHANGE, user=current_user, entity_type="weight_set_version",
+                       entity_id=version.id, new={"profile": payload.profile, "note": payload.note})
+    await db.commit()
     char_w = (version.char_weights or {}).get(payload.profile) or {}
     sub_w = (version.subchar_weights or {}).get(payload.profile) or []
     return WeightEditorOut(

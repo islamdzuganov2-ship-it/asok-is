@@ -29,8 +29,28 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # Redis / Celery
+    # Redis / Celery. ИБ-05/ИБ-22 (SEC-10): Redis с паролем (requirepass в docker-compose.yml);
+    # пароль берётся из REDIS_PASSWORD в .env и подставляется в REDIS_URL самим compose.
+    # Значение по умолчанию ниже — только для запуска вне Docker; в проде без пароля старт запрещён.
     REDIS_URL: str = "redis://redis:6379/0"
+
+    # ИБ-09: логирование. LOG_FORMAT=json — для SIEM, text — для чтения глазами на стенде.
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "json"
+
+    # ИБ-10: анти-брутфорс входа (см. iam/throttle.py).
+    LOGIN_MAX_FAILURES: int = 5              # неудач на пару «логин + IP» за окно
+    LOGIN_MAX_FAILURES_PER_USER: int = 10    # неудач на логин с любых адресов за окно
+    LOGIN_FAILURE_WINDOW_S: int = 900        # окно подсчёта, 15 минут
+    LOGIN_LOCKOUT_S: int = 900               # первая блокировка; каждая следующая за сутки — ×2
+
+    # ИБ-08/ИБ-10: реальный IP клиента берётся из X-Forwarded-For только от этих адресов
+    # (прокси Vite/Caddy/туннеля внутри docker-сети). Иначе IP подделывается одним заголовком.
+    TRUSTED_PROXIES: List[str] = ["127.0.0.1/32", "::1/128", "172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"]
+
+    # ИБ-13: HSTS выставляется только для HTTPS-запросов; флаг — чтобы выключить на стенде,
+    # где HTTPS терминирует чужой прокси с собственной политикой.
+    SECURITY_HSTS_ENABLED: bool = True
 
     # LLM (in-process, llama.cpp / GGUF — без внешних сервисов).
     # МОДЕЛЬ-АГНОСТИЧНО: система принимает ЛЮБУЮ GGUF-модель, положенную в LOCAL_LLM_MODEL_DIR,
@@ -132,6 +152,15 @@ class Settings(BaseSettings):
 
     _INSECURE_JWT_DEFAULT = "dev_secret_key_change_in_production_minimum_32_chars"
     _INSECURE_DB_DEFAULTS = ("asok_pass123",)
+    _INSECURE_REDIS_DEFAULTS = ("asok_redis_dev",)
+
+    def _redis_has_password(self) -> bool:
+        from urllib.parse import urlparse
+
+        try:
+            return bool(urlparse(self.REDIS_URL).password)
+        except ValueError:
+            return False
 
     def security_issues(self) -> list[str]:
         """
@@ -145,6 +174,10 @@ class Settings(BaseSettings):
             issues.append("JWT_SECRET_KEY короче 32 символов")
         if any(d in self.DATABASE_URL for d in self._INSECURE_DB_DEFAULTS):
             issues.append("DATABASE_URL содержит пароль по умолчанию")
+        if not self._redis_has_password():
+            issues.append("REDIS_URL без пароля (задайте REDIS_PASSWORD, ИБ-22)")
+        elif any(d in self.REDIS_URL for d in self._INSECURE_REDIS_DEFAULTS):
+            issues.append("REDIS_URL содержит пароль по умолчанию (задайте REDIS_PASSWORD, ИБ-22)")
         if self.DEMO_AUTH_BYPASS:
             issues.append(
                 "DEMO_AUTH_BYPASS включён: запросы без токена обслуживаются как ADMIN"

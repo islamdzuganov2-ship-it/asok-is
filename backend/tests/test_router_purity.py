@@ -38,7 +38,7 @@ ORM_BUDGET: dict[str, int] = {
     "systems/router.py": 6,
     "iam/admin_router.py": 4,
     "dataio/router.py": 4,
-    "iam/router.py": 2,
+    # iam/router.py убран: вход/refresh/выход вынесены в iam/auth_service.py (ИБ-Ф1).
     # incidents/router.py убран: его единственное «обращение» было декоратором @router.delete.
 }
 
