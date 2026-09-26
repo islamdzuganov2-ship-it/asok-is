@@ -54,6 +54,15 @@ class IncidentRecord:
     severity: str
     opened_at: str
     resolved_at: str | None = None
+    # BL-007 RE-23…RE-26 (контракт данных §2.6): поля выгрузки ITSM, нужные экономике сбоя.
+    # Все необязательны — адаптер, который их не знает, остаётся совместимым с портом.
+    title: str | None = None
+    assignment_group: str | None = None     # группа назначения — ключ привязки к ИС (RE-25)
+    ci_name: str | None = None              # конфигурационная единица / сервис из тикета
+    category: str | None = None
+    parent_ref: str | None = None           # родительский тикет, если ITSM его ведёт (RE-26)
+    # Журнал переназначений: ((момент ISO, линия L1/L2/L3 или группа), ...) — для RE-24.
+    reassignments: tuple[tuple[str, str], ...] = ()
 
 
 @runtime_checkable

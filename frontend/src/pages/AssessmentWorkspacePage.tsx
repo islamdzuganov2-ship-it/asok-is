@@ -6,6 +6,7 @@
  *   1. Новая оценка              — создание ИС/метрик и инициация периода (NewAssessmentPage);
  *   2. Корректировка оценки      — разблокировка и правка завершённых оценок (T-47, AssessmentCorrectionPanel);
  *   3. Внесение проф. суждения   — метрики без суждения (T-48, JudgmentEntryPanel);
+ *   3а. Глубина и чек-лист       — снятие объёма с аналитика (BL-007 RE-19, AnalystLoadPanel);
  *   4. Формирование отчётов (CSV)— выгрузка готовых оценок с проф. суждением (ExcelReportsPage);
  *   5. Загрузка оценок           — Excel/CSV + инструкция + шаблон + предпросмотр (T-50, DataUploadPanel);
  *   6. Загрузка ТС               — Excel/CSV техсбоев + инструкция + шаблон (T-51/T-43, DataUploadPanel);
@@ -16,7 +17,7 @@ import { Button, Space, Tabs, Typography } from 'antd';
 import { message } from '../theme/appMessage';
 import {
   FormOutlined, EditOutlined, CommentOutlined, FileExcelOutlined,
-  UploadOutlined, ThunderboltOutlined, UnorderedListOutlined, DownloadOutlined,
+  UploadOutlined, ThunderboltOutlined, UnorderedListOutlined, DownloadOutlined, AimOutlined,
 } from '@ant-design/icons';
 import { shallowEqual, useSelector } from 'react-redux';
 import { useSearchParams } from 'react-router-dom';
@@ -25,6 +26,7 @@ import ExcelReportsPage from './ExcelReportsPage';
 import DataUploadPanel from '../components/DataUploadPanel';
 import AssessmentCorrectionPanel from '../components/AssessmentCorrectionPanel';
 import JudgmentEntryPanel from '../components/JudgmentEntryPanel';
+import AnalystLoadPanel from '../components/AnalystLoadPanel';
 import { ASSESSMENT_UPLOAD_SPEC, INCIDENT_UPLOAD_SPEC } from '../constants/uploadSpecs';
 import { MeasuresRegistryCard } from '../components/MeasuresRegistryCard';
 import { MeasureDecisionModal } from '../components/MeasureDecisionModal';
@@ -93,7 +95,7 @@ const MeasuresRegistryTab: React.FC = () => {
 
 // Ключи вкладок — стабильные, используются и во внутреннем состоянии, и в deep-link `?tab=`
 // (меню аналитика ведёт прямо на «Загрузка ТС»/«Загрузка оценок», карточка сбоев — на импорт ТС).
-const VALID_TABS = ['new', 'edit', 'judgment', 'reports', 'upload-assessments', 'upload-incidents', 'measures'];
+const VALID_TABS = ['new', 'edit', 'judgment', 'depth', 'reports', 'upload-assessments', 'upload-incidents', 'measures'];
 
 const AssessmentWorkspacePage: React.FC = () => {
   const [params, setParams] = useSearchParams();
@@ -129,6 +131,12 @@ const AssessmentWorkspacePage: React.FC = () => {
             key: 'judgment',
             label: <span><CommentOutlined /> Внесение проф. суждения</span>,
             children: <JudgmentEntryPanel />,
+          },
+          {
+            // BL-007 RE-19: глубина оценки по классу ИС, дельта-переоценка, чек-лист владельца, норматив часов.
+            key: 'depth',
+            label: <span><AimOutlined /> Глубина и чек-лист</span>,
+            children: <AnalystLoadPanel />,
           },
           {
             key: 'reports',

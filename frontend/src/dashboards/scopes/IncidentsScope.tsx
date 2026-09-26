@@ -10,6 +10,7 @@ import { Button, Col, Modal, Row, Select, Space, Tag, Typography } from 'antd';
 import { DatabaseOutlined, CalendarOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useSelector, shallowEqual } from 'react-redux';
 import { useSearchParams } from 'react-router-dom';
+import IncidentEconomicsPanel from '../../components/IncidentEconomicsPanel';
 import dayjs from 'dayjs';
 import type { RootState } from '../../store';
 import { useGetIncidentsQuery, type TechIncidentDto } from '../../store/api/apiSlice';
@@ -165,7 +166,7 @@ export const IncidentsScopeProvider: React.FC<{ children: React.ReactNode }> = (
           title="Карточка технического сбоя"
           footer={null}
           onCancel={() => setSelectedIncident(null)}
-          width={640}
+          width={760}
         >
           {selectedIncident && (
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
@@ -206,6 +207,9 @@ export const IncidentsScopeProvider: React.FC<{ children: React.ReactNode }> = (
                 <Text type="secondary">Меры по неповторению:</Text>
                 <Paragraph style={{ marginBottom: 0 }}>{selectedIncident.preventiveMeasures || '—'}</Paragraph>
               </div>
+              {/* BL-007 (RE-05/06/03): ввод экономики сбоя и разложение C_ТС — только живой режим:
+                  в демо-наборе у мок-сбоев нет записи на сервере. */}
+              {isLive && <IncidentEconomicsPanel incidentId={selectedIncident.id} />}
             </Space>
           )}
         </Modal>

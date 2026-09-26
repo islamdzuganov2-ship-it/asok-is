@@ -23,6 +23,8 @@ export interface CostDashboard {
 export interface PortfolioRiskSummary {
   totalAtRisk: number; coveredByDoneMeasures: number; residualRisk: number;
   requiredInvestment: number; expectedEffect: number; risksCount: number; measuresCount: number;
+  // RE-10: снятое устраняющими и компенсирующими мерами — раздельно (§4.2).
+  coveredByEliminating?: number; coveredByCompensating?: number; residualWithCompensatingOnly?: number;
 }
 export interface RiskMeasureChainMeasure {
   proposalId: string; title: string; status: string; execution: string | null;
@@ -43,6 +45,8 @@ export interface ManagerMetricRow {
   avgAgeDays: number | null; deltaAleManaged: number; acceptShare: number; compensatingShare: number;
   weightedLoad: number; hoursEstimated: number;
   measuresWithEstimate: number; measuresWithoutEstimate: number;
+  // RE-20 (антигейминг §7.2).
+  deltaAleWeighted?: number; effectivenessPct?: number | null; verifiedMeasures?: number;
 }
 export interface ManagerMetrics { mode: string; note: string; generatedAt: string; rows: ManagerMetricRow[] }
 

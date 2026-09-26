@@ -5,10 +5,16 @@
 управлением, доля принятия риска, доля компенсирующих мер. Считается по несоответствиям (nonconformity)
 и мерам (governance.Proposal) вместе.
 
-РЕЖИМ ДИАГНОСТИКА (решение заказчика): метрики НЕ привязаны к мотивации. Это важно — §7.2: при прямой
-привязке к премии любая метрика ломается (дробление мер, срок с запасом, завышение исходного ALE).
-Первые 2 квартала — только наблюдение и калибровка порогов. Антигейм-механики (фиксация до-меры ALE,
-вес по критичности, вывод пакетом) включаются позже, если появится привязка к мотивации.
+РЕЖИМ (EconConfig `manager_metrics_mode`, по умолчанию «диагностика»): метрики НЕ привязаны к
+мотивации — §7.2: при прямой привязке к премии любая метрика ломается (дробление мер, срок с запасом,
+завышение исходного ALE). Антигейминг (RE-20) работает в обоих режимах:
+  • ΔALE меры берётся ЗАФИКСИРОВАННЫЙ при одобрении (Proposal.delta_ale_at_decision), а не текущий;
+  • ΔALE взвешивается по критичности ИС (delta_ale_weighted) — снятый риск Mission Critical весит
+    больше того же рубля на вспомогательной системе;
+  • результативность — доля выполненных мер, эффект которых подтвердил аудитор (ΔScore > 0 при
+    верификации несоответствия), а не отметка исполнителя «сделано»;
+  • метрики выводятся пакетом — строка целиком, без «главной» цифры для рейтинга.
+В режиме «мотивация» в ΔALE под управлением засчитываются только меры с подтверждённой верификацией.
 
 Самодостаточный модуль: читает МОДЕЛИ nonconformity/governance напрямую (как dashboard_service),
 econ остаётся нижним слоем; в роутер монтируется отдельным эндпойнтом.
@@ -28,6 +34,7 @@ from pydantic.alias_generators import to_camel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.econ.service import config_value
 from app.modules.governance.models import (
     EXECUTION_DONE,
     MEASURE_COMPENSATING,
@@ -63,6 +70,10 @@ class ManagerMetricRow(_CamelModel):
     hours_estimated: float           # Σ effort_hours (только по мерам с оценкой)
     measures_with_estimate: int      # открытых мер с проставленными часами
     measures_without_estimate: int   # открытых мер БЕЗ оценки часов — не ноль молча (В-41)
+    # RE-20 (антигейминг §7.2).
+    delta_ale_weighted: float = 0.0          # Σ ΔALE × вес критичности ИС
+    effectiveness_pct: float | None = None   # % выполненных мер с подтверждённым аудитором ΔScore>0
+    verified_measures: int = 0               # сколько выполненных мер прошли верификацию
 
 
 class ManagerMetricsOut(_CamelModel):
@@ -100,8 +111,14 @@ def _due_overdue(due_date: str | None, now: datetime) -> bool:
     return d < now
 
 
+async def _mode(db: AsyncSession) -> str:
+    value = await config_value(db, "manager_metrics_mode", "diagnostic")
+    return value if value in ("diagnostic", "motivation") else "diagnostic"
+
+
 async def manager_metrics(db: AsyncSession) -> ManagerMetricsOut:
     now = _now()
+    mode = await _mode(db)
     ncs = list((await db.execute(select(Nonconformity))).scalars().all())
     props = list((await db.execute(select(Proposal))).scalars().all())
     # System.system_id на Proposal не заполняется (ProposalCreate принимает только system_name,
@@ -116,7 +133,11 @@ async def manager_metrics(db: AsyncSession) -> ManagerMetricsOut:
         "open": 0, "overdue": 0, "completed": 0, "ages": [], "delta_ale": 0.0,
         "decisions": 0, "accepts": 0, "measures": 0, "compensating": 0,
         "weighted_load": 0.0, "hours": 0.0, "with_estimate": 0, "without_estimate": 0,
+        "delta_ale_weighted": 0.0, "done_with_nc": 0, "confirmed": 0, "verified": 0,
     })
+    # RE-20: верификация эффекта меры — по связанному несоответствию (Nonconformity.proposal_id):
+    # «Верифицировано» ставит только аудитор (SoD RE-18), ΔScore подтверждается им же.
+    nc_by_proposal: dict = {nc.proposal_id: nc for nc in ncs if nc.proposal_id is not None}
 
     for nc in ncs:
         owner = (nc.owner or "").strip()
@@ -150,7 +171,20 @@ async def manager_metrics(db: AsyncSession) -> ManagerMetricsOut:
         is_open = p.status in (STATUS_PENDING, STATUS_APPROVED) and not done
         if done:
             a["completed"] += 1
-            a["delta_ale"] += float(p.delta_ale_cash or 0)
+            # ΔALE, зафиксированный при одобрении; меры до RE-20 — текущее значение.
+            delta = float(p.delta_ale_at_decision if p.delta_ale_at_decision is not None else (p.delta_ale_cash or 0))
+            nc = nc_by_proposal.get(p.id)
+            verified = nc is not None and nc.status == STATUS_VERIFIED
+            if nc is not None:
+                a["done_with_nc"] += 1
+                if verified:
+                    a["verified"] += 1
+                    if nc.delta_score_confirmed is not None and float(nc.delta_score_confirmed) > 0:
+                        a["confirmed"] += 1
+            if mode == "diagnostic" or verified:
+                crit_w = DEFAULT_CRITICALITY_WEIGHTS.get(crit_by_system_name.get(p.system_name, ""), 1.0)
+                a["delta_ale"] += delta
+                a["delta_ale_weighted"] += delta * crit_w
         elif p.status in (STATUS_PENDING, STATUS_APPROVED):
             a["open"] += 1
             age = _age_days(p.created_at, now)
@@ -195,13 +229,20 @@ async def manager_metrics(db: AsyncSession) -> ManagerMetricsOut:
             hours_estimated=round(a["hours"], 2),
             measures_with_estimate=a["with_estimate"],
             measures_without_estimate=a["without_estimate"],
+            delta_ale_weighted=round(a["delta_ale_weighted"], 2),
+            effectiveness_pct=round(a["confirmed"] / a["done_with_nc"] * 100, 1) if a["done_with_nc"] else None,
+            verified_measures=a["verified"],
         ))
     rows.sort(key=lambda r: (r.open_count, r.overdue_count), reverse=True)
 
+    note = ("Диагностика без привязки к мотивации (§7.2): метрики выводятся пакетом, не по одной. "
+            "Первые 2 квартала — наблюдение и калибровка порогов. ΔALE — зафиксированный при одобрении меры."
+            if mode == "diagnostic" else
+            "Режим мотивации (§7.2): в ΔALE под управлением засчитаны только меры, эффект которых "
+            "подтвердил аудитор при верификации. Метрики — пакетом, не по одной.")
     return ManagerMetricsOut(
-        mode="diagnostic",
-        note="Диагностика без привязки к мотивации (§7.2): метрики выводятся пакетом, не по одной. "
-             "Первые 2 квартала — наблюдение и калибровка порогов.",
+        mode=mode,
+        note=note,
         generated_at=now,
         rows=rows,
     )

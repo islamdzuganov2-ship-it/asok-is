@@ -15,6 +15,16 @@ from app.modules.quality.ai_quality_model import (
     ai_model_tree,
 )
 from app.modules.quality.calculation import calculate_metric, map_to_level
+from app.modules.quality.depth import (
+    DEPTH_FULL,
+    DEPTH_LABELS,
+    DEPTH_PROFILE,
+    DEPTH_SCREENING,
+    DEPTHS,
+    depth_for_criticality,
+    required_pairs,
+    required_set,
+)
 from app.modules.quality.models import (
     FormulaType,
     MetricAttribute,
@@ -71,6 +81,15 @@ __all__ = [
     "FormulaType",
     "calculate_metric",
     "map_to_level",
+    # RE-19: глубина оценки по классу ИС
+    "DEPTH_FULL",
+    "DEPTH_PROFILE",
+    "DEPTH_SCREENING",
+    "DEPTHS",
+    "DEPTH_LABELS",
+    "depth_for_criticality",
+    "required_pairs",
+    "required_set",
     "QUALITY_MODEL",
     "QUALITY_PAIRS",
     "QUALITY_PAIR_KEYS",

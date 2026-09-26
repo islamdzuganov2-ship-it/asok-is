@@ -68,6 +68,9 @@ PERMISSIONS: list[Permission] = [
     Permission("assessment.review", "Оценка", "Экспертное ревью оценок"),
     Permission("dataio.import", "Оценка", "Импорт данных (Excel)"),
     Permission("incidents.edit", "Оценка", "Вести реестр технических сбоев"),
+    Permission("assessment.checklist.fill", "Оценка", "Заполнять чек-лист владельца ИС",
+               "BL-007 RE-19: владелец ИС сам прикладывает артефакты по обязательным "
+               "подхарактеристикам периода; аналитик проверяет выборку"),
     Permission("governance.propose", "Меры", "Предлагать меры/задачи качества"),
     Permission("governance.decide", "Меры", "Одобрять/отклонять меры (топ-менеджмент)"),
     Permission("governance.decide.minor", "Меры", "Одобрять/отклонять НЕкритичные меры",
@@ -156,11 +159,11 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "systems.edit",
         "assessment.edit", "assessment.review", "dataio.import", "incidents.edit",
         "governance.propose", "governance.decide.minor", "econ.ref.edit", "risk.base.edit",
-        "nonconformity.edit",
+        "nonconformity.edit", "assessment.checklist.fill",
     } | _WITH_RISK_BASE,
     "TEST_ANALYST": {
         "view.dashboard.analytics", "view.assessments", "view.risk_economics",
-        "systems.edit", "assessment.edit", "dataio.import",
+        "systems.edit", "assessment.edit", "dataio.import", "assessment.checklist.fill",
     } | _WITH_RISK_BASE,
     "RISK_MANAGER": {
         "view.dashboard.risk", "view.dashboard.analytics", "view.dashboard.incidents",
@@ -185,6 +188,9 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
         # остальные governance.propose-эндпоинты (создание/эскалация/переписывание меры) вне
         # объёма §17.1 и не запрашивались.
         "governance.decide.minor",
+        # RE-19: исполнитель — директор направления, т.е. владелец своих ИС: сам заполняет
+        # чек-лист артефактов, аналитик проверяет выборку.
+        "assessment.checklist.fill",
         # view.measure_economics.own НЕ включено по умолчанию (§17.8, УК-58) — на усмотрение
         # SUPER_ADMIN через конструктор прав, а не встроенное поведение роли.
     } | _VIEW_COMMON,

@@ -78,6 +78,9 @@ class BpCostOut(_CamelModel):
     cost_per_min_base: float | None = None
     currency: str
     note: str | None = None
+    # RE-02: диапазон экспертно-ступенчатой оценки (у ресурсного/транзакционного — None).
+    cost_per_min_low: float | None = None
+    cost_per_min_high: float | None = None
 
 
 # ── Ставка сопровождения (E8) ──
@@ -87,7 +90,11 @@ class SupportRateIn(_CamelModel):
     executor_type: str = "INTERNAL"
     vendor: str | None = None
     mode: str | None = None
-    rate_per_hour: float
+    # RE-03: внутреннюю ставку можно не вводить, а посчитать — (ФОТ × K_накладных) / фонд времени.
+    # Тогда rate_per_hour пуст, а fot_monthly и fund_hours_monthly заданы (K_накладных — EconConfig).
+    rate_per_hour: float | None = None
+    fot_monthly: float | None = None
+    fund_hours_monthly: float | None = None
     k_evening: float = 1.5
     k_weekend: float = 2.0
     package_hours: float | None = None

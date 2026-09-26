@@ -9,15 +9,20 @@
 import React from 'react';
 import { ScheduleOutlined } from '@ant-design/icons';
 import GridDashboard from '../dashboards/GridDashboard';
+import OwnerChecklistCard from '../components/OwnerChecklistCard';
 import { GOLD } from '../theme/premium';
 
+// BL-007 RE-19: чек-лист владельца ИС — над сеткой поручений, только когда есть открытые пункты.
 const AssigneeTasksPage: React.FC = () => (
-  <GridDashboard
-    dashboardKey="mytasks"
-    title="Мои задачи"
-    subtitle="Поручения, назначенные на вас. Уточнения и предложения по срокам направляются менеджеру по качеству."
-    icon={<ScheduleOutlined style={{ color: GOLD.base, marginRight: 8 }} />}
-  />
+  <>
+    <OwnerChecklistCard />
+    <GridDashboard
+      dashboardKey="mytasks"
+      title="Мои задачи"
+      subtitle="Поручения, назначенные на вас. Уточнения и предложения по срокам направляются менеджеру по качеству."
+      icon={<ScheduleOutlined style={{ color: GOLD.base, marginRight: 8 }} />}
+    />
+  </>
 );
 
 export default AssigneeTasksPage;

@@ -171,6 +171,19 @@ export const EconPortfolioSummaryCard: React.FC = () => {
         <KpiCard loading={chainLoading} title="Ожидаемый эффект, ₽/год" value={summary ? fmtMoney(summary.expectedEffect) : '—'}
           hint="одобрены, ещё не выполнены" />
       </KpiRow>
+      {/* RE-10 (§4.2): без разделения компенсирующие меры выглядят как бездействие — риск снижен,
+          а балл качества не вырос. Показываем три состояния рядом: без мер / только компенсирующие /
+          все выполненные меры. */}
+      {summary && summary.coveredByCompensating !== undefined && (
+        <KpiRow>
+          <KpiCard loading={chainLoading} title="Без мер, ₽/год" value={fmtMoney(summary.totalAtRisk)} />
+          <KpiCard loading={chainLoading} title="С компенсирующими, ₽/год"
+            value={fmtMoney(summary.residualWithCompensatingOnly ?? summary.totalAtRisk)}
+            hint={`снято компенсирующими: ${fmtMoney(summary.coveredByCompensating)} · причина остаётся`} />
+          <KpiCard loading={chainLoading} title="Со всеми мерами, ₽/год" value={fmtMoney(summary.residualRisk)}
+            hint={`снято устраняющими: ${fmtMoney(summary.coveredByEliminating ?? 0)}`} />
+        </KpiRow>
+      )}
     </GridCard>
   );
 };

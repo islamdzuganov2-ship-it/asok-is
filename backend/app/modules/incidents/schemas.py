@@ -37,6 +37,54 @@ class TechIncidentOut(_CamelModel):
     created_at: datetime | None = None
     # RE-07: стоимость единичной реализации (C_ТС) — считается движком econ, кэшируется на записи.
     cost_total: float | None = None
+    # RE-05/06: тип события — нужен карточке, чтобы показать деградацию и её пересчёт в простой.
+    incident_type: str = "DOWNTIME"
+    counts_as_downtime: bool | None = None
+    external_id: str | None = None
+    parent_incident_id: uuid.UUID | None = None
+
+
+class TechIncidentEconomicsIn(_CamelModel):
+    """Экономика сбоя — ручной ввод аналитика (RE-05, задача 16). Все поля необязательны: PUT
+    принимает частичную правку, незаданные поля не трогаются."""
+    incident_type: str | None = None             # DOWNTIME | DEGRADATION
+    degradation_type: str | None = None          # FUNCTIONAL | PERFORMANCE | THROUGHPUT
+    degradation_inputs: dict | None = None       # входы расчёта K по типу (RE-06)
+    downtime_minutes: float | None = None
+    k_impact: float | None = None                # K вручную, если входов для расчёта нет
+    t_reaction_min: float | None = None
+    t_resolution_min: float | None = None
+    t_target_min: float | None = None
+    root_cause_fixed_at: datetime | None = None
+    labor_l1_hours: float | None = None
+    labor_l2_hours: float | None = None
+    labor_l3_hours: float | None = None
+    labor_vendor_lines: list[str] | None = None  # линии, закрытые вендором (RE-03)
+    vendor_involved: bool | None = None
+
+
+class TechIncidentEconomicsOut(_CamelModel):
+    id: uuid.UUID
+    system_name: str
+    occurred_at: datetime
+    incident_type: str
+    degradation_type: str | None = None
+    degradation_inputs: dict | None = None
+    downtime_minutes: float | None = None
+    k_impact: float | None = None
+    counts_as_downtime: bool | None = None
+    t_reaction_min: float | None = None
+    t_resolution_min: float | None = None
+    t_target_min: float | None = None
+    root_cause_fixed_at: datetime | None = None
+    labor_l1_hours: float | None = None
+    labor_l2_hours: float | None = None
+    labor_l3_hours: float | None = None
+    labor_vendor_lines: list[str] | None = None
+    labor_source: str | None = None
+    vendor_involved: bool = False
+    cost_total: float | None = None
+    cost_breakdown: dict | None = None
 
 
 class TechIncidentCreate(_CamelModel):
@@ -159,3 +207,40 @@ class IncidentAnalyticsOut(_CamelModel):
     window_hours: float | None = None
     mtbf_hours: float | None = None        # окно / число сбоев — среднее время между отказами
     availability_pct: float | None = None  # 100 × (1 − Σ простоя / окно)
+
+
+# ─── BL-007, задел фазы I (RE-23…RE-27): загрузка выгрузки ITSM и калибровки ───
+class ItsmGroupMappingIn(_CamelModel):
+    group_name: str
+    system_id: uuid.UUID
+    note: str | None = None
+
+
+class ItsmGroupMappingOut(_CamelModel):
+    id: uuid.UUID
+    group_name: str
+    system_id: uuid.UUID
+    note: str | None = None
+
+
+class SystemAliasIn(_CamelModel):
+    alias: str
+    system_id: uuid.UUID
+
+
+class SystemAliasOut(_CamelModel):
+    id: uuid.UUID
+    alias: str
+    system_id: uuid.UUID
+
+
+class LaborCalibrationIn(_CamelModel):
+    """RE-24: тикеты с известными трудозатратами — (время на линиях, ч; факт, ч)."""
+    samples: list[tuple[float, float]]
+    apply: bool = False
+
+
+class ApmCalibrationIn(_CamelModel):
+    """RE-27: сопоставленные сбои — (ITSM открыт, ITSM закрыт, APM начало, APM конец, APM-деградация)."""
+    pairs: list[tuple[str, str | None, str, str | None, bool]]
+    apply: bool = False

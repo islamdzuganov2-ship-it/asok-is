@@ -247,6 +247,10 @@ async def decide(
     p.decided_by = username
     p.decided_at = _now()
     p.decision_comment = comment
+    if approve:
+        # RE-20 (антигейминг §7.2): ΔALE фиксируется ДО исполнения — метрика руководителя берёт
+        # эту цифру, а не текущую, которую можно «подтянуть» после решения.
+        p.delta_ale_at_decision = p.delta_ale_cash
     await db.commit()
     await db.refresh(p)
     _notify(

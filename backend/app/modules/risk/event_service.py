@@ -499,6 +499,8 @@ async def portfolio_risk_summary(
     )).all()
 
     covered = 0.0
+    covered_elim = 0.0
+    covered_comp = 0.0
     expected = 0.0
     investment = 0.0
     seen_proposals: set[uuid.UUID] = set()
@@ -507,6 +509,10 @@ async def portfolio_risk_summary(
         effect = ale_by_risk.get(link.risk_event_id, 0.0) * share
         if proposal.execution == "DONE":
             covered += effect
+            if proposal.measure_type == "COMPENSATING":
+                covered_comp += effect
+            else:
+                covered_elim += effect
         else:
             expected += effect
         if proposal.id not in seen_proposals:
@@ -523,4 +529,7 @@ async def portfolio_risk_summary(
         expected_effect=round(expected, 2),
         risks_count=len(risks),
         measures_count=len(seen_proposals),
+        covered_by_eliminating=round(covered_elim, 2),
+        covered_by_compensating=round(covered_comp, 2),
+        residual_with_compensating_only=round(total_at_risk - covered_comp, 2),
     )

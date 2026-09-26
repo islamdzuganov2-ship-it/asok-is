@@ -143,6 +143,10 @@ class Proposal(Base, TimestampMixin):
     # Кэш расчёта движка (RE-12): ROSI и рекомендованный вердикт (устранить/компенсировать/принять).
     rosi: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     recommended_verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # RE-20 (антигейминг §7.2): ΔALE, зафиксированный В МОМЕНТ одобрения меры. Метрика «ΔALE под
+    # управлением» руководителя берётся отсюда, а не из текущего delta_ale_cash, который владелец
+    # может «подтянуть» после решения. NULL — мера одобрена до RE-20 (берётся текущее значение).
+    delta_ale_at_decision: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
     verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)  # принятый вердикт (§3.1)
 
     # --- Аудит правок (список записей {at, by, field, from, to}) ---

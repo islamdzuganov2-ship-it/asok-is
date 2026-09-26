@@ -25,6 +25,48 @@ class PeriodOut(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    # RE-19: глубина оценки по классу ИС и дельта-переоценка.
+    depth: str | None = None
+    analyst_hours: float | None = None
+    carried_from_period_id: UUID | None = None
+
+
+class FinalizeIn(BaseModel):
+    """RE-19: фактические часы аналитика на оценку — для норматива ч/ч по глубине."""
+    analyst_hours: float | None = None
+
+
+class DepthIn(BaseModel):
+    depth: str
+
+
+class ChecklistAnswerIn(BaseModel):
+    answer: str | None = None
+    artifact_url: str | None = None
+
+
+class ChecklistVerifyIn(BaseModel):
+    verdict: str            # VERIFIED | REJECTED
+    comment: str | None = None
+
+
+class ChecklistItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    period_id: UUID
+    characteristic: str
+    subcharacteristic: str
+    question: str
+    answer: str | None = None
+    artifact_url: str | None = None
+    submitted_by: str | None = None
+    submitted_at: datetime | None = None
+    sampled: bool
+    verification: str
+    verified_by: str | None = None
+    verified_at: datetime | None = None
+    verifier_comment: str | None = None
 
 
 class ValueCreate(BaseModel):
@@ -145,6 +187,8 @@ class PeriodSummaryOut(BaseModel):
     filled: int
     total: int
     complete: bool
+    # RE-19: total — обязательный набор для глубины периода (31 / профильные / скрининг).
+    depth: str | None = None
 
 
 class CalculatedMetricOut(BaseModel):

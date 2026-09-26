@@ -11,6 +11,7 @@
  * которая открывается кнопкой-иконкой (только иконка истории, без текста).
  */
 import React, { useEffect, useState } from 'react';
+import MeasureCatalogHint from './MeasureCatalogHint';
 import { Modal, Typography, Tag, Input, Button, Space, Divider, List, Tooltip, Empty } from 'antd';
 import { message } from '../theme/appMessage';
 import { CheckOutlined, CloseOutlined, EditOutlined, HistoryOutlined } from '@ant-design/icons';
@@ -219,6 +220,8 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
       </Space>
 
       <MeasureManagementSummary open={open} proposalId={proposal?.id} />
+      {/* RE-10: типовые устраняющие/компенсирующие меры каталога по характеристике меры. */}
+      <MeasureCatalogHint characteristic={p.characteristic} />
 
       {hasEconomics && (
         <MeasureEconomicsBlock

@@ -43,6 +43,15 @@ export const EconManagersCard: React.FC = () => {
       sorter: sorterFor((r: ManagerMetricRow) => r.avgAgeDays), render: (v: number | null) => fmtNum(v, 1) }),
     numericColumn({ title: 'Δ ALE под управлением', dataIndex: 'deltaAleManaged', width: 200,
       sorter: sorterFor((r: ManagerMetricRow) => r.deltaAleManaged), render: (v: number) => fmtMoney(v) }),
+    // RE-20: тот же ΔALE, взвешенный по критичности ИС — рубль Mission Critical весит больше.
+    numericColumn({ title: 'Δ ALE × критичность', dataIndex: 'deltaAleWeighted', width: 190,
+      sorter: sorterFor((r: ManagerMetricRow) => r.deltaAleWeighted ?? 0), render: (v?: number) => fmtMoney(v ?? 0) }),
+    // RE-20: результативность — эффект подтвердил аудитор, а не «сделано» исполнителя.
+    numericColumn({ title: 'Результативность, %', dataIndex: 'effectivenessPct', width: 170,
+      sorter: sorterFor((r: ManagerMetricRow) => r.effectivenessPct ?? -1),
+      render: (v?: number | null) => (v === null || v === undefined
+        ? <Text type="secondary">нет верификаций</Text>
+        : <Text style={{ color: v >= 50 ? RAG.good.strong : RAG.medium.strong }}>{fmtNum(v, 1)}</Text>) }),
     numericColumn({ title: 'Доля «принять», %', dataIndex: 'acceptShare', width: 160,
       sorter: sorterFor((r: ManagerMetricRow) => r.acceptShare),
       // Высокая доля «принять» — сигнал: проблемы прячут вместо решения (§7.1).
@@ -74,7 +83,9 @@ export const EconManagersCard: React.FC = () => {
       </Space>
 
       <Alert type="info" showIcon style={{ marginBottom: SPACE.cozy }}
-        message="Диагностический режим — без привязки к мотивации"
+        message={managers?.mode === 'motivation'
+          ? 'Режим мотивации — засчитан только эффект, подтверждённый аудитором'
+          : 'Диагностический режим — без привязки к мотивации'}
         description={managers?.note ?? 'Метрики выводятся пакетом, не по одной: при прямой привязке к премии любая из них ломается (дробление мер, срок с запасом, завышение исходной оценки риска). Первые 2 квартала — наблюдение и калибровка порогов.'} />
 
       {managersError && <Alert type="error" showIcon message="Ошибка загрузки" description={managersError} style={{ marginBottom: SPACE.cozy }} />}

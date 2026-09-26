@@ -215,3 +215,9 @@ class PortfolioRiskSummaryOut(_CamelModel):
     expected_effect: float
     risks_count: int
     measures_count: int
+    # RE-10 (§4.2): остаточный риск с разделением по типу мер — иначе компенсирующие меры выглядят
+    # как бездействие. «Без мер» = весь риск; «с компенсирующими» — за вычетом снятого выполненными
+    # компенсирующими мерами (причина остаётся, Score не растёт); «со всеми» = residual_risk.
+    covered_by_eliminating: float = 0.0
+    covered_by_compensating: float = 0.0
+    residual_with_compensating_only: float = 0.0

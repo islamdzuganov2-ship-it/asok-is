@@ -6,12 +6,16 @@
 садятся поверх этих данных и доступны соседним доменам через этот фасад (по мере готовности).
 """
 from app.modules.econ.economics import (
+    DEGRADATION_DOWNTIME_K,
+    DEGRADATION_DOWNTIME_MINUTES,
     DecisionInput,
     MeasureEffectTimeline,
     QuarterEffectPoint,
     annual_loss_expectancy,
     cost_incident,
     decide,
+    degradation_counts_as_downtime,
+    k_impact_for_degradation,
     k_performance_degradation,
     measure_ale_risk,
     measure_effect_timeline,
@@ -31,6 +35,7 @@ from app.modules.econ.router import router
 from app.modules.econ.service import (
     compute_incident_cost,
     config_value,
+    set_config,
     resolve_support_rate,
     seed_econ_defaults,
     seed_market_benchmarks,
@@ -55,6 +60,10 @@ __all__ = [
     "decide",
     "DecisionInput",
     "k_performance_degradation",
+    "k_impact_for_degradation",
+    "degradation_counts_as_downtime",
+    "DEGRADATION_DOWNTIME_K",
+    "DEGRADATION_DOWNTIME_MINUTES",
     "measure_ale_risk",
     "requires_escalation",
     "price_of_inaction_eliminating",
@@ -69,6 +78,7 @@ __all__ = [
     "resolve_support_rate",
     "compute_incident_cost",
     "config_value",
+    "set_config",
     # Кокпит (ТЗ v21)
     "cost_dashboard",
     "CostDashboardOut",

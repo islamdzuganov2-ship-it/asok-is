@@ -226,7 +226,7 @@ async def get_bp_cost(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("view.risk_economics")),
 ):
-    return await service.get_bp_cost(db, bp_id)
+    return service.bp_cost_out(await service.get_bp_cost(db, bp_id))
 
 
 @router.put("/business-processes/{bp_id}/cost", response_model=BpCostOut)
@@ -236,7 +236,7 @@ async def upsert_bp_cost(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("econ.ref.edit")),
 ):
-    return await service.upsert_bp_cost(db, bp_id, payload)
+    return service.bp_cost_out(await service.upsert_bp_cost(db, bp_id, payload))
 
 
 # ── Связь ИС↔БП ──

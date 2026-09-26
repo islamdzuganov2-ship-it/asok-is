@@ -23,12 +23,15 @@ from app.modules.quality import (
     QUALITY_MODEL,
     QUALITY_PAIR_KEYS,
     TOTAL_SUBS,
+    DEPTH_LABELS,
     FormulaType,
     MetricCatalog,
     SubcharScore,
     calculate_metric,
     canonical_characteristic,
     combined_weights_for_version,
+    depth_for_criticality,
+    required_set,
     ensure_active_version,
     map_to_level,
     portfolio_score,
@@ -36,8 +39,14 @@ from app.modules.quality import (
     weighted_system_score,
 )
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue, ProfessionalJudgment
+from app.modules.assessment import analyst_load_service as analyst_load
 from app.modules.assessment.schemas import (
     CalculatedMetricOut,
+    ChecklistAnswerIn,
+    ChecklistItemOut,
+    ChecklistVerifyIn,
+    DepthIn,
+    FinalizeIn,
     EditableMetricIn,
     EditableMetricOut,
     JudgmentIn,
@@ -354,7 +363,11 @@ async def create_assessment_period(
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="Assessment period already exists")
 
-    period = AssessmentPeriod(system_id=payload.system_id, period=payload.period, status=STATUS_DRAFT)
+    # RE-19: глубина оценки по классу ИС — Support проходит только скрининг, Business — профиль.
+    period = AssessmentPeriod(
+        system_id=payload.system_id, period=payload.period, status=STATUS_DRAFT,
+        depth=depth_for_criticality(system.criticality_class.value if system.criticality_class else None),
+    )
     db.add(period)
     await db.flush()
     await ensure_period_values(db, period)
@@ -429,6 +442,7 @@ async def list_period_summaries(
         if (characteristic, subcharacteristic) in QUALITY_PAIR_KEYS:
             filled[period_id].add((characteristic, subcharacteristic))
 
+    # RE-19: полнота — по обязательному набору глубины периода, а не всегда по 31.
     return [
         PeriodSummaryOut(
             id=period.id,
@@ -436,9 +450,10 @@ async def list_period_summaries(
             system_name=system.name,
             period=period.period,
             status=period.status,
-            filled=len(filled.get(period.id, set())),
-            total=TOTAL_SUBS,
-            complete=len(filled.get(period.id, set())) >= TOTAL_SUBS,
+            filled=len(filled.get(period.id, set()) & required_set(period.depth)),
+            total=len(required_set(period.depth)),
+            complete=len(filled.get(period.id, set()) & required_set(period.depth)) >= len(required_set(period.depth)),
+            depth=period.depth,
         )
         for period, system in rows
     ]
@@ -502,6 +517,7 @@ async def save_assessment_metrics(
         value, metric = row
         value.expert_comment = item.expert_comment
         value.unmeasurable = bool(item.unmeasurable)
+        value.carried_over = False   # RE-19: правка = подхарактеристика переоценена, не перенесена
         if value.unmeasurable:
             # «Невозможно измерить»: комментарий с причиной обязателен.
             if not (item.expert_comment or "").strip():
@@ -623,6 +639,7 @@ async def add_assessment_value(
         value.calculated_x = None
         value.quality_level = None
     value.data_source = "MANUAL"
+    value.carried_over = False   # RE-19: переоценено вручную
 
     await db.commit()
     await db.refresh(value)
@@ -647,23 +664,28 @@ async def finalize_assessment(
     period_id: UUID,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("assessment.edit")),
+    payload: FinalizeIn | None = None,
 ) -> PeriodSummaryOut:
-    """Завершить оценку: разрешено только при полном заполнении (все подхарактеристики модели).
+    """Завершить оценку: разрешено только при заполнении ОБЯЗАТЕЛЬНОГО набора глубины периода
+    (RE-19: полная — 31, профильная — профиль + скрининг, скрининг — 8).
 
-    Иначе 409 — «оценка не может попасть в оценку», пока заполнены не все характеристики.
+    Иначе 409 — «оценка не может попасть в оценку», пока обязательный набор не заполнен.
     """
     period = await _require_period(db, period_id)
     system = await db.get(System, period.system_id)
 
-    filled = len(await _filled_pairs(db, period_id))
-    if filled < TOTAL_SUBS:
+    required = required_set(period.depth)
+    filled = len(await _filled_pairs(db, period_id) & required)
+    if filled < len(required):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Оценка неполная: заполнено {filled} из {TOTAL_SUBS} подхарактеристик. "
-                f"Заполните все характеристики, чтобы оценка была учтена."
+                f"Оценка неполная: заполнено {filled} из {len(required)} обязательных подхарактеристик "
+                f"({DEPTH_LABELS[analyst_load.depth_of(period)]}). "
+                f"Заполните обязательный набор, чтобы оценка была учтена."
             ),
         )
+    await analyst_load.set_analyst_hours(db, period, payload.analyst_hours if payload else None)
 
     # T-55: метрика «Невозможно измерить» обязана иметь ПРИЧИНУ (expert_comment). Профессиональное
     # суждение и меры по таким метрикам ведутся в соответствующих разделах; здесь жёстко гарантируем
@@ -697,8 +719,9 @@ async def finalize_assessment(
         period=period.period,
         status=period.status,
         filled=filled,
-        total=TOTAL_SUBS,
+        total=len(required),
         complete=True,
+        depth=period.depth,
     )
 
 
@@ -725,7 +748,8 @@ async def reopen_assessment(
 
     period.status = STATUS_CALCULATED
     await db.commit()
-    filled = len(await _filled_pairs(db, period_id))
+    required = required_set(period.depth)
+    filled = len(await _filled_pairs(db, period_id) & required)
     return PeriodSummaryOut(
         id=period.id,
         system_id=period.system_id,
@@ -733,8 +757,9 @@ async def reopen_assessment(
         period=period.period,
         status=period.status,
         filled=filled,
-        total=TOTAL_SUBS,
-        complete=filled >= TOTAL_SUBS,
+        total=len(required),
+        complete=filled >= len(required),
+        depth=period.depth,
     )
 
 
@@ -1155,3 +1180,81 @@ def _ensure_editable(period: AssessmentPeriod) -> AssessmentPeriod:
     if is_period_locked(period.status):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PERIOD_LOCKED_MESSAGE)
     return period
+
+
+# ═══════════════ BL-007 RE-19: снятие объёма с роли аналитика ═══════════════
+# Глубина по классу ИС (рычаг 2), дельта-переоценка (рычаг 4), self-service чек-лист владельца
+# ИС с выборочной проверкой (рычаг 3), норматив часов на оценку. ORM — в analyst_load_service.
+
+@router.get("/{period_id}/depth")
+async def get_period_depth(period_id: UUID, db: AsyncSession = Depends(get_db),
+                           _: dict = Depends(require_permission("view.assessments"))) -> dict:
+    return await analyst_load.depth_info(db, period_id)
+
+
+@router.put("/{period_id}/depth")
+async def put_period_depth(period_id: UUID, payload: DepthIn, db: AsyncSession = Depends(get_db),
+                           _: dict = Depends(require_permission("assessment.review"))) -> dict:
+    """Переопределить глубину (напр. Business-ИС под проверкой регулятора → полная). QM, не аналитик:
+    сам себе объём оценки аналитик не урезает."""
+    return await analyst_load.set_depth(db, period_id, payload.depth)
+
+
+@router.post("/{period_id}/carry-over")
+async def carry_over_values(period_id: UUID, source_period_id: UUID | None = None,
+                            db: AsyncSession = Depends(get_db),
+                            _: dict = Depends(require_permission("assessment.edit"))) -> dict:
+    """Дельта-переоценка: перенести значения прошлого завершённого периода туда, где пусто."""
+    return await analyst_load.carry_over(db, period_id, source_period_id)
+
+
+@router.get("/{period_id}/delta-summary")
+async def get_delta_summary(period_id: UUID, db: AsyncSession = Depends(get_db),
+                            _: dict = Depends(require_permission("view.assessments"))) -> dict:
+    return await analyst_load.delta_summary(db, period_id)
+
+
+@router.post("/{period_id}/checklist/generate", response_model=list[ChecklistItemOut])
+async def generate_owner_checklist(period_id: UUID, db: AsyncSession = Depends(get_db),
+                                   _: dict = Depends(require_permission("assessment.edit"))):
+    return await analyst_load.generate_checklist(db, period_id)
+
+
+@router.get("/{period_id}/checklist", response_model=list[ChecklistItemOut])
+async def get_owner_checklist(period_id: UUID, db: AsyncSession = Depends(get_db),
+                              _: dict = Depends(require_permission("assessment.edit", "assessment.checklist.fill"))):
+    return await analyst_load.list_checklist(db, period_id)
+
+
+@router.get("/checklist/open")
+async def open_owner_checklist(db: AsyncSession = Depends(get_db),
+                               _: dict = Depends(require_permission("assessment.checklist.fill"))) -> list[dict]:
+    """Рабочий список владельца ИС: пункты чек-листов, ждущие ответа или исправления."""
+    return await analyst_load.open_items(db)
+
+
+@router.put("/checklist/{item_id}/answer", response_model=ChecklistItemOut)
+async def answer_owner_checklist(item_id: UUID, payload: ChecklistAnswerIn, db: AsyncSession = Depends(get_db),
+                                 user: dict = Depends(require_permission("assessment.checklist.fill"))):
+    return await analyst_load.answer_item(db, item_id, payload.answer, payload.artifact_url,
+                                          user.get("username") or "—")
+
+
+@router.post("/{period_id}/checklist/sample")
+async def sample_owner_checklist(period_id: UUID, share: float | None = None, db: AsyncSession = Depends(get_db),
+                                 _: dict = Depends(require_permission("assessment.edit"))) -> dict:
+    return await analyst_load.sample_checklist(db, period_id, share)
+
+
+@router.put("/checklist/{item_id}/verify", response_model=ChecklistItemOut)
+async def verify_owner_checklist(item_id: UUID, payload: ChecklistVerifyIn, db: AsyncSession = Depends(get_db),
+                                 user: dict = Depends(require_permission("assessment.edit"))):
+    return await analyst_load.verify_item(db, item_id, payload.verdict, payload.comment,
+                                          user.get("username") or "—")
+
+
+@router.get("/analyst-effort/report")
+async def analyst_effort_report(db: AsyncSession = Depends(get_db),
+                                _: dict = Depends(require_permission("view.assessments"))) -> dict:
+    """Норматив человеко-часов на оценку по глубине: факт против норматива (продуктовая метрика)."""
+    return await analyst_load.effort_report(db)

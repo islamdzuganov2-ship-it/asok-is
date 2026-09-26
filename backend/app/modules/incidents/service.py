@@ -24,9 +24,11 @@ from app.modules.incidents.models import (
     CATEGORY_POWER,
     CATEGORY_RELEASE,
     CATEGORY_TO_CHARACTERISTIC,
+    INCIDENT_DEGRADATION,
     SEVERITIES,
     TechIncident,
 )
+from app.modules.econ import degradation_counts_as_downtime
 from app.modules.incidents.schemas import (
     TtrStats,
     CategoryStat,
@@ -282,6 +284,17 @@ def _ttr_stats(rows: list[TechIncident]) -> TtrStats:
         measured_count=measured,
     )
 
+def _counts_as_downtime(r: TechIncident) -> bool:
+    """Правило RE-06 для аналитики: сохранённый итог, а для записей до RE-06 — по дефолтным порогам."""
+    if r.incident_type != INCIDENT_DEGRADATION:
+        return True
+    if r.counts_as_downtime is not None:
+        return bool(r.counts_as_downtime)
+    if r.k_impact is None or r.downtime_minutes is None:
+        return False
+    return degradation_counts_as_downtime(float(r.k_impact), float(r.downtime_minutes))
+
+
 async def analytics(db: AsyncSession, *, system: str | None = None) -> IncidentAnalyticsOut:
     rows = await list_incidents(db, system=system)
     total = len(rows)
@@ -330,14 +343,20 @@ async def analytics(db: AsyncSession, *, system: str | None = None) -> IncidentA
     # ТЗ v21 (КП-30): MTBF/доступность за окно наблюдения (от первого сбоя выборки до сейчас).
     # Приблизительно (не строгий SLA-расчёт по договору), но не выдумано: при нуле сбоев —
     # None, а не фиктивные 100% (§7.3 честной пустоты).
+    #
+    # RE-06: деградация входит в простой только по правилу конвертации (K ≥ порога дольше N минут),
+    # иначе «сайт тормозил 5 минут» съедал бы доступность наравне с полным отказом.
+    # RE-26: дочерние тикеты одного сбоя (parent_incident_id) — не отдельные отказы: в MTBF и
+    # простой они не входят, иначе один сбой в 5 тикетах давал бы впятеро худшую надёжность.
     window_hours = mtbf_hours = availability_pct = None
-    if rows:
-        earliest = min(r.occurred_at for r in rows)
+    failures = [r for r in rows if r.parent_incident_id is None]
+    if failures:
+        earliest = min(r.occurred_at for r in failures)
         now = datetime.now(timezone.utc)
         occurred = earliest if earliest.tzinfo else earliest.replace(tzinfo=timezone.utc)
         window_hours = max((now - occurred).total_seconds() / 3600, 1.0)
-        mtbf_hours = round(window_hours / total, 1)
-        downtime_hours = sum(float(r.downtime_minutes or 0) for r in rows) / 60
+        mtbf_hours = round(window_hours / len(failures), 1)
+        downtime_hours = sum(float(r.downtime_minutes or 0) for r in failures if _counts_as_downtime(r)) / 60
         availability_pct = round(max(0.0, min(100.0, 100 * (1 - downtime_hours / window_hours))), 2)
 
     return IncidentAnalyticsOut(
