@@ -110,7 +110,9 @@ def _write_json(name: str, obj: dict) -> None:
 def fingerprint(*parts: str) -> str:
     """Короткий стабильный отпечаток входа заключения — ключ памяти и обратной связи."""
     raw = "|".join((p or "").strip() for p in parts)
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    # ИБ-15 (SEC-17): SHA-1 здесь — ключ записи памяти, не криптография; usedforsecurity=False
+    # фиксирует это для контроля по ГОСТ Р 56939 и не меняет значения (старые ключи совместимы).
+    return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
 
 
 # ─── Профиль (переносимые настройки, «улучшающиеся со временем») ──────────────────────
