@@ -12,6 +12,7 @@ import {
     HolderOutlined,
     CheckOutlined,
     AuditOutlined,
+    MailOutlined,
     // ExperimentOutlined — под развитие: иконка пункта «Оценка СИИ» (пока не выведен в меню).
 } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
@@ -171,6 +172,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         ...(has('view.admin.llm_quality') ? [mi('/admin/llm-quality', <ExperimentOutlined />, 'Качество LLM')] : []),
         // ИБ-08: журнал событий ИБ — исключительное право суперадминистратора.
         ...(has('view.admin.audit') ? [mi('/admin/audit', <AuditOutlined />, 'Журнал ИБ')] : []),
+        ...(has('view.admin.notifications') ? [mi('/admin/notifications', <MailOutlined />, 'Журнал уведомлений')] : []),
     ];
     const settingsItems = has('view.settings') ? [mi('/admin/flags', <SettingOutlined />, 'Настройка')] : [];
 

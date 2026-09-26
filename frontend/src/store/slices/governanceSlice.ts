@@ -258,9 +258,10 @@ export const decideDueChange = createAsyncThunk<Proposal | null, { id: string; a
 export {
   fetchPriceOfInaction, updateSystemicScope, updateAlternatives, reviewLlmMeasure,
   fetchMeasureDepartments, upsertMeasureDepartment, fetchPriceHistory,
-  setActuals, fetchBudgetVariance, fetchEffectTimeline,
+  setActuals, fetchBudgetVariance, fetchEffectTimeline, takeToWork,
 } from './governanceCardThunks';
-import { updateSystemicScope, updateAlternatives, reviewLlmMeasure, setActuals } from './governanceCardThunks';
+export type { TakeToWorkArg } from './governanceCardThunks';
+import { updateSystemicScope, updateAlternatives, reviewLlmMeasure, setActuals, takeToWork } from './governanceCardThunks';
 
 // ─────────────────────────────────── Slice ───────────────────────────────────
 interface GovernanceState {
@@ -299,7 +300,7 @@ const governanceSlice = createSlice({
     for (const thunk of [approveProposal, rejectProposal, updateProposalMeta, editProposal,
       setExecution, setEffortHours, rewriteForExecutor, updateTask, escalateTask, decideEscalation,
       resolveEscalation, addClarification, requestDueChange, decideDueChange,
-      updateSystemicScope, updateAlternatives, reviewLlmMeasure, setActuals]) {
+      updateSystemicScope, updateAlternatives, reviewLlmMeasure, setActuals, takeToWork]) {
       builder.addCase(thunk.fulfilled, (state, action: PayloadAction<Proposal | null>) => {
         if (action.payload) {
           upsert(state, action.payload);

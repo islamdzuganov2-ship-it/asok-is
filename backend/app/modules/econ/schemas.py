@@ -130,6 +130,49 @@ class SupportRateOut(_CamelModel):
     overlimit_rate: float | None = None
     billing_quantum_min: int
     is_active: bool
+    # УК-25: MANUAL — введена вручную; REFERENCE — из справочника типовых ставок. Неподтверждённая
+    # ставка из справочника на экране помечается «по справочнику, не подтверждена».
+    source: str = "MANUAL"
+    reference_benchmark_id: uuid.UUID | None = None
+    confirmed_at: datetime | None = None
+    confirmed_by: str | None = None
+
+
+class FillDefaultRatesIn(_CamelModel):
+    """УК-25: подставить типовые ставки для ИС (или глобальные, если system_id пуст). refresh —
+    обновить значения УЖЕ подставленных, но не подтверждённых ставок (после смены размера
+    предприятия); подтверждённые и введённые вручную не трогаются."""
+    system_id: uuid.UUID | None = None
+    executor_type: str = "INTERNAL"
+    refresh: bool = False
+
+
+class FillDefaultRatesOut(_CamelModel):
+    created: int
+    updated: int
+    skipped_no_reference: list[str]   # линии, для которых в справочнике нет типовой ставки
+
+
+class RateDeviationOut(_CamelModel):
+    """УК-26: ставка, отличающаяся от типовой более чем на порог (или без типовой вовсе)."""
+    rate_id: uuid.UUID
+    system_id: uuid.UUID | None = None
+    line: str
+    executor_type: str
+    vendor: str | None = None
+    rate_per_hour: float
+    typical_rate: float | None = None
+    typical_source: str | None = None
+    typical_observed_on: date | None = None
+    deviation_pct: float | None = None
+    note: str
+
+
+class RateDeviationsOut(_CamelModel):
+    threshold_pct: float
+    size_class: str | None = None
+    rows: list[RateDeviationOut]
+    without_reference: int
 
 
 # ── Финпараметры контура ──
@@ -215,6 +258,9 @@ class MarketBenchmarkOut(_CamelModel):
     kind: str
     dimension: str
     company_size_class: str | None = None
+    line: str | None = None            # УК-25: разрез типовой ставки; None — любая
+    industry: str | None = None
+    qualification: str | None = None
     value: float
     unit: str
     source: str
@@ -228,6 +274,9 @@ class MarketBenchmarkCreate(_CamelModel):
     kind: str
     dimension: str
     company_size_class: str | None = None
+    line: str | None = None
+    industry: str | None = None
+    qualification: str | None = None
     value: float
     unit: str
     # ОБЯЗАТЕЛЬНЫ (не Optional): без источника и даты запись не заводится — см. docstring

@@ -15,6 +15,7 @@ from app.modules.quality.ai_quality_model import (
     ai_model_tree,
 )
 from app.modules.quality.calculation import calculate_metric, map_to_level
+from app.modules.quality.scoring import reading_level, score_reading
 from app.modules.quality.depth import (
     DEPTH_FULL,
     DEPTH_LABELS,
@@ -62,6 +63,7 @@ from app.modules.quality.weight_versions import (
     preview_weight_edit,
     recompute_and_snapshot,
     save_weight_edit,
+    score_points,
     validate_weight_edit,
     weight_for,
 )
@@ -81,6 +83,8 @@ __all__ = [
     "FormulaType",
     "calculate_metric",
     "map_to_level",
+    "reading_level",
+    "score_reading",
     # RE-19: глубина оценки по классу ИС
     "DEPTH_FULL",
     "DEPTH_PROFILE",
@@ -130,12 +134,13 @@ __all__ = [
     "recompute_and_snapshot",
     "combined_weights_for_version",
     "weight_for",
+    "score_points",
     "validate_weight_edit",
     "save_weight_edit",
     "preview_weight_edit",
     "CRITICALITY_PROFILES",
     "DEFAULT_CHAR_WEIGHTS",
     "DEFAULT_SUBCHAR_WITHIN_CHAR",
-    # ТЗ v19 УК-13 (п.13): вес меры для нагрузки/балансировки исполнителей
+    # ТЗ v19 УК-31 (п.13): вес меры для нагрузки/балансировки исполнителей
     "measure_weight",
 ]

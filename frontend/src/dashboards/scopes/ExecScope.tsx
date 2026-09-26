@@ -3,7 +3,7 @@
  *
  * Перенесено из ExecutiveDashboard без изменения расчётов: взвешивание по ГОСТ 25010
  * (ТЗ v20 п.2), портфельный индекс по критичности, денежный слой теплокарты (УК-11), AI-резюме
- * по ИС (ТЗ v20), контекст перехода в реестр мер через ?characteristic= (УК-08/09).
+ * по ИС (ТЗ v20), контекст перехода в реестр мер через ?characteristic= (УК-08, УК-09).
  *
  * Все модалки (карточка ИС, решение по мере, «меры на одобрение», «все системы») держит скоуп:
  * иначе карточка «Тепловая карта», унесённая на «Мой дашборд», кликалась бы в пустоту.
@@ -24,6 +24,7 @@ import { QUALITY_MODEL } from '../../constants/qualityModel';
 import { useCharacteristicWeights } from '../../hooks/useCharacteristicWeights';
 import { selectVisibleProposals, type Proposal } from '../../store/slices/governanceSlice';
 import ExecListModals from './execListModals';
+import { buildExecFromLive, type LiveDashboard } from './execLive';
 
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
@@ -35,7 +36,6 @@ export const abbr = (c: string) => ABBR_BY_TITLE[c] ?? c;
 const CRITICALITY_WEIGHTS: Record<string, number> = {
   'MISSION CRITICAL': 3, 'BUSINESS CRITICAL': 2, 'BUSINESS OPERATIONAL': 1,
 };
-const BUCKET_SCORE = [-1, 10, 30, 50, 70, 90];
 
 interface HeatmapMoneyCell {
   systemName: string; characteristic: string;
@@ -49,71 +49,6 @@ export const MONEY_MODE_OPTIONS: { value: MoneyMode; label: string }[] = [
   { value: 'delta', label: 'ΔALE снимаемый мерами' },
   { value: 'coverage', label: 'Покрытие мерами' },
 ];
-
-interface LiveDashboard {
-  globalHealthScore: number;
-  aiInsights: string;
-  heatmapData?: [number, number, number][];
-  xAxisLabels?: string[];
-  yAxisLabels?: string[];
-  problematicSystems?: { id: string; name: string; criticality: string; lowMetricsCount: number; owner?: string | null; ownerUserId?: string | null }[];
-  periodsUsed?: { distinct: string[]; earliest: string | null; latest: string | null; bySystem: Record<string, string> };
-}
-
-/** Сборка структуры дашборда из реального ответа API (LLM-режим). Перенесено дословно. */
-function buildExecFromLive(live: LiveDashboard | null, charWeights: Record<string, number>): ExecutiveDashboardData {
-  const empty: ExecutiveDashboardData = {
-    globalIndex: live ? Math.round(live.globalHealthScore) : 0,
-    systems: [], heatmap: { characteristics: [], rows: [] },
-    techDebt: { resolvedPct: 0, period: '', note: '' },
-  };
-  if (!live || !live.yAxisLabels?.length || !live.xAxisLabels?.length) return empty;
-
-  const chars = live.xAxisLabels;
-  const sysNames = live.yAxisLabels;
-  const matrix: number[][] = sysNames.map(() => chars.map(() => 0));
-  (live.heatmapData ?? []).forEach(([x, y, b]) => { if (matrix[y] && x < chars.length) matrix[y][x] = b; });
-  const critMap = new Map((live.problematicSystems ?? []).map((s) => [s.name, s.criticality]));
-  const ownerMap = new Map((live.problematicSystems ?? []).map((s) => [s.name, s.owner]));
-
-  const rows = sysNames.map((sys, y) => ({
-    system: sys,
-    cells: chars.map((_, x) => ({ score: BUCKET_SCORE[matrix[y][x]] ?? -1 })),
-  }));
-
-  const systems: ExecSystemInsight[] = sysNames.map((sys, y) => {
-    const measured = chars
-      .map((c, x) => ({ x, s: BUCKET_SCORE[matrix[y][x]] ?? -1, w: charWeights[c] ?? 0 }))
-      .filter((m) => m.s >= 0);
-    const weightApplied = measured.reduce((a, m) => a + m.w, 0);
-    const score = weightApplied > 0
-      ? Math.round(measured.reduce((a, m) => a + m.w * m.s, 0) / weightApplied)
-      : (measured.length ? Math.round(measured.reduce((a, m) => a + m.s, 0) / measured.length) : 0);
-    let weakIdx = 0, weakScore = 101;
-    chars.forEach((_, x) => {
-      const s = BUCKET_SCORE[matrix[y][x]] ?? -1;
-      if (s >= 0 && s < weakScore) { weakScore = s; weakIdx = x; }
-    });
-    const weakChar = chars[weakIdx] ?? '';
-    return {
-      id: `live-${y}`, name: sys, score,
-      criticality: (critMap.get(sys) as ExecSystemInsight['criticality']) ?? 'BUSINESS OPERATIONAL',
-      weakCharacteristic: weakChar,
-      aiSummary: `Интегральная оценка качества — ${score}%. Наиболее просевшая характеристика — ${weakChar} (${weakScore <= 100 ? weakScore : '—'}%).`,
-      recommendation: 'Сформировать меры по просевшим характеристикам.',
-      owner: ownerMap.get(sys) || 'не назначен',
-      escalateTo: 'CTO',
-      actions: ['Назначить ответственного и срок', 'Зафиксировать меру в плане качества', 'Включить контроль выполнения'],
-    };
-  });
-
-  return {
-    globalIndex: Math.round(live.globalHealthScore),
-    systems,
-    heatmap: { characteristics: chars, rows },
-    techDebt: { resolvedPct: 0, period: '', note: '' },
-  };
-}
 
 interface ExecScopeValue {
   isLive: boolean;
@@ -195,7 +130,7 @@ export const ExecScopeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [moneyLayer, setMoneyLayer] = useState<HeatmapMoneyCell[] | null>(null);
   const [moneyLoading, setMoneyLoading] = useState(false);
 
-  // УК-08/09: контекст перехода живёт в URL — ссылку можно переслать коллеге.
+  // УК-08, УК-09: контекст перехода живёт в URL — ссылку можно переслать коллеге.
   useEffect(() => {
     const c = searchParams.get('characteristic');
     if (c) { setShowRegistry(true); setRegistryPreset(c); }

@@ -11,22 +11,25 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
 from app.shared.filters import parse_str_list, parse_uuid_list
-from app.modules.governance import economics_service, management_summary, service
+from app.modules.governance import economics_service, executor_load, management_summary, service
 from app.modules.governance.schemas import (
     ActualsIn,
     AlternativesIn,
+    BudgetQueueOut,
     BudgetVarianceOut,
+    CalendarInviteOut,
     DecisionIn,
     EditIn,
     EffectTimelineOut,
     EffortHoursIn,
     EscalateIn,
     EscalationDecisionIn,
+    ExecutorBriefPreviewOut,
     ExecutionIn,
     LlmReviewIn,
     MeasureDepartmentIn,
@@ -41,6 +44,8 @@ from app.modules.governance.schemas import (
     ProposalCreate,
     ProposalOut,
     SystemicScopeIn,
+    TakeToWorkIn,
+    TakeToWorkOut,
     TaskUpdateIn,
 )
 from app.modules.iam import audit, get_current_user, get_role_permissions, require_permission, resolve_user_id
@@ -97,6 +102,38 @@ async def get_portfolio_effect_curve(
         db, system_id=parse_uuid_list(system_id), criticality=parse_str_list(criticality),
         characteristic=characteristic,
     )
+
+
+# ТЗ v19 п.13 (УК-32, УК-33): нагрузка и балансировка — литеральные пути ДО /proposals/{pid}.
+@router.get("/executor-load", response_model=executor_load.ExecutorLoadOut)
+async def get_executor_load(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("governance.propose", "governance.decide")),
+):
+    """Кто перегружен, кто свободен, из чего сложилась нагрузка и что кому передать."""
+    return await executor_load.executor_load(db)
+
+
+@router.get("/executor-load/check", response_model=executor_load.OverloadCheckOut)
+async def check_executor_load(
+    owner: str = Query(..., min_length=1), hours: float | None = None,
+    proposal_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("governance.propose", "governance.decide")),
+):
+    """Предупреждение в форме назначения: станет ли исполнитель перегружен (УК-33)."""
+    return await executor_load.overload_check(db, owner, hours, exclude_proposal_id=proposal_id)
+
+
+# ТЗ v19 §17.5 (УК-54): очередь заявок на CAPEX по составному весу.
+@router.get("/budget-queue", response_model=BudgetQueueOut)
+async def get_budget_queue(
+    budget: float | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("governance.decide", "view.risk_economics")),
+):
+    """Приоритет бюджетных заявок для тех, кто распределяет бюджет (вне системы)."""
+    return await service.budget_queue(db, budget)
 
 
 @router.get("/proposals/overdue-summary", response_model=OverdueSummaryOut)
@@ -195,6 +232,54 @@ async def rewrite_for_executor(
     p = await service.get_or_404(db, pid)
     uid = await resolve_user_id(db, user.get("id"))
     return await service.rewrite_for_executor(db, p, uid)
+
+
+# ТЗ v19 п.16 (УК-38): «В работу» — назначение, текст для исполнителя, Гант, календарь.
+@router.get("/proposals/{pid}/executor-brief-preview", response_model=ExecutorBriefPreviewOut)
+async def preview_executor_brief(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db), _: dict = Depends(require_permission("governance.propose")),
+):
+    """Текст для исполнителя без сохранения — на просмотр и правку перед отправкой (В-51)."""
+    p = await service.get_or_404(db, pid)
+    return ExecutorBriefPreviewOut(text=service.preview_executor_brief(p))
+
+
+@router.post("/proposals/{pid}/take-to-work", response_model=TakeToWorkOut)
+async def take_to_work(
+    pid: uuid.UUID, payload: TakeToWorkIn,
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_permission("governance.propose")),
+):
+    p = await service.get_or_404(db, pid)
+    uid = await resolve_user_id(db, user.get("id"))
+    p, check = await service.take_to_work(db, p, payload, _username(user), uid)
+    return TakeToWorkOut(proposal=ProposalOut.model_validate(p), overload=check.model_dump(by_alias=True))
+
+
+# ТЗ v19 п.6 (УК-17): срок меры как календарное событие — файлом и приглашением через порт.
+@router.get("/proposals/{pid}/calendar.ics")
+async def get_measure_calendar(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("view.my_tasks", "view.dashboard.taskplan", "governance.propose")),
+):
+    p = await service.get_or_404(db, pid)
+    ics = service.measure_calendar(p)
+    if ics is None:
+        raise HTTPException(status_code=409, detail="У меры нет срока — событие в календарь не создать")
+    return Response(content=ics, media_type="text/calendar",
+                    headers={"Content-Disposition": f'attachment; filename="measure-{pid}.ics"'})
+
+
+@router.post("/proposals/{pid}/calendar-invite", response_model=CalendarInviteOut)
+async def send_calendar_invite(
+    pid: uuid.UUID,
+    db: AsyncSession = Depends(get_db), _: dict = Depends(require_permission("governance.propose")),
+):
+    p = await service.get_or_404(db, pid)
+    if p.due_on is None:
+        raise HTTPException(status_code=409, detail="У меры нет срока — приглашать некуда")
+    return CalendarInviteOut(sent=await service.send_calendar_invite(db, p))
 
 
 @router.patch("/proposals/{pid}/task", response_model=ProposalOut)

@@ -53,15 +53,15 @@ export const DASHBOARDS: Record<DashboardKey, DashboardDef> = {
   },
   manager: {
     key: 'manager', label: 'Основное', perm: 'view.dashboard.manager',
-    defaultLayout: stack(['manager.profile', 'manager.metrics', 'manager.measureDev', 'manager.measures', 'manager.judgments']),
+    defaultLayout: stack(['manager.profile', 'manager.metrics', 'manager.measureDev', 'manager.measures', 'manager.judgments', 'manager.executionControl']),
   },
   analytics: {
     key: 'analytics', label: 'Аналитический дашборд', perm: 'view.dashboard.analytics',
     defaultLayout: at([
-      ['analytics.kpi', 0, 0, 12, 5],
-      ['analytics.levels', 0, 5, 5, 12],
-      ['analytics.problemSystems', 5, 5, 7, 12],
-      ['analytics.heatmap', 0, 17, 12, 15],
+      ['analytics.kpi', 0, 0, 12, 7],
+      ['analytics.levels', 0, 7, 5, 12],
+      ['analytics.problemSystems', 5, 7, 7, 12],
+      ['analytics.heatmap', 0, 19, 12, 15],
     ]),
   },
   dynamics: {
@@ -81,7 +81,7 @@ export const DASHBOARDS: Record<DashboardKey, DashboardDef> = {
   },
   taskplan: {
     key: 'taskplan', label: 'План задач', perm: 'view.dashboard.taskplan',
-    defaultLayout: stack(['taskplan.employees', 'taskplan.gantt', 'taskplan.bubbles']),
+    defaultLayout: stack(['taskplan.employees', 'taskplan.executorLoad', 'taskplan.gantt', 'taskplan.bubbles']),
   },
   risk: {
     key: 'risk', label: 'Основное — риск', perm: 'view.dashboard.risk',
@@ -111,6 +111,7 @@ export const DASHBOARDS: Record<DashboardKey, DashboardDef> = {
       ['econ.portfolio', 0, 39, 12, 6],
       ['econ.riskMeasureEffect', 0, 45, 12, 12],
       ['econ.quarterlyEffect', 0, 57, 12, 11],
+      ['econ.budgetQueue', 0, 68, 12, 11],
     ]),
   },
   mytasks: {

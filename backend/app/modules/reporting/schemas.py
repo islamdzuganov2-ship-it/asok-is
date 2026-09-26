@@ -54,7 +54,7 @@ class ProblematicSystemOut(BaseModel):
     name: str
     criticality: str
     lowMetricsCount: int
-    # ТЗ v19 п.5 (УК-05): ответственный за ИС — реальные System.owner/owner_user_id, а не
+    # ТЗ v19 п.5 (УК-12, УК-14): ответственный за ИС — реальные System.owner/owner_user_id, а не
     # одна и та же заглушка для всех систем (была на фронте, см. ExecutiveDashboard.tsx).
     owner: Optional[str] = None
     ownerUserId: Optional[UUID] = None
@@ -72,6 +72,9 @@ class PeriodsUsedOut(BaseModel):
 
 class DashboardDataOut(BaseModel):
     globalHealthScore: float
+    # УК-03: шкала прочтения (уровень словами, цель, дельта к прошлому периоду по тем же ИС).
+    scoreScale: dict | None = None
+    systemScores: dict[str, float | None] | None = None
     aiInsights: str
     heatmapData: List[Tuple[int, int, int]]
     xAxisLabels: List[str]

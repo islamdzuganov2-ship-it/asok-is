@@ -17,6 +17,7 @@ import { RAG } from '../../theme/ragPalette';
 import { numericColumn, sorterFor } from '../../theme/table';
 import { BP_KINDS } from './bpKinds';
 import BenchmarksPanel from './BenchmarksPanel';
+import RatesCard from './RatesCard';
 import {
   api, fmtMoney, fmtNum,
   bpCostParams, bpTimeProfile,
@@ -25,18 +26,14 @@ import {
 
 const { Text } = Typography;
 
-const LINES = ['L1', 'L2', 'L3'];
-
 export const ReferencesTab: React.FC = () => {
   const [rates, setRates] = useState<SupportRate[]>([]);
   const [bps, setBps] = useState<BusinessProcess[]>([]);
   const [costs, setCosts] = useState<Record<string, BpCost | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [rateOpen, setRateOpen] = useState(false);
   const [bpOpen, setBpOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [rateForm] = Form.useForm();
   const [bpForm] = Form.useForm();
   // ТЗ v19 УК-24: сравнение «мы/рынок» — по клику, не пересчитывается фоном (рынок обновляется
   // редко, и результат зависит от того, что именно вносили в last-load costs/rates).
@@ -61,17 +58,6 @@ export const ReferencesTab: React.FC = () => {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
-
-  const createRate = async () => {
-    try {
-      const v = await rateForm.validateFields();
-      setSaving(true);
-      // RE-03: если ставка не введена, бэкенд считает её из ФОТ × K_накладных / фонд времени.
-      await api('/econ/rates', { method: 'POST', body: JSON.stringify(v) });
-      message.success('Ставка добавлена'); setRateOpen(false); rateForm.resetFields(); await load();
-    } catch (e: any) { if (e?.errorFields) return; message.error(`Ошибка: ${e.message}`); }
-    finally { setSaving(false); }
-  };
 
   const createBp = async () => {
     try {
@@ -111,41 +97,6 @@ export const ReferencesTab: React.FC = () => {
     finally { setComparing(null); }
   };
 
-
-  const rateCols: ColumnsType<SupportRate> = [
-    { title: 'Линия', dataIndex: 'line', width: 80, sorter: sorterFor((r: SupportRate) => r.line) },
-    {
-      title: 'Исполнитель', dataIndex: 'executorType', width: 130,
-      sorter: sorterFor((r: SupportRate) => r.executorType),
-      render: (t: string) => <Tag color={t === 'VENDOR' ? 'volcano' : 'blue'}>{t === 'VENDOR' ? 'Вендор' : 'Внутренний'}</Tag>,
-    },
-    { title: 'Вендор', dataIndex: 'vendor', width: 150, sorter: sorterFor((r: SupportRate) => r.vendor), render: (v?: string) => v || '—' },
-    numericColumn({ title: '₽/час', dataIndex: 'ratePerHour', width: 120, sorter: sorterFor((r: SupportRate) => r.ratePerHour), render: (v: number) => fmtMoney(v) }),
-    numericColumn({ title: 'K веч/ночь', dataIndex: 'kEvening', width: 110, sorter: sorterFor((r: SupportRate) => r.kEvening), render: (v: number) => fmtNum(v) }),
-    numericColumn({ title: 'K выходные', dataIndex: 'kWeekend', width: 110, sorter: sorterFor((r: SupportRate) => r.kWeekend), render: (v: number) => fmtNum(v) }),
-    {
-      title: 'Контракт', key: 'contract', width: 190,
-      render: (_: unknown, r: SupportRate) => (r.executorType === 'VENDOR'
-        ? <Text type="secondary" style={{ fontSize: 12 }}>
-            {r.packageHours != null ? `пакет ${fmtNum(r.packageHours, 0)} ч, сверх ${fmtMoney(r.overlimitRate)}` : 'без пакета'}
-            {` · квант ${r.billingQuantumMin ?? 60} мин`}
-          </Text>
-        : <Text type="secondary" style={{ fontSize: 12 }}>по факту времени</Text>),
-    },
-    {
-      title: 'Область', dataIndex: 'systemId', width: 120,
-      sorter: sorterFor((r: SupportRate) => r.systemId),
-      render: (s?: string | null) => <Tag>{s ? 'Для ИС' : 'Глобальная'}</Tag>,
-    },
-    {
-      title: '', key: 'compare', width: 130, fixed: 'right',
-      render: (_: unknown, r: SupportRate) => (
-        <Button size="small" icon={<SwapOutlined />} loading={comparing === r.id} onClick={() => compareRate(r)}>
-          С рынком
-        </Button>
-      ),
-    },
-  ];
 
   const bpCols: ColumnsType<BusinessProcess> = [
     { title: 'Код', dataIndex: 'code', width: 120, sorter: sorterFor((r: BusinessProcess) => r.code) },
@@ -193,18 +144,7 @@ export const ReferencesTab: React.FC = () => {
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       {error && <Alert type="error" showIcon message="Ошибка загрузки" description={error} closable />}
 
-      <Card
-        {...premiumCard('slate')}
-        title="Ставки сопровождения L1–L3"
-        extra={<Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setRateOpen(true)}>Добавить</Button>}
-        styles={{ body: { padding: 0 } }}
-      >
-        <Table<SupportRate>
-          columns={rateCols} dataSource={rates} rowKey="id" loading={loading} size="small"
-          scroll={{ x: 950 }} pagination={{ pageSize: 8, hideOnSinglePage: true }}
-          locale={{ emptyText: 'Ставок нет. Внутренняя = (ФОТ×K_накладных)/фонд; вендорская — из контракта.' }}
-        />
-      </Card>
+      <RatesCard rates={rates} loading={loading} reload={load} comparing={comparing} onCompare={compareRate} />
 
       <Card
         {...premiumCard('sage')}
@@ -222,58 +162,6 @@ export const ReferencesTab: React.FC = () => {
 
       <BenchmarksPanel />
 
-      <Modal title="Новая ставка сопровождения" open={rateOpen} onOk={createRate} confirmLoading={saving}
-        onCancel={() => setRateOpen(false)} okText="Сохранить" cancelText="Отмена">
-        <Form form={rateForm} layout="vertical"
-          initialValues={{ line: 'L2', executorType: 'INTERNAL', kEvening: 1.5, kWeekend: 2.0 }}>
-          <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="line" label={<FieldHint title="Линия поддержки (L1/L2/L3) — влияет на то, какая ставка попадёт в расчёт стоимости устранения (C_ТС) для событий этой линии.">Линия</FieldHint>} style={{ flex: 1, minWidth: 120 }}>
-              <Select options={LINES.map((v) => ({ value: v, label: v }))} />
-            </Form.Item>
-            <Form.Item name="executorType" label={<FieldHint title="Кто фактически устраняет инциденты на этой линии — свой персонал или подрядчик.">Исполнитель</FieldHint>} style={{ flex: 1, minWidth: 160 }}>
-              <Select options={[{ value: 'INTERNAL', label: 'Внутренний' }, { value: 'VENDOR', label: 'Вендор' }]} />
-            </Form.Item>
-          </Space>
-          <Form.Item name="vendor" label={<FieldHint title="Заполняйте, только если исполнитель — «Вендор»: название подрядной организации.">Вендор (если внешний)</FieldHint>}>
-            <Input placeholder="Наименование поставщика" />
-          </Form.Item>
-          <Form.Item name="ratePerHour" label={<FieldHint title="Базовая почасовая ставка исполнителя — основа расчёта стоимости восстановления (C_восстановление) при инциденте. Для внутренней команды можно не вводить — посчитается из ФОТ.">Ставка, ₽/час</FieldHint>}>
-            <InputNumber style={{ width: '100%' }} min={0} step={500} />
-          </Form.Item>
-          {/* RE-03: внутренняя ставка = (ФОТ × K_накладных) / фонд рабочего времени. */}
-          <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="fotMonthly" label={<FieldHint title="Фонд оплаты труда линии за месяц — если ставка не введена, бэкенд посчитает её с коэффициентом накладных из финпараметров.">ФОТ в месяц, ₽</FieldHint>} style={{ flex: 1, minWidth: 160 }}>
-              <InputNumber style={{ width: '100%' }} min={0} step={10000} />
-            </Form.Item>
-            <Form.Item name="fundHoursMonthly" label="Фонд времени, ч/мес" style={{ flex: 1, minWidth: 140 }}>
-              <InputNumber style={{ width: '100%' }} min={1} step={8} />
-            </Form.Item>
-          </Space>
-          <Form.Item noStyle shouldUpdate={(a, b) => a.executorType !== b.executorType}>
-            {({ getFieldValue }) => getFieldValue('executorType') === 'VENDOR' && (
-              <Space style={{ width: '100%' }} size="middle">
-                <Form.Item name="packageHours" label={<FieldHint title="Часы, оплаченные абонентской платой в месяц: сверх них — сверхлимитный тариф.">Пакет, ч/мес</FieldHint>} style={{ flex: 1 }}>
-                  <InputNumber style={{ width: '100%' }} min={0} />
-                </Form.Item>
-                <Form.Item name="overlimitRate" label="Сверхлимит, ₽/ч" style={{ flex: 1 }}>
-                  <InputNumber style={{ width: '100%' }} min={0} step={500} />
-                </Form.Item>
-                <Form.Item name="billingQuantumMin" label={<FieldHint title="Минимальная единица оплаты: 20 минут работы при кванте 60 оплачиваются как час.">Квант, мин</FieldHint>} style={{ flex: 1 }}>
-                  <InputNumber style={{ width: '100%' }} min={1} />
-                </Form.Item>
-              </Space>
-            )}
-          </Form.Item>
-          <Space style={{ width: '100%' }} size="middle">
-            <Form.Item name="kEvening" label={<FieldHint title="Множитель к базовой ставке, если устранение шло вечером/ночью.">K вечер/ночь</FieldHint>} style={{ flex: 1, minWidth: 140 }}>
-              <InputNumber style={{ width: '100%' }} min={1} step={0.1} />
-            </Form.Item>
-            <Form.Item name="kWeekend" label={<FieldHint title="Множитель к базовой ставке, если устранение шло в выходной день.">K выходные</FieldHint>} style={{ flex: 1, minWidth: 140 }}>
-              <InputNumber style={{ width: '100%' }} min={1} step={0.1} />
-            </Form.Item>
-          </Space>
-        </Form>
-      </Modal>
 
       <Modal title="Новый бизнес-процесс" open={bpOpen} onOk={createBp} confirmLoading={saving}
         onCancel={() => setBpOpen(false)} okText="Сохранить" cancelText="Отмена">

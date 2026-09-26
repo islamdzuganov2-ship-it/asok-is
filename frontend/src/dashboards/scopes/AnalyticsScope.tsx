@@ -50,6 +50,8 @@ export interface DashboardData {
   characteristics?: CharDetail[];
   systemDetails?: { name: string; chars: CharDetail[]; scoreBreakdown?: SystemScoreBreakdown }[];
   scoreBreakdown?: PortfolioBreakdown;
+  /** УК-03: шкала прочтения — уровень словами, цель, дельта к прошлому периоду. */
+  scoreScale?: import('../../components/ScoreScale').ScoreScaleData | null;
 }
 
 type CharModal = CharDetail & { system?: string };

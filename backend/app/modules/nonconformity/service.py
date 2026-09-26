@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.econ import config_value
@@ -213,7 +213,7 @@ async def verify(db: AsyncSession, nc: Nonconformity, verified_by: str | None,
     return nc
 
 
-# ═══════════════════════ §17.9 (УК-59/60): автоэскалация по SLA ═══════════════════════
+# ═══════════════════ §17.9 (УК-59, УК-60): автоэскалация по SLA ═══════════════════
 
 async def auto_escalate_overdue(db: AsyncSession) -> int:
     """Ежедневная задача (nonconformity/tasks.py): несоответствия в «Оценено» (STATUS_EVALUATED)
@@ -233,27 +233,91 @@ async def auto_escalate_overdue(db: AsyncSession) -> int:
         _log(nc, "system", "auto_escalate_sla", nc.status)
         nc.sla_escalated = True
         nc.sla_escalated_at = _now()
-        _notify_sla_escalation(nc)
+        await _notify_sla_escalation(db, nc)
     if overdue:
         await db.commit()
     return len(overdue)
 
 
-def _notify_sla_escalation(nc: Nonconformity) -> None:
-    from app.infrastructure.integrations.notifications import get_notification_port
+async def _notify_sla_escalation(db: AsyncSession, nc: Nonconformity) -> None:
+    """Уведомление об автоэскалации — через журнал отправок (УК-15), в той же транзакции,
+    что и отметка эскалации: журнал и карточка не расходятся."""
+    from app.modules.notifications import dispatch
     from app.shared.notification_events import EVENT_NONCONFORMITY_SLA_ESCALATED, EVENT_TITLES
     from app.shared.ports import NotificationEvent
 
     recipient = (nc.owner or "").strip()
     if not recipient:
         return
-    get_notification_port().notify(NotificationEvent(
+    await dispatch(db, NotificationEvent(
         event_type=EVENT_NONCONFORMITY_SLA_ESCALATED, recipient=recipient,
         subject=f"{EVENT_TITLES[EVENT_NONCONFORMITY_SLA_ESCALATED]}: {nc.system_name} / {nc.subcharacteristic}",
         body=f"Решение по несоответствию просрочено (SLA до {nc.sla_due.strftime('%d.%m.%Y')}, "
              f"level={nc.level}) — автоматически эскалировано к топ-менеджменту.",
         entity_type="nonconformity", entity_id=str(nc.id),
-    ))
+    ), commit=False)
+
+
+async def auto_escalate_overdue_measures(db: AsyncSession) -> int:
+    """УК-60: воркер находит не только несоответствия, но и МЕРЫ, просроченные сверх SLA.
+
+    Мера одобрена, не исполнена, срок (`due_on`) прошёл больше чем на SLA дней → карточка
+    поднимается к топ-менеджменту тем же маршрутом, что §17.2 (`escalated=True`), с записью в
+    history «эскалировано автоматически по SLA» и уведомлением через журнал (УК-15).
+    Критичность — тот же признак, что маршрутизация (В-64): блокирующая мера или связанное
+    CRITICAL-несоответствие → короткий SLA (3 дня), иначе обычный (30). Ответственный не
+    меняется, Ц_ОМ считается отдельно (УК-49) — автоэскалация её не дублирует."""
+    from app.modules.governance import EXECUTION_DONE, STATUS_APPROVED
+    from app.modules.notifications import emit
+    from app.shared.notification_events import EVENT_MEASURE_SLA_ESCALATED, RECIPIENT_TOP_MANAGEMENT
+
+    sla_minor = int(await config_value(db, "nc_sla_days", 30) or 30)
+    sla_critical = int(await config_value(db, "nc_sla_days_critical", 3) or 3)
+    now = _now()
+    candidates = list((await db.execute(
+        select(Proposal).where(
+            Proposal.status == STATUS_APPROVED,
+            Proposal.due_on.is_not(None),
+            Proposal.due_on < now - timedelta(days=min(sla_minor, sla_critical)),
+            Proposal.escalated.is_(False),
+            or_(Proposal.execution.is_(None), Proposal.execution != EXECUTION_DONE),
+        )
+    )).scalars().all())
+    if not candidates:
+        return 0
+    critical_ids = set((await db.execute(
+        select(Nonconformity.proposal_id).where(
+            Nonconformity.proposal_id.in_([c.id for c in candidates]),
+            Nonconformity.level == LEVEL_CRITICAL,
+        )
+    )).scalars().all())
+
+    escalated = 0
+    for p in candidates:
+        if any(h.get("field") == "autoEscalatedSla" for h in (p.history or [])):
+            continue  # один раз на карточку: после решения топа повторно не поднимаем
+        critical = p.is_blocking_override or p.id in critical_ids
+        sla_days = sla_critical if critical else sla_minor
+        days_overdue = (now - p.due_on).days
+        if days_overdue <= sla_days:
+            continue
+        reason = (f"Эскалировано автоматически по SLA: просрочка {days_overdue} дн. при SLA "
+                  f"{sla_days} дн. ({'критичная' if critical else 'минорная'} мера)")
+        p.escalated = True
+        p.escalation_reason = reason
+        p.escalation_decision = None
+        p.history = list(p.history or []) + [{
+            "at": now.isoformat(), "by": "система (SLA)", "field": "autoEscalatedSla",
+            "from": None, "to": reason,
+        }]
+        title = p.risk_title or p.metric_name or p.system_name or "мера"
+        await emit(db, EVENT_MEASURE_SLA_ESCALATED, RECIPIENT_TOP_MANAGEMENT,
+                   entity_type="proposal", entity_id=str(p.id), commit=False,
+                   title=title, system=p.system_name or "—", days_overdue=days_overdue, sla_days=sla_days)
+        escalated += 1
+    if escalated:
+        await db.commit()
+    return escalated
 
 
 # ═══════════════════════ Воронка замкнутости (§5, виджет 6) ═══════════════════════

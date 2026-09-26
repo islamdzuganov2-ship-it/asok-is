@@ -1,4 +1,5 @@
-"""ТЗ v19 УК-06/УК-07 — двухуровневая свёртка балла (Р-6, docs/ТЗ_19 §0).
+"""ТЗ v19 УК-02, УК-06, УК-07 — двухуровневая свёртка балла (Р-6, docs/ТЗ_19 §0), единая для всех
+экранов и выгрузок; шкала прочтения интегральной цифры (УК-03).
 
 Заменяет плоское среднее (`assessment/router.py` до ТЗ v19: `sum(x)/len(x)`, равнозначное для
 всех подхарактеристик и всех ИС) на:
@@ -132,7 +133,7 @@ def portfolio_score(
 def measure_weight(
     characteristic_weight: float, criticality_weight: float, effort_hours: float | None,
 ) -> float | None:
-    """«Вес меры» (п.13, УК-13): характеристика × критичность ИС × трудоёмкость — эвристика для
+    """«Вес меры» (п.13, УК-31): характеристика × критичность ИС × трудоёмкость — эвристика для
     сравнения нагрузки исполнителей («5 сложных» vs «15 лёгких» — считать надо не поштучно), а не
     метрика из ГОСТ. Подхарактеристику взять негде: Proposal хранит только characteristic (см.
     governance/models.py) — попытка сопоставить metric_name с подхарактеристикой была бы хрупким
@@ -142,3 +143,51 @@ def measure_weight(
     if effort_hours is None:
         return None
     return round(characteristic_weight * criticality_weight * effort_hours, 4)
+
+
+# ── Шкала прочтения интегральной цифры (ТЗ v19 п.1, УК-03) ──
+# Пороги — те же, что у уровня отдельной метрики (quality.calculation.map_to_level), объявленные
+# теперь и для интегральной цифры: иначе «62% — это хорошо?» остаётся без ответа (причина 6 п.1).
+READING_BANDS: tuple[tuple[float, float, str], ...] = (
+    (0.0, 21.0, "Низкий уровень"),
+    (21.0, 41.0, "Ниже среднего"),
+    (41.0, 61.0, "Средний уровень"),
+    (61.0, 81.0, "Выше среднего"),
+    (81.0, 100.0, "Высокий уровень"),
+)
+
+
+def reading_level(score_pct: float | None) -> str:
+    if score_pct is None:
+        return "Нет данных"
+    for low, high, label in reversed(READING_BANDS):
+        if score_pct >= low:
+            return label
+    return READING_BANDS[0][2]
+
+
+def score_reading(
+    score_pct: float | None, *, previous_pct: float | None = None, comparable_pct: float | None = None,
+    target_pct: float | None = None, compared_systems: int = 0, total_systems: int = 0,
+    previous_periods: dict[str, str] | None = None,
+) -> dict:
+    """Как читать цифру (УК-03): уровень словами, полосы порогов, цель и дельта к прошлому периоду.
+
+    Дельта честная: сравниваются ОДНИ И ТЕ ЖЕ ИС — у которых есть прошлый период (`compared`
+    из `total`), свёрнутые той же формулой; «текущий» для дельты (`comparable_pct`) — балл
+    именно этих ИС, а не всего портфеля, иначе новая ИС в портфеле выглядела бы как изменение."""
+    delta = (round(comparable_pct - previous_pct, 1)
+             if comparable_pct is not None and previous_pct is not None else None)
+    return {
+        "score": score_pct,
+        "level": reading_level(score_pct),
+        "bands": [{"from": lo, "to": hi, "label": label} for lo, hi, label in READING_BANDS],
+        "target": target_pct,
+        "gapToTarget": round(score_pct - target_pct, 1) if score_pct is not None and target_pct is not None else None,
+        "previous": previous_pct,
+        "comparableCurrent": comparable_pct,
+        "delta": delta,
+        "comparedSystems": compared_systems,
+        "totalSystems": total_systems,
+        "previousPeriods": previous_periods or {},
+    }

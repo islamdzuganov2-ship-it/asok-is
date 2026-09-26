@@ -47,18 +47,52 @@ export const numericText = { fontVariantNumeric: 'tabular-nums' } as const;
  * числа — арифметически, всё остальное — локализованным сравнением строк (ru).
  *
  * Использование: `sorter: sorterFor((r) => r.score)` вместо `sorter: (a, b) => a.score - b.score`.
+ *
+ * ТЗ v19 п.12 (УК-28): «нет данных» — в конец НЕЗАВИСИМО от направления. antd при сортировке по
+ * убыванию переворачивает знак компаратора целиком, и без поправки строки без данных взлетали
+ * наверх. Поэтому компаратор принимает третий аргумент antd — направление — и для пустых
+ * значений отдаёт знак, который после переворота всё равно оставит их внизу. Строки сравниваются
+ * без учёта регистра и с «ё» = «е» на первичном уровне (Intl.Collator 'ru', sensitivity: base).
  */
+const RU = new Intl.Collator('ru', { sensitivity: 'base', numeric: true });
+
+export type SortDirection = 'ascend' | 'descend' | null | undefined;
+
+export function compareValues(
+  av: string | number | boolean | null | undefined,
+  bv: string | number | boolean | null | undefined,
+  direction?: SortDirection,
+): number {
+  const aMissing = av === null || av === undefined || (typeof av === 'number' && Number.isNaN(av));
+  const bMissing = bv === null || bv === undefined || (typeof bv === 'number' && Number.isNaN(bv));
+  const last = direction === 'descend' ? -1 : 1;   // знак «в конец» с учётом переворота antd
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return last;
+  if (bMissing) return -last;
+  if (typeof av === 'number' && typeof bv === 'number') return av - bv;
+  if (typeof av === 'boolean' || typeof bv === 'boolean') return Number(av) - Number(bv);
+  return RU.compare(String(av), String(bv));
+}
+
 export function sorterFor<T>(accessor: (row: T) => string | number | boolean | null | undefined) {
-  return (a: T, b: T): number => {
-    const av = accessor(a);
-    const bv = accessor(b);
-    const aMissing = av === null || av === undefined;
-    const bMissing = bv === null || bv === undefined;
-    if (aMissing && bMissing) return 0;
-    if (aMissing) return 1;
-    if (bMissing) return -1;
-    if (typeof av === 'number' && typeof bv === 'number') return av - bv;
-    if (typeof av === 'boolean' || typeof bv === 'boolean') return Number(av) - Number(bv);
-    return String(av).localeCompare(String(bv), 'ru');
-  };
+  return (a: T, b: T, direction?: SortDirection): number => compareValues(accessor(a), accessor(b), direction);
+}
+
+/** Стабильная сортировка массива тем же компаратором — для не-antd списков (теплокарта, экспорт). */
+export function sortRows<T>(
+  rows: readonly T[], accessor: (row: T) => string | number | boolean | null | undefined,
+  direction: 'ascend' | 'descend',
+): T[] {
+  const sign = direction === 'descend' ? -1 : 1;
+  return rows
+    .map((row, i) => ({ row, i }))
+    .sort((x, y) => {
+      const av = accessor(x.row);
+      const bv = accessor(y.row);
+      const aMissing = av === null || av === undefined;
+      const bMissing = bv === null || bv === undefined;
+      if (aMissing || bMissing) return aMissing === bMissing ? x.i - y.i : aMissing ? 1 : -1;
+      return sign * compareValues(av, bv) || x.i - y.i;
+    })
+    .map((x) => x.row);
 }

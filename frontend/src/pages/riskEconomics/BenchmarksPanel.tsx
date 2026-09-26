@@ -75,6 +75,10 @@ export const BenchmarksPanel: React.FC = () => {
     { title: 'Размер компании', dataIndex: 'companySizeClass', width: 140,
       sorter: sorterFor((r: MarketBenchmark) => r.companySizeClass),
       render: (v?: string | null) => v || <Text type="secondary">любой</Text> },
+    // УК-25: тот же справочник служит источником типовых ставок — разрез по линии и отрасли.
+    { title: 'Линия / отрасль', key: 'lineIndustry', width: 150,
+      render: (_: unknown, r: MarketBenchmark) => (r.kind === 'SUPPORT_RATE_PER_HOUR'
+        ? `${r.line || 'любая'} · ${r.industry || 'любая'}${r.qualification ? ` · ${r.qualification}` : ''}` : '—') },
     numericColumn({ title: 'Значение', dataIndex: 'value', width: 120,
       sorter: sorterFor((r: MarketBenchmark) => r.value),
       render: (v: number, r: MarketBenchmark) => `${fmtNum(v)} ${r.unit}` }),
@@ -116,6 +120,21 @@ export const BenchmarksPanel: React.FC = () => {
           </Form.Item>
           <Form.Item name="companySizeClass" label={<FieldHint title="Сегмент компаний, к которому относится рыночное значение — сравнение точнее, когда размер совпадает с вашей организацией. Необязательно.">Размер компании (для ставок — п.10; необязательно)</FieldHint>}>
             <Select allowClear options={COMPANY_SIZE_CLASSES} placeholder="Любой размер" />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.kind !== cur.kind}>
+            {({ getFieldValue }) => getFieldValue('kind') === 'SUPPORT_RATE_PER_HOUR' && (
+              <Space style={{ width: '100%' }} size="middle" wrap>
+                <Form.Item name="line" label={<FieldHint title="УК-25: типовая ставка по линии поддержки — подставляется при «Подставить типовые». Пусто — для любой линии.">Линия</FieldHint>} style={{ minWidth: 110 }}>
+                  <Select allowClear placeholder="любая" options={['L1', 'L2', 'L3'].map((v) => ({ value: v, label: v }))} />
+                </Form.Item>
+                <Form.Item name="industry" label="Отрасль" style={{ minWidth: 160 }}>
+                  <Input placeholder="любая (напр. «Банки»)" />
+                </Form.Item>
+                <Form.Item name="qualification" label="Квалификация" style={{ minWidth: 150 }}>
+                  <Input placeholder="напр. «senior»" />
+                </Form.Item>
+              </Space>
+            )}
           </Form.Item>
           <Space style={{ width: '100%' }} size="middle">
             <Form.Item name="value" label={<FieldHint title="Числовое значение рыночного бенчмарка в выбранной единице.">Значение</FieldHint>} rules={[{ required: true }]} style={{ flex: 1, minWidth: 140 }}>

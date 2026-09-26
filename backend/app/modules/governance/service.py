@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 
 from pydantic.alias_generators import to_camel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.governance.models import (
@@ -34,11 +34,13 @@ from app.modules.governance.schemas import (
     MetaIn,
     ProposalCreate,
     SystemicScopeIn,
+    TakeToWorkIn,
     TaskUpdateIn,
 )
 from app.infrastructure.integrations.notifications import get_notification_port
 from app.modules.iam import get_role_permissions, resolve_user_id
 from app.modules.llm import generate_executor_brief
+from app.modules.notifications import dispatch
 from app.shared.dates import parse_ru_date
 from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
 from app.shared.notification_events import (
@@ -48,6 +50,7 @@ from app.shared.notification_events import (
     EVENT_MEASURE_EXECUTOR_BRIEF_READY,
     EVENT_MEASURE_REJECTED,
     EVENT_TITLES,
+    RECIPIENT_TOP_MANAGEMENT,
 )
 from app.shared.ports import NotificationEvent
 
@@ -62,19 +65,20 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _notify(event_type: str, recipient: str | None, p: Proposal, body: str) -> None:
-    """Эмитит событие уведомления через порт (ТЗ v19 п.6) — доставка вне зоны ответственности
-    домена (см. shared/ports.py, infrastructure/integrations/notifications). Без получателя
+async def _notify(db: AsyncSession, event_type: str, recipient: str | None, p: Proposal, body: str) -> None:
+    """Эмитит событие уведомления (ТЗ v19 п.6, УК-15/16) через журнал отправок: доставка — за
+    портом канала, запись в журнале — всегда (modules/notifications). Без получателя
     (owner/created_by не заполнены) событие не эмитим — заглушка молча «доставила» бы уведомление
     в никуда, это маскирует пробел в данных, а не сообщает о нём (см. resolve_user_id — тот же
-    принцип: честное отсутствие, не тихая имитация действия)."""
+    принцип: честное отсутствие, не тихая имитация действия). Вызывается ПОСЛЕ фиксации
+    решения: сбой канала не откатывает решение по мере."""
     if not recipient or not recipient.strip():
         return
-    get_notification_port().notify(NotificationEvent(
+    await dispatch(db, NotificationEvent(
         event_type=event_type, recipient=recipient.strip(),
         subject=f"{EVENT_TITLES[event_type]}: {p.risk_title or p.metric_name or p.system_name}",
         body=body, entity_type="proposal", entity_id=str(p.id),
-    ))
+    ), port=get_notification_port())
 
 
 async def list_proposals(
@@ -253,8 +257,8 @@ async def decide(
         p.delta_ale_at_decision = p.delta_ale_cash
     await db.commit()
     await db.refresh(p)
-    _notify(
-        EVENT_MEASURE_APPROVED if approve else EVENT_MEASURE_REJECTED, p.created_by, p,
+    await _notify(
+        db, EVENT_MEASURE_APPROVED if approve else EVENT_MEASURE_REJECTED, p.created_by, p,
         f"Решение: {username}. " + (comment.strip() if comment else "без комментария."),
     )
     return p
@@ -411,7 +415,7 @@ async def rewrite_for_executor(db: AsyncSession, p: Proposal, user_id: uuid.UUID
     p.executor_brief_generated_at = _now()
     await db.commit()
     await db.refresh(p)
-    _notify(EVENT_MEASURE_EXECUTOR_BRIEF_READY, p.owner, p, text)
+    await _notify(db, EVENT_MEASURE_EXECUTOR_BRIEF_READY, p.owner, p, text)
     return p
 
 
@@ -438,7 +442,7 @@ async def escalate(db: AsyncSession, p: Proposal, reason: str, username: str) ->
     await db.refresh(p)
     # Эскалация адресована РОЛИ (SoD v12 §5.1), не конкретному человеку — получателя по
     # имени здесь нет и не должно быть; порт получает нейтральную роль-подпись.
-    _notify(EVENT_MEASURE_ESCALATED, "топ-менеджмент", p, reason)
+    await _notify(db, EVENT_MEASURE_ESCALATED, RECIPIENT_TOP_MANAGEMENT, p, reason)
     return p
 
 
@@ -453,7 +457,7 @@ async def decide_escalation(db: AsyncSession, p: Proposal, decision: str, commen
     p.escalation_decided_by = username
     await db.commit()
     await db.refresh(p)
-    _notify(EVENT_MEASURE_ESCALATION_DECIDED, p.created_by, p,
+    await _notify(db, EVENT_MEASURE_ESCALATION_DECIDED, p.created_by, p,
             f"Решение: {username}. {comment.strip() if comment else ''}")
     return p
 
@@ -586,3 +590,191 @@ async def apply_department(db: AsyncSession, p: Proposal) -> Proposal:
         await db.commit()
         await db.refresh(p)
     return p
+
+
+# ═══════════════════ «В работу» из карточки меры (ТЗ v19 п.16, УК-38, УК-18, УК-17, УК-40) ═══════════════════
+
+def _due_note(p: Proposal) -> str:
+    if p.due_on:
+        return f"до {p.due_on.strftime('%d.%m.%Y')}"
+    if p.due_date:
+        return f"до {p.due_date}"
+    return "не назначен"
+
+
+def preview_executor_brief(p: Proposal) -> str:
+    """Текст для исполнителя БЕЗ сохранения — назначающий просматривает и правит его перед
+    отправкой (В-51: LLM ошибается, а исполнитель получит текст как инструкцию). Недоступность
+    LLM не блокирует: generate_executor_brief отдаёт детерминированный текст из полей меры."""
+    return generate_executor_brief(
+        title=p.risk_title or p.metric_name or p.system_name,
+        problem=p.rationale or "", ask=p.expectation or "", due_note=_due_note(p),
+    )
+
+
+def _normalize_due(value: str | None) -> str | None:
+    """Срок из формы: ISO (ГГГГ-ММ-ДД) приводится к ДД.ММ.ГГГГ — формату due_date (УК-36)."""
+    if not value:
+        return None
+    value = value.strip()
+    if len(value) >= 10 and value[4] == "-" and value[7] == "-":
+        return f"{value[8:10]}.{value[5:7]}.{value[0:4]}"
+    return value
+
+
+async def _user_id_by_name(db: AsyncSession, name: str) -> uuid.UUID | None:
+    from app.modules.iam import User
+
+    row = (await db.execute(
+        select(User.id).where(User.is_active.is_(True), or_(User.full_name == name, User.username == name)).limit(1)
+    )).first()
+    return row[0] if row else None
+
+
+def measure_calendar(p: Proposal, attendee_email: str | None = None) -> str | None:
+    """.ics со сроком меры (УК-17). Без срока приглашать некуда — None."""
+    if p.due_on is None:
+        return None
+    from app.modules.notifications import build_measure_event
+
+    title = p.risk_title or p.metric_name or p.system_name
+    desc = f"ИС «{p.system_name}». Ответственный: {p.owner or 'не назначен'}."
+    if p.executor_brief:
+        desc += "\n\n" + p.executor_brief
+    sequence = sum(1 for h in (p.history or []) if h.get("field") == "dueDate")
+    return build_measure_event(
+        proposal_id=str(p.id), summary=f"Срок меры: {title}", description=desc,
+        due=p.due_on.date(), attendee_email=attendee_email, attendee_name=p.owner, sequence=sequence,
+    )
+
+
+async def send_calendar_invite(db: AsyncSession, p: Proposal) -> bool:
+    """Приглашение в календарь ответственного через тот же NotificationPort (УК-17)."""
+    from app.modules.notifications import emit
+    from app.modules.notifications.service import resolve_address
+    from app.shared.notification_events import EVENT_MEASURE_CALENDAR
+    from app.shared.ports import NotificationAttachment
+
+    if not p.owner or p.due_on is None:
+        return False
+    address, _ = await resolve_address(db, p.owner)
+    ics = measure_calendar(p, address)
+    row = await emit(
+        db, EVENT_MEASURE_CALENDAR, p.owner, entity_type="proposal", entity_id=str(p.id),
+        port=get_notification_port(),
+        attachments=(NotificationAttachment("measure.ics", "text/calendar; method=REQUEST", ics),),
+        title=p.risk_title or p.metric_name or p.system_name, due=p.due_on.strftime("%d.%m.%Y"),
+    )
+    return row is not None
+
+
+async def take_to_work(
+    db: AsyncSession, p: Proposal, data: TakeToWorkIn, username: str, user_id: uuid.UUID | None,
+) -> tuple[Proposal, object]:
+    """«В работу» — одно действие без повторного ввода данных (УК-38):
+      1) исполнитель, срок, трудоёмкость (п.13) — с историей изменений;
+      2) текст для исполнителя: поправленный назначающим или сформированный; управленческая
+         формулировка (rationale/expectation) НЕ затирается — хранятся обе;
+      3) запись на внутреннем Ганте: мера со сроком и task_ref от TaskSyncPort (УК-18; внешний
+         менеджер задач не подключён — заглушка вернёт локальную ссылку);
+      4) ответственный = исполнитель по умолчанию (УК-40);
+      5) уведомление «мера назначена» и приглашение в календарь (УК-15, УК-17);
+      6) проверка перегрузки исполнителя — предупреждение, не запрет (УК-33)."""
+    from app.infrastructure.integrations.tasksync import get_task_sync_port
+    from app.modules.governance.executor_load import overload_check
+    from app.modules.notifications import emit
+    from app.shared.notification_events import EVENT_MEASURE_ASSIGNED
+
+    if p.status != STATUS_APPROVED:
+        raise ConflictError("В работу можно взять только одобренную меру")
+    owner = (data.owner or "").strip()
+    if not owner:
+        raise ValidationError("Укажите исполнителя")
+    if data.effort_hours is not None and data.effort_hours <= 0:
+        raise ValidationError("Трудоёмкость должна быть больше нуля")
+
+    _apply_with_history(p, {"owner": owner, "due_date": _normalize_due(data.due_date)}, username)
+    p.owner_user_id = data.owner_user_id or await _user_id_by_name(db, owner) or p.owner_user_id
+    if p.executed_by_user_id is None:
+        p.executed_by_user_id = p.owner_user_id      # УК-40: ОМ = исполнитель по умолчанию
+    if data.effort_hours is not None:
+        p.effort_hours = data.effort_hours
+        p.effort_hours_set_by = user_id
+        p.effort_hours_set_at = _now()
+    brief = (data.executor_brief or "").strip()
+    if brief or not p.executor_brief:
+        p.executor_brief = brief or preview_executor_brief(p)
+        p.executor_brief_generated_by = user_id
+        p.executor_brief_generated_at = _now()
+    p.task_ref = get_task_sync_port().push_task(
+        "proposal", str(p.id), p.risk_title or p.metric_name or p.system_name, owner,
+        p.due_on.strftime("%Y-%m-%d") if p.due_on else None,
+    )
+    p.taken_to_work_at = _now()
+    p.history = list(p.history or []) + [{
+        "at": _now().isoformat(), "by": username, "field": "takenToWork", "from": None,
+        "to": f"в работу: {owner}" + (f", {p.effort_hours:g} ч" if p.effort_hours else ""),
+    }]
+    await db.commit()
+    await db.refresh(p)
+
+    check = await overload_check(db, owner, 0, exclude_proposal_id=None)
+    await emit(
+        db, EVENT_MEASURE_ASSIGNED, owner, entity_type="proposal", entity_id=str(p.id),
+        port=get_notification_port(),
+        title=p.risk_title or p.metric_name or p.system_name, system=p.system_name,
+        due=_due_note(p), effort=f"{float(p.effort_hours):g} ч" if p.effort_hours else "не оценена",
+        brief=p.executor_brief or "",
+    )
+    if data.send_calendar:
+        await send_calendar_invite(db, p)
+    return p, check
+
+
+# ═══════════════════ Приоритизация бюджетных заявок (ТЗ v19 §17.5, УК-54) ═══════════════════
+
+async def budget_queue(db: AsyncSession, budget: float | None = None) -> "BudgetQueueOut":
+    """Конкурирующие заявки на CAPEX — в порядке того же составного веса, что очередь мер
+    (УК-52: вес характеристики × деньги под риском × надбавка за просрочку). Распределение
+    бюджета остаётся ВНЕ системы — это приоритизация списка для тех, кто бюджет распределяет:
+    накопленный CAPEX показывает, до какой строки хватает заданной суммы."""
+    from app.modules.governance.schemas import BudgetQueueOut, BudgetQueueRowOut
+
+    rows = list((await db.execute(
+        select(Proposal).where(
+            Proposal.status.in_((STATUS_PENDING, STATUS_APPROVED)),
+            Proposal.capex.is_not(None), Proposal.capex > 0,
+            or_(Proposal.execution.is_(None), Proposal.execution != EXECUTION_DONE),
+        )
+    )).scalars().all())
+    weight_by_char = await _priority_weight_lookup(db)
+    triples = [(p, *(await _priority_components(db, p, weight_by_char))) for p in rows]
+    _attach_priority_fields(triples)
+    triples.sort(key=lambda t: t[3], reverse=True)
+
+    out: list[BudgetQueueRowOut] = []
+    cumulative = 0.0
+    now = _now()
+    for rank, (p, w, money, key) in enumerate(triples, start=1):
+        capex = float(p.capex)
+        cumulative += capex
+        overdue = p.execution != EXECUTION_DONE and p.due_on is not None and p.due_on < now
+        explained = (f"вес «{p.characteristic or '—'}» {w:g} × деньги под риском {money:,.0f} ₽/год"
+                     .replace(",", " ") + (" × 2 (просрочена)" if overdue else ""))
+        out.append(BudgetQueueRowOut(
+            rank=rank, proposal_id=p.id, title=p.risk_title or p.metric_name or p.system_name,
+            system_name=p.system_name, characteristic=p.characteristic, status=p.status,
+            capex=capex, opex_per_year=float(p.opex_per_year) if p.opex_per_year is not None else None,
+            rosi=float(p.rosi) if p.rosi is not None else None,
+            characteristic_weight=round(w, 4), money_at_risk=round(money, 2), overdue=overdue,
+            priority_key=round(key, 2), explained=explained, cumulative_capex=round(cumulative, 2),
+            within_budget=(cumulative <= budget) if budget is not None else None,
+            is_atypical=bool(getattr(p, "priority_is_atypical", False)),
+        ))
+    note = ("Порядок — составной вес меры (как очередь мер): характеристика по ГОСТ × деньги под "
+            "риском × надбавка за просрочку. Система не распределяет бюджет — показывает, в каком "
+            "порядке заявки закрывают больше риска на рубль веса.")
+    if budget is not None:
+        fit = sum(1 for r in out if r.within_budget)
+        note += f" В бюджет {budget:,.0f} ₽ укладываются первые {fit} из {len(out)}.".replace(",", " ")
+    return BudgetQueueOut(budget=budget, total_capex=round(cumulative, 2), rows=out, note=note)

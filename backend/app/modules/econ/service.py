@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,8 @@ from app.modules.econ.models import (
     EXECUTOR_TYPES,
     EXECUTOR_VENDOR,
     LINES,
+    RATE_SOURCE_MANUAL,
+    RATE_SOURCE_REFERENCE,
     SIZE_CLASSES,
     BusinessProcess,
     BusinessProcessCost,
@@ -42,8 +44,12 @@ from app.modules.econ.schemas import (
     BusinessProcessCreate,
     BusinessProcessUpdate,
     EnterpriseProfileIn,
+    FillDefaultRatesIn,
+    FillDefaultRatesOut,
     MarketBenchmarkCreate,
     MarketBenchmarkOut,
+    RateDeviationOut,
+    RateDeviationsOut,
     SupportRateIn,
     SupportRateUpdate,
     SystemBpCreate,
@@ -111,6 +117,28 @@ DEFAULT_CONFIG: dict[str, dict] = {
         "value": {"FULL": 40, "PROFILE": 16, "SCREENING": 6},
         "description": "Норматив ч/ч аналитика на оценку ИС по глубине (RE-19): полная / профильная / "
                         "скрининг. Факт вводится при завершении оценки",
+    },
+    # ТЗ v19 п.10 (УК-26): порог отчёта «ставки, отличающиеся от типовых».
+    "rate_deviation_threshold_pct": {
+        "value": 20,
+        "description": "Порог отчёта отклонений ставок от типовых, % (УК-26)",
+    },
+    # ТЗ v19 п.13 (УК-33, УК-22): норма загрузки исполнителя — часы открытых мер по размеру
+    # предприятия (В-42: норма «на человека», от размера). Выше — перегружен, ниже половины — свободен.
+    "executor_load_norm_hours": {
+        "value": {"MICRO": 120, "SMALL": 140, "MEDIUM": 160, "LARGE": 160, "default": 160},
+        "description": "Норма часов открытых мер на исполнителя по размеру предприятия (УК-33). Предложение",
+    },
+    # ТЗ v19 п.6 (УК-15): за сколько дней до срока меры уведомлять ответственного.
+    "notify_due_soon_days": {
+        "value": 3,
+        "description": "За сколько дней до срока меры уходит уведомление «срок истекает» (УК-15)",
+    },
+    # ТЗ v19 п.1 (УК-03): целевое значение интегрального балла (В-6 б) — отметка на шкале.
+    "quality_score_target": {
+        "value": 0.81,
+        "description": "Цель по интегральному баллу качества, доля 0..1 (УК-03). По умолчанию — "
+                        "нижняя граница «высокого уровня»",
     },
     "nc_review_months": {
         "value": 6,
@@ -362,11 +390,18 @@ async def create_rate(db: AsyncSession, data: SupportRateIn) -> SupportRate:
     return rate
 
 
-async def update_rate(db: AsyncSession, rate: SupportRate, data: SupportRateUpdate) -> SupportRate:
+async def update_rate(db: AsyncSession, rate: SupportRate, data: SupportRateUpdate,
+                      username: str | None = None) -> SupportRate:
     patch = data.model_dump(exclude_unset=True)
     _validate_rate(patch.get("line"), patch.get("executor_type"))
     for field, value in patch.items():
         setattr(rate, field, value)
+    # УК-25: правка значения руками — это и есть подтверждение: ставка перестаёт быть
+    # «по справочнику» и больше не обновляется подстановкой дефолтов.
+    if "rate_per_hour" in patch and rate.source == RATE_SOURCE_REFERENCE:
+        rate.source = RATE_SOURCE_MANUAL
+        rate.confirmed_at = datetime.now(timezone.utc)
+        rate.confirmed_by = username
     await db.commit()
     await db.refresh(rate)
     return rate
@@ -513,6 +548,8 @@ def _validate_benchmark(data: MarketBenchmarkCreate) -> None:
         raise ValidationError(f"Недопустимый тип исполнителя для бенчмарка ставки: {data.dimension}")
     if data.company_size_class is not None and data.company_size_class not in SIZE_CLASSES:
         raise ValidationError(f"Недопустимый класс размера: {data.company_size_class}")
+    if data.line is not None and (data.kind != BENCHMARK_SUPPORT_RATE or data.line not in LINES):
+        raise ValidationError("Линия задаётся только для типовой ставки сопровождения: L1/L2/L3")
 
 
 async def create_benchmark(
@@ -579,6 +616,121 @@ async def compare_support_rate(db: AsyncSession, rate_id: uuid.UUID) -> Benchmar
         if bench is not None:
             size_note = " Рынок не сегментирован по размеру банка — показан общий ориентир."
     return _comparison(float(rate.rate_per_hour), "₽/час", bench, no_own="", note_suffix=size_note)
+
+
+# ═══════════════════ Типовые ставки и контроль отклонений (ТЗ v19 п.10, УК-25, УК-26) ═══════════════════
+
+async def typical_rate(
+    db: AsyncSession, *, line: str, executor_type: str,
+) -> MarketBenchmark | None:
+    """Типовая ставка из справочника (УК-25): размер предприятия × отрасль × линия × исполнитель.
+
+    Размер и отрасль — из профиля предприятия (УК-21, УК-22). Запись с пустым разрезом — ориентир
+    «для любых»; из подходящих берётся самая конкретная (линия важнее размера, размер — отрасли),
+    при равенстве — самая свежая. Так рынок, не сегментированный по размеру банка (В-30а), всё
+    равно даёт дефолт, но размерно-специфичная запись, если появится, его вытеснит."""
+    profile = await get_enterprise_profile(db)
+    rows = list((await db.execute(
+        select(MarketBenchmark).where(
+            MarketBenchmark.kind == BENCHMARK_SUPPORT_RATE,
+            MarketBenchmark.dimension == executor_type,
+        )
+    )).scalars().all())
+
+    def score(b: MarketBenchmark) -> tuple[int, date] | None:
+        s = 0
+        for value, own, weight in ((b.line, line, 4), (b.company_size_class, profile.size_class, 2),
+                                   (b.industry, profile.industry, 1)):
+            if value is None:
+                continue
+            if value != own:
+                return None
+            s += weight
+        return s, b.observed_on
+
+    scored = [(sc, b) for b in rows if (sc := score(b)) is not None]
+    return max(scored, key=lambda x: x[0])[1] if scored else None
+
+
+async def fill_default_rates(db: AsyncSession, data: FillDefaultRatesIn) -> FillDefaultRatesOut:
+    """Подстановка типовых ставок вместо ввода с нуля (УК-25). Для каждой линии L1–L3 без ставки
+    этой связки создаётся ставка «по справочнику, не подтверждена». refresh=True обновляет
+    значения ранее подставленных НЕподтверждённых ставок (например, после смены размера
+    предприятия); подтверждённые и ручные ставки не трогаются никогда."""
+    _validate_rate(None, data.executor_type)
+    scope = (SupportRate.system_id == data.system_id if data.system_id is not None
+             else SupportRate.system_id.is_(None))
+    existing = {
+        r.line: r for r in (await db.execute(
+            select(SupportRate).where(SupportRate.executor_type == data.executor_type, scope)
+        )).scalars().all()
+    }
+    created = updated = 0
+    missing: list[str] = []
+    for line in LINES:
+        ref = await typical_rate(db, line=line, executor_type=data.executor_type)
+        if ref is None:
+            missing.append(line)
+            continue
+        rate = existing.get(line)
+        if rate is None:
+            db.add(SupportRate(
+                system_id=data.system_id, line=line, executor_type=data.executor_type,
+                rate_per_hour=float(ref.value), source=RATE_SOURCE_REFERENCE,
+                reference_benchmark_id=ref.id,
+            ))
+            created += 1
+        elif (data.refresh and rate.source == RATE_SOURCE_REFERENCE and rate.confirmed_at is None
+              and float(rate.rate_per_hour) != float(ref.value)):
+            rate.rate_per_hour = float(ref.value)
+            rate.reference_benchmark_id = ref.id
+            updated += 1
+    await db.commit()
+    return FillDefaultRatesOut(created=created, updated=updated, skipped_no_reference=missing)
+
+
+async def confirm_rate(db: AsyncSession, rate: SupportRate, username: str | None) -> SupportRate:
+    """Подтвердить подставленную из справочника ставку (УК-25): значение остаётся, пометка
+    «не подтверждена» снимается, и подстановка дефолтов её больше не перезапишет."""
+    rate.confirmed_at = datetime.now(timezone.utc)
+    rate.confirmed_by = username
+    await db.commit()
+    await db.refresh(rate)
+    return rate
+
+
+async def rate_deviations(db: AsyncSession, threshold_pct: float | None = None) -> RateDeviationsOut:
+    """Отчёт «ставки, отличающиеся от типовых более чем на N%» (УК-26) — и проверка данных, и
+    повод к переговорам с вендором. Ставка без типовой в справочнике попадает в отчёт отдельной
+    строкой «нет типовой» (не как 0% отклонения), чтобы пробел справочника был виден."""
+    if threshold_pct is None:
+        threshold_pct = float(await config_value(db, "rate_deviation_threshold_pct", 20) or 20)
+    profile = await get_enterprise_profile(db)
+    rates = list((await db.execute(
+        select(SupportRate).where(SupportRate.is_active.is_(True)).order_by(SupportRate.line)
+    )).scalars().all())
+    rows: list[RateDeviationOut] = []
+    without = 0
+    for r in rates:
+        ref = await typical_rate(db, line=r.line, executor_type=r.executor_type)
+        own = float(r.rate_per_hour)
+        base = dict(rate_id=r.id, system_id=r.system_id, line=r.line, executor_type=r.executor_type,
+                    vendor=r.vendor, rate_per_hour=own)
+        if ref is None or not float(ref.value):
+            without += 1
+            rows.append(RateDeviationOut(**base, note="нет типовой ставки в справочнике"))
+            continue
+        dev = round((own - float(ref.value)) / float(ref.value) * 100, 1)
+        if abs(dev) <= threshold_pct:
+            continue
+        rows.append(RateDeviationOut(
+            **base, typical_rate=float(ref.value), typical_source=ref.source,
+            typical_observed_on=ref.observed_on, deviation_pct=dev,
+            note=f"{'дороже' if dev > 0 else 'дешевле'} типовой на {abs(dev)}%",
+        ))
+    rows.sort(key=lambda x: abs(x.deviation_pct) if x.deviation_pct is not None else -1, reverse=True)
+    return RateDeviationsOut(threshold_pct=threshold_pct, size_class=profile.size_class,
+                             rows=rows, without_reference=without)
 
 
 def _comparison(

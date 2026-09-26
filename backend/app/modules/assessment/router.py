@@ -35,6 +35,7 @@ from app.modules.quality import (
     ensure_active_version,
     map_to_level,
     portfolio_score,
+    score_reading,
     weight_for,
     weighted_system_score,
 )
@@ -58,7 +59,9 @@ from app.modules.assessment.schemas import (
     PeriodSummaryOut,
     ValueAddIn,
 )
+from app.modules.notifications import emit as notifications_emit
 from app.modules.risk import RiskBase
+from app.shared.notification_events import EVENT_ASSESSMENT_AWAITING_APPROVAL
 from app.modules.systems import System
 from app.shared.periods import (
     PERIOD_LOCKED_MESSAGE,
@@ -89,6 +92,7 @@ def _empty_dashboard() -> dict:
         "characteristics": [],
         "systemDetails": [],
         "periodsUsed": {"distinct": [], "earliest": None, "latest": None, "bySystem": {}},
+        "scoreScale": None,
     }
 
 
@@ -177,12 +181,27 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
         for value, period, system, metric in rows
         if latest_period_per_system.get(str(system.id)) == str(period.id)
     ]
+    # УК-03: прошлый период каждой ИС — для дельты «к прошлому периоду» (та же свёртка).
+    periods_seen: dict[str, list[str]] = defaultdict(list)
+    for _, period, system, _ in rows:
+        seen = periods_seen[str(system.id)]
+        if str(period.id) not in seen:
+            seen.append(str(period.id))
+    previous_rows = [
+        (value, system, metric)
+        for value, period, system, metric in rows
+        if len(periods_seen[str(system.id)]) > 1 and periods_seen[str(system.id)][1] == str(period.id)
+    ]
+    previous_label_by_system = {
+        system.name: period.period for _, period, system, _ in rows
+        if len(periods_seen[str(system.id)]) > 1 and periods_seen[str(system.id)][1] == str(period.id)
+    }
 
     # Дерево: ИС → каноническая характеристика → {подхарактеристика: балл%} (-1 = невозможно измерить).
     # Имена характеристик нормализуются к модели 25010 (DEF-02): дашборд = 8 характеристик, как в моках.
     tree: dict[str, dict[str, dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
     crit_by_name: dict[str, str] = {}
-    # ТЗ v19 п.5 (УК-05): ответственный за ИС — по имени системы (как crit_by_name), а не
+    # ТЗ v19 п.5 (УК-12, УК-14): ответственный за ИС — по имени системы (как crit_by_name), а не
     # общая заглушка на все системы (см. reporting/router.py get_executive_dashboard).
     owner_by_name: dict[str, tuple] = {}
     level_counts: dict[str, int] = defaultdict(int)
@@ -206,7 +225,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     if not tree:
         return _empty_dashboard()
 
-    # Метаданные по каждой ИС: баллы характеристик, итоговый ВЗВЕШЕННЫЙ балл (ТЗ v19 УК-06/07),
+    # Метаданные по каждой ИС: баллы характеристик, итоговый ВЗВЕШЕННЫЙ балл (ТЗ v19 УК-02, УК-06, УК-07),
     # число «низких» метрик. char_scores — по-прежнему плоское среднее ВНУТРИ характеристики
     # (для теплокарты/системных карточек, где сравниваются сами характеристики между собой);
     # sys_meta[name]["score"] — взвешенный балл ИС, а не среднее средних (было: среднее по
@@ -316,6 +335,27 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     # Контракт со фронтом — 0..1 (как и раньше: DashboardPage.tsx делает *100 сам).
     global_health_score = round(portfolio.score / 100, 4) if portfolio.score is not None else 0.0
 
+    # УК-03: шкала прочтения — уровень словами, цель, дельта к прошлому периоду по тем же ИС.
+    previous_scores = _system_scores(previous_rows, weights_by_profile, crit_by_name)
+    common = [n for n, s in previous_scores.items()
+              if s is not None and portfolio_system_scores.get(n) is not None]
+    previous_pct = comparable_pct = None
+    if common:
+        prev_port = portfolio_score({n: previous_scores[n] for n in common}, crit_by_name, DEFAULT_CRITICALITY_WEIGHTS)
+        cur_port = portfolio_score({n: portfolio_system_scores[n] for n in common}, crit_by_name, DEFAULT_CRITICALITY_WEIGHTS)
+        previous_pct = round(prev_port.score, 1) if prev_port.score is not None else None
+        comparable_pct = round(cur_port.score, 1) if cur_port.score is not None else None
+    from app.modules.econ import config_value  # отложенно: econ тянет governance → цикл при старте
+
+    target = await config_value(db, "quality_score_target", 0.81)
+    scale = score_reading(
+        round(portfolio.score, 1) if portfolio.score is not None else None,
+        previous_pct=previous_pct, comparable_pct=comparable_pct,
+        target_pct=round(float(target) * 100, 1) if target is not None else None,
+        compared_systems=len(common), total_systems=len(sys_meta),
+        previous_periods={n: previous_label_by_system[n] for n in common if n in previous_label_by_system},
+    )
+
     distinct_periods = sorted(set(period_label_by_system.values()), key=period_sort_key)
     periods_used = {
         "distinct": distinct_periods,
@@ -326,7 +366,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
 
     return {
         "globalHealthScore": global_health_score,
-        # ТЗ v19 УК-01..03: объяснимая цифра — из чего сложился portfolio-балл (какая ИС сколько
+        # ТЗ v19 УК-01, УК-02, УК-03: объяснимая цифра — из чего сложился portfolio-балл (какая ИС сколько
         # баллов внесла) и, по каждой ИС в systemDetails, из чего сложился её собственный балл.
         "scoreBreakdown": {
             "criticalityWeightApplied": portfolio.criticality_weight_applied,
@@ -341,7 +381,34 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
         "characteristics": characteristics_out,
         "systemDetails": system_details,
         "periodsUsed": periods_used,
+        "scoreScale": scale,
     }
+
+
+def _system_scores(value_rows, weights_by_profile, crit_by_name) -> dict[str, float | None]:
+    """Балл ИС по набору значений — ТА ЖЕ свёртка, что для последнего периода выше (УК-02):
+    канонические характеристики, X в целых процентах, полная модель в знаменателе."""
+    tree: dict[str, dict[str, dict[str, float | None]]] = defaultdict(lambda: defaultdict(dict))
+    for value, system, metric in value_rows:
+        canon = canonical_characteristic(metric.characteristic)
+        if canon is None:
+            continue
+        tree[system.name][canon][metric.subcharacteristic] = (
+            None if value.unmeasurable or value.calculated_x is None else round(float(value.calculated_x) * 100)
+        )
+    out: dict[str, float | None] = {}
+    for name, chars in tree.items():
+        breakdown = weighted_system_score([
+            SubcharScore(
+                characteristic=char_title, subcharacteristic=sub,
+                weight=weight_for(weights_by_profile, crit_by_name.get(name), char_title, sub),
+                x=chars.get(char_title, {}).get(sub),
+            )
+            for char_title, subs_def in QUALITY_MODEL
+            for sub, _formula in subs_def
+        ])
+        out[name] = breakdown.score
+    return out
 
 
 @router.post("/periods", response_model=PeriodOut, status_code=status.HTTP_201_CREATED)
@@ -712,6 +779,12 @@ async def finalize_assessment(
 
     period.status = STATUS_COMPLETE
     await db.commit()
+    # УК-15: «оценка ждёт согласования» — владелец ИС проверяет и согласует результат аналитика.
+    if system is not None:
+        await notifications_emit(
+            db, EVENT_ASSESSMENT_AWAITING_APPROVAL, system.owner, entity_type="assessment_period",
+            entity_id=str(period.id), system=system.name, period=period.period,
+        )
     return PeriodSummaryOut(
         id=period.id,
         system_id=period.system_id,

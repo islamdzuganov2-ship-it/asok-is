@@ -139,12 +139,14 @@ class AleResultOut(_CamelModel):
     max_sle: float | None = None
 
 
-# ── ТЗ v19 п.4: связь теплокарты (ИС × характеристика) с рисками, мерами и деньгами ──
+# ── ТЗ v19 п.4 (УК-10): ячейка теплокарты (ИС × характеристика) как точка входа — баллы
+# подхарактеристик, риски с деньгами и меры по ним ──
 class HeatmapCellMeasureOut(_CamelModel):
     proposal_id: uuid.UUID
     title: str
     status: str
     ale_reduction_share: float | None = None
+    delta_ale: float | None = None        # ALE риска в ячейке × доля снятия — рубли, не только %
     rosi: float | None = None
     verdict: str | None = None
 
@@ -155,15 +157,28 @@ class HeatmapCellRiskOut(_CamelModel):
     title: str
     ale_avg: float | None = None
     ale_p90: float | None = None
+    # Доля ALE риска в ЭТОЙ ячейке: риск на подхарактеристиках n характеристик делится поровну
+    # (В-14) — иначе сумма по ячейкам ИС превышала бы ALE самой ИС (критерий УК-10).
+    ale_in_cell: float | None = None
+    characteristics_count: int = 1
     status: str
     subcharacteristics: list[str]
     measures: list[HeatmapCellMeasureOut]
+
+
+class HeatmapCellSubcharOut(_CamelModel):
+    name: str
+    score: float | None = None            # 0..100; None — не заполнено или неизмеримо
+    unmeasurable: bool = False
 
 
 class HeatmapCellDetailOut(_CamelModel):
     system_name: str
     characteristic: str
     total_ale: float
+    total_delta_ale: float = 0.0
+    period: str | None = None             # период, из которого взяты баллы подхарактеристик
+    subcharacteristics: list[HeatmapCellSubcharOut] = []
     risks: list[HeatmapCellRiskOut]
 
 

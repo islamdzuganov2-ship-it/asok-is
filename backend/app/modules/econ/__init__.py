@@ -35,6 +35,7 @@ from app.modules.econ.router import router
 from app.modules.econ.service import (
     compute_incident_cost,
     config_value,
+    get_enterprise_profile,
     set_config,
     resolve_support_rate,
     seed_econ_defaults,
@@ -78,6 +79,7 @@ __all__ = [
     "resolve_support_rate",
     "compute_incident_cost",
     "config_value",
+    "get_enterprise_profile",
     "set_config",
     # Кокпит (ТЗ v21)
     "cost_dashboard",

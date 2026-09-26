@@ -40,9 +40,12 @@ from app.modules.econ.schemas import (
     EconConfigValueIn,
     EnterpriseProfileIn,
     EnterpriseProfileOut,
+    FillDefaultRatesIn,
+    FillDefaultRatesOut,
     MarketBenchmarkCreate,
     MarketBenchmarkOut,
     PortfolioTrendOut,
+    RateDeviationsOut,
     SupportRateIn,
     SupportRateOut,
     SupportRateUpdate,
@@ -280,18 +283,51 @@ async def create_rate(
     return await service.create_rate(db, payload)
 
 
+# ТЗ v19 п.10 (УК-25, УК-26): литеральные пути — ДО /rates/{rate_id}.
+@router.post("/rates/fill-defaults", response_model=FillDefaultRatesOut)
+async def fill_default_rates(
+    payload: FillDefaultRatesIn,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("econ.ref.edit")),
+):
+    """Подставить типовые ставки из справочника вместо ввода с нуля (УК-25) — с пометкой
+    «по справочнику, не подтверждена»."""
+    return await service.fill_default_rates(db, payload)
+
+
+@router.get("/rates/deviations", response_model=RateDeviationsOut)
+async def rate_deviations(
+    threshold_pct: float | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("view.risk_economics")),
+):
+    """Ставки, отличающиеся от типовых больше чем на порог, и ставки без типовой (УК-26)."""
+    return await service.rate_deviations(db, threshold_pct)
+
+
 @router.patch("/rates/{rate_id}", response_model=SupportRateOut)
 async def update_rate(
     rate_id: uuid.UUID,
     payload: SupportRateUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("econ.ref.edit")),
+    user: dict = Depends(require_permission("econ.ref.edit")),
 ):
     rate = await service.get_rate_or_404(db, rate_id)
-    return await service.update_rate(db, rate, payload)
+    return await service.update_rate(db, rate, payload, user.get("username"))
 
 
-# ═══════════════════════ Рыночные бенчмарки (ТЗ v19 п.9-10, В-30а) ═══════════════════════
+@router.post("/rates/{rate_id}/confirm", response_model=SupportRateOut)
+async def confirm_rate(
+    rate_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("econ.ref.edit")),
+):
+    """Подтвердить ставку, подставленную из справочника (УК-25)."""
+    rate = await service.get_rate_or_404(db, rate_id)
+    return await service.confirm_rate(db, rate, user.get("username"))
+
+
+# ═══════════════ Рыночные бенчмарки (ТЗ v19 п.9-10, УК-23, УК-24, В-30а) ═══════════════
 # Структура без числового наполнения — таблица пуста, пока источники не согласованы заказчиком.
 
 @router.get("/benchmarks", response_model=list[MarketBenchmarkOut])

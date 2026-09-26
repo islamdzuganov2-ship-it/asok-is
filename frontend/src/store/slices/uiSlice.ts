@@ -12,6 +12,14 @@ const ORDER_KEY = 'asok_nav_order';
 const GROUPS_KEY = 'asok_nav_groups';
 const THEME_KEY = 'asok_theme';
 const FONT_KEY = 'asok_font';
+/** ТЗ v19 п.14 (УК-34): язык карточек — технический / управленческий; null — по роли. */
+const LANG_KEY = 'asok_lang_mode';
+export type LangMode = 'technical' | 'executive';
+
+function loadLangMode(): LangMode | null {
+  const v = localStorage.getItem(LANG_KEY);
+  return v === 'technical' || v === 'executive' ? v : null;
+}
 
 function loadDataMode(): DataMode {
   return localStorage.getItem(DATA_MODE_KEY) === 'live' ? 'live' : 'mock';
@@ -137,6 +145,8 @@ interface UiState {
   /** Ключ выбранного шрифта (theme/themes.ts FONT_OPTIONS). */
   fontKey: string;
   dataMode: DataMode;
+  /** Явный выбор языка карточек (УК-34); null — по умолчанию для роли. */
+  langMode: LangMode | null;
   /** Разделы, скрытые пользователем (ДЕФ-12). */
   hiddenSections: HiddenMap;
   /** Порядок разделов (ДЕФ-14). Ключи вне списка идут следом в исходном порядке. */
@@ -153,6 +163,7 @@ const uiSlice = createSlice({
     themeName: loadThemeName(),
     fontKey: loadFontKey(),
     dataMode: loadDataMode(),
+    langMode: loadLangMode(),
     hiddenSections: loadHidden(),
     navOrder: loadOrder(),
     navGroups: loadNavGroups(),
@@ -172,6 +183,10 @@ const uiSlice = createSlice({
     setDataMode(state, action: PayloadAction<DataMode>) {
       state.dataMode = action.payload;
       localStorage.setItem(DATA_MODE_KEY, action.payload);
+    },
+    setLangMode(state, action: PayloadAction<LangMode>) {
+      state.langMode = action.payload;
+      localStorage.setItem(LANG_KEY, action.payload);
     },
     /** Показать/скрыть раздел меню (ДЕФ-12). */
     setSectionVisible(state, action: PayloadAction<{ perm: string; visible: boolean }>) {
@@ -232,7 +247,7 @@ const uiSlice = createSlice({
 });
 
 export const {
-  openModal, closeModal, setGlobalLoading, setThemeName, setFontKey, setDataMode,
+  openModal, closeModal, setGlobalLoading, setThemeName, setFontKey, setDataMode, setLangMode,
   setSectionVisible, setNavOrder, setNavGroup, hydrateNavPrefs, resetPersonalization,
 } = uiSlice.actions;
 export const uiReducer = uiSlice.reducer;

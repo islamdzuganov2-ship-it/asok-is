@@ -19,6 +19,8 @@ export interface SupportRate {
   mode?: string | null; ratePerHour: number; kEvening: number; kWeekend: number; isActive: boolean;
   // RE-03: условия вендорского контракта — пакет часов, сверхлимит, квант биллинга.
   packageHours?: number | null; overlimitRate?: number | null; billingQuantumMin?: number;
+  // УК-25: MANUAL — вручную; REFERENCE — из справочника типовых (до подтверждения помечается).
+  source?: 'MANUAL' | 'REFERENCE'; confirmedAt?: string | null; confirmedBy?: string | null;
 }
 export interface BusinessProcess {
   id: string; code: string; name: string; kind: string; owner?: string | null; isActive: boolean;
@@ -55,6 +57,8 @@ export function bpTimeProfile(v: Record<string, number | undefined>): Record<str
  *  и даты наблюдения отклоняется валидацией, чтобы «рынок» нельзя было выдумать. */
 export interface MarketBenchmark {
   id: string; kind: string; dimension: string; companySizeClass?: string | null;
+  // УК-25: разрез типовой ставки — линия, отрасль, квалификация (пусто = «любая»).
+  line?: string | null; industry?: string | null; qualification?: string | null;
   value: number; unit: string; source: string; observedOn: string; note?: string | null;
 }
 /** УК-24: сравнение «мы/рынок» считает бэкенд (econ/service.py), фронт только показывает. */

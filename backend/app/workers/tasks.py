@@ -17,6 +17,10 @@ from app.modules.llm.tasks import (  # noqa: F401  (регистрация за�
     llm_selfcheck_task,
 )
 from app.modules.nonconformity.tasks import sla_autoescalate_task  # noqa: F401  (ТЗ v19 §17.9)
+from app.modules.notifications.tasks import (  # noqa: F401  (ТЗ v19 п.6, УК-15)
+    notifications_daily_scan_task,
+    notifications_retry_failed_task,
+)
 
 logger = logging.getLogger(__name__)
 

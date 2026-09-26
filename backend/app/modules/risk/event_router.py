@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.database import get_db
 from app.modules.iam import get_current_user, require_permission
 from app.modules.risk import event_service as service
+from app.modules.risk import execution_control
 from app.shared.filters import parse_str_list, parse_uuid_list
 from app.modules.risk.event_schemas import (
     AleResultOut,
@@ -62,7 +63,18 @@ async def create_event(
     return await service.create_event(db, payload, user.get("username"))
 
 
-# ТЗ v19 п.4: связь ячейки теплокарты (ИС × характеристика) с рисками/мерами/деньгами. Путь
+# ТЗ v19 §17.2 (УК-45): двойной контроль исполнения — сверка исполненных мер со сбоями.
+# Литеральный путь ДО /{event_id}, как /by-cell ниже.
+@router.get("/execution-mismatches", response_model=list[execution_control.ExecutionMismatchOut])
+async def get_execution_mismatches(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("governance.propose", "view.risk_economics")),
+):
+    """Меры, отмеченные исполненными, по которым сбои продолжаются (сигнал, не решение)."""
+    return await execution_control.execution_mismatches(db)
+
+
+# ТЗ v19 п.4 (УК-10): связь ячейки теплокарты (ИС × характеристика) с рисками/мерами/деньгами. Путь
 # ДО /{event_id} — иначе FastAPI попытается разобрать «by-cell» как UUID события (порядок
 # регистрации маршрутов имеет значение для литеральных путей против path-параметров).
 @router.get("/by-cell", response_model=HeatmapCellDetailOut)

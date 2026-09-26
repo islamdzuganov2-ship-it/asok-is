@@ -20,6 +20,7 @@ import { useGetCockpitBundleQuery, useGetSystemsQuery } from '../../store/api/ap
 import { cockpitBundleArgs } from './bundleArgs';
 import { useSingleSystemName } from './useSliceSystemName';
 import { fmtMoneyCompact } from '../../utils/money';
+import { numericColumn } from '../../theme/table';
 
 const { Text } = Typography;
 
@@ -198,9 +199,9 @@ const ReliabilityTile: CockpitTile = {
       data?.incidentAnalytics?.byCategory ?? [],
       [
         { title: 'Первопричина', dataIndex: 'category' },
-        { title: 'Число сбоев', dataIndex: 'count' },
+        numericColumn({ title: 'Число сбоев', dataIndex: 'count' }),
         { title: 'Открыто', dataIndex: 'openCount' },
-        { title: 'MTTR, ч', dataIndex: 'avgMttrHours' },
+        numericColumn({ title: 'MTTR, ч', dataIndex: 'avgMttrHours' }),
       ],
       'Нет данных',
       { href, label: 'Аналитика сбоев' },
@@ -362,9 +363,9 @@ const IncidentsMixTile: CockpitTile = {
       data?.incidentAnalytics?.byCategory ?? [],
       [
         { title: 'Первопричина', dataIndex: 'category' },
-        { title: 'Число сбоев', dataIndex: 'count' },
+        numericColumn({ title: 'Число сбоев', dataIndex: 'count' }),
         { title: 'Открыто', dataIndex: 'openCount' },
-        { title: 'MTTR, ч', dataIndex: 'avgMttrHours' },
+        numericColumn({ title: 'MTTR, ч', dataIndex: 'avgMttrHours' }),
       ],
       'Нет данных',
       { href, label: 'Аналитика сбоев' },

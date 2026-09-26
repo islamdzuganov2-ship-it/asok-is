@@ -8,7 +8,7 @@
 import React from 'react';
 import { Card, Popover, Skeleton, Typography } from 'antd';
 import { RightOutlined, QuestionCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import { PREMIUM, TYPE, SPACE } from '../../theme/premium';
+import { PREMIUM, TYPE, SPACE, premiumCard } from '../../theme/premium';
 import { BRAND, RAG, MONEY_FLOW } from '../../theme/ragPalette';
 import { numericText } from '../../theme/table';
 import { useIsDarkTheme } from '../../theme/useThemeTokens';
@@ -98,7 +98,7 @@ const TileCard: React.FC<TileCardProps> = ({ question, value, formula, onClick }
 
   if (value.loading) {
     return (
-      <Card size="small" style={{ height: '100%', borderRadius: PREMIUM.radius, border: `1px solid ${PREMIUM.border}` }}>
+      <Card size="small" {...premiumCard('none', { height: '100%' })}>
         <div style={{ ...TYPE.caption, color: BRAND.inkSoft, marginBottom: SPACE.snug }}>{question}</div>
         <Skeleton.Input active block size="large" />
       </Card>

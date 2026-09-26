@@ -9,6 +9,7 @@ from app.modules.iam.admin_router import router as iam_admin_router  # упра�
 from app.modules.iam.router import router as auth_router  # домен iam мигрирован (ТЗ v13)
 from app.modules.incidents.router import router as incidents_router  # аналитика техсбоев (T-21)
 from app.modules.nonconformity.router import router as nonconformity_router  # замыкание контура (BL-007)
+from app.modules.notifications.router import router as notifications_router  # журнал уведомлений (ТЗ v19, УК-15)
 from app.modules.quality.router import router as metrics_router  # домен quality мигрирован (ТЗ v13)
 from app.modules.reporting.router import router as reporting_router  # домен reporting мигрирован (ТЗ v13)
 from app.modules.risk.event_router import router as risk_events_router  # числовой контур риска (BL-007)
@@ -31,3 +32,4 @@ api_router.include_router(governance_router, prefix="/governance", tags=["govern
 api_router.include_router(incidents_router, prefix="/incidents", tags=["incidents"])
 api_router.include_router(econ_router, prefix="/econ", tags=["econ"])
 api_router.include_router(nonconformity_router, prefix="/nonconformities", tags=["nonconformities"])
+api_router.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
