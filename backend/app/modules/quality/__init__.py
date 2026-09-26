@@ -5,6 +5,8 @@
 Расчётные функции и константы модели используются доменами assessment/reporting/dataio.
 """
 from app.modules.quality.ai_calculation import aggregate as ai_aggregate
+from app.modules.quality import ai_e3
+from app.modules.quality.qm_nodes import MODEL_KINDS as QM_MODEL_KINDS, list_qm_nodes, seed_qm_nodes
 from app.modules.quality.ai_calculation import compute_metric as ai_compute_metric
 from app.modules.quality.ai_calculation import normalize_to_baseline as ai_normalize_to_baseline
 from app.modules.quality.ai_quality_model import (
@@ -114,6 +116,10 @@ __all__ = [
     "ai_compute_metric",
     "ai_normalize_to_baseline",
     "ai_aggregate",
+    "ai_e3",
+    "list_qm_nodes",
+    "seed_qm_nodes",
+    "QM_MODEL_KINDS",
     # ТЗ v19 УК-04..07: веса, свёртка, версии/история
     "SUBCHAR_WEIGHTS",
     "CHARACTERISTIC_WEIGHTS",

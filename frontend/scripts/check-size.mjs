@@ -35,7 +35,7 @@ const DEFAULT_LIMIT_KB = 20;
 const SIZE_BUDGET_KB = {
   'pages/NewAssessmentPage.tsx': 35,
   'data/mockScaleData.ts': 33,
-  'pages/AiAssessmentPage.tsx': 31,
+  'pages/AiAssessmentPage.tsx': 29,
   'store/api/apiSlice.ts': 22,
   'pages/ExcelReportsPage.tsx': 29,
 };

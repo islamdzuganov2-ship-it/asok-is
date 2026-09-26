@@ -3,10 +3,8 @@
 По образцу ISO-роутера домена assessment. Периоды переиспользуются (AssessmentPeriod),
 значения — в отдельной таблице ai_assessment_values (не смешиваются с ISO-дашбордами).
 
-⚠️ СТАТУС «ПОД РАЗВИТИЕ» (2026-07-06): роутер смонтирован и рабочий, но раздел СИИ скрыт из UI
-(фронт-пункт меню не выведен). Оставлен закоммиченным до потребности открыть; этап E3 (тестовые
-датасеты/выбросы, паритет сред, конкордация Кендалла, сравнение СИИ, справочник qm_node в БД)
-отложен — см. docs/CODE_REVIEW_2026-07-06.md, T-17.
+Этап E3 (тестовые наборы и выбросы, паритет сред, экспертная группа и конкордация Кендалла,
+сравнение нескольких СИИ, справочник qm_node) — отдельный роутер ai_e3_router.py (26.09.2026).
 """
 from typing import List
 from uuid import UUID
@@ -27,6 +25,7 @@ from app.modules.quality import (
     ai_normalize_to_baseline,
 )
 from app.modules.assessment.models import AiAssessmentValue, AiWeight, AssessmentPeriod
+from app.modules.assessment import ai_e3_service
 from app.modules.assessment.ai_schemas import (
     AiCalculationOut,
     AiConformanceReport,
@@ -342,7 +341,11 @@ async def finalize_ai_period(
         )
     period.status = "COMPLETE"
     await db.commit()
-    return {"id": str(period.id), "status": period.status, "values": len(rows)}
+    # E3: условия испытаний не блокируют завершение (набор выбирается под СИИ, условия могут
+    # оформляться параллельно), но пробелы возвращаются явно — отчёт соответствия их покажет.
+    conditions = await ai_e3_service.test_conditions(db, period_id)
+    return {"id": str(period.id), "status": period.status, "values": len(rows),
+            "test_conditions": conditions.model_dump()}
 
 
 @router.get("/{period_id}/conformance-report", response_model=AiConformanceReport)
@@ -395,6 +398,7 @@ async def ai_conformance_report(period_id: UUID, db: AsyncSession = Depends(get_
         conformant_count=sum(1 for r in report_rows if r.verdict == "В допуске"),
         nonconformant_count=sum(1 for r in report_rows if r.verdict == "Вне допуска"),
         no_baseline_count=sum(1 for r in report_rows if r.verdict == "Эталон не задан"),
+        test_conditions=(await ai_e3_service.test_conditions(db, period_id)).model_dump(),
     )
 
 

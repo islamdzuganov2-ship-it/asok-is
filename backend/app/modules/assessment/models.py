@@ -115,6 +115,71 @@ class AiWeight(Base, TimestampMixin):
     )
 
 
+class AiTestDataset(Base, TimestampMixin):
+    """Тестовый набор данных оценки СИИ (ГОСТ Р 59898-2021, разд. 9; BL-001 E3).
+
+    Стандарт требует описать набор, на котором измерены метрики: объём, происхождение,
+    репрезентативность и КРИТЕРИЙ ВЫБРОСОВ — без этого значения метрик невоспроизводимы.
+    Результат проверки выбросов (метод, порог, число, доля) хранится рядом с набором.
+    """
+    __tablename__ = "ai_test_datasets"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    purpose = Column(String(16), nullable=False, default="TEST")       # TEST | VALIDATION | STRESS
+    records = Column(Integer, nullable=True)
+    source = Column(Text, nullable=True)
+    collected_from = Column(String(32), nullable=True)                 # период сбора, свободный текст «2026-Q2»
+    representativeness = Column(Text, nullable=True)                   # чем набор репрезентативен для эксплуатации
+    class_balance = Column(JSONB, nullable=True)                       # {класс: доля} для классификации
+    outlier_method = Column(String(16), nullable=True)                 # IQR | ZSCORE
+    outlier_k = Column(Numeric(6, 3), nullable=True)
+    outlier_feature = Column(String(255), nullable=True)
+    outliers_count = Column(Integer, nullable=True)
+    outliers_share = Column(Numeric(6, 4), nullable=True)
+    outlier_handling = Column(String(16), nullable=True)               # REMOVED | KEPT | WINSORIZED | FLAGGED
+    notes = Column(Text, nullable=True)
+
+
+class AiEnvParity(Base, TimestampMixin):
+    """Паритет тестовой и эксплуатационной сред по фактору табл. 3 ГОСТ Р 59898-2021 (E3)."""
+    __tablename__ = "ai_env_parity"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id", ondelete="CASCADE"), nullable=False, index=True)
+    factor = Column(String(32), nullable=False)
+    test_env = Column(Text, nullable=True)
+    prod_env = Column(Text, nullable=True)
+    status = Column(String(16), nullable=False)                        # MATCH | ACCEPTABLE | MISMATCH
+    justification = Column(Text, nullable=True)
+
+    __table_args__ = (UniqueConstraint("period_id", "factor", name="uq_ai_env_parity_factor"),)
+
+
+class AiExpertScore(Base, TimestampMixin):
+    """Оценка одного эксперта группы по субхарактеристике (ГОСТ Р 59898-2021, п. 7.2; E3).
+
+    Группа экспертов оценивает субхарактеристики независимо; согласованность группы —
+    коэффициент конкордации Кендалла (quality.ai_e3.kendall_w). Только при согласованной
+    группе среднее переносится в значение метрики EXPERT_SCALE.
+    """
+    __tablename__ = "ai_expert_scores"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id", ondelete="CASCADE"), nullable=False, index=True)
+    characteristic = Column(String(255), nullable=False)
+    subcharacteristic = Column(String(255), nullable=False)
+    expert = Column(String(100), nullable=False)                       # логин эксперта
+    expert_name = Column(String(255), nullable=True)
+    score = Column(Numeric(6, 2), nullable=False)                      # 0–100, та же шкала, что EXPERT_SCALE
+    comment = Column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("period_id", "characteristic", "subcharacteristic", "expert", name="uq_ai_expert_score"),
+    )
+
+
 class ProfessionalJudgment(Base, TimestampMixin):
     """Профессиональное суждение менеджера по качеству по подхарактеристике (НЕ мера).
 

@@ -69,6 +69,9 @@ PERMISSIONS: list[Permission] = [
                "включая закрытые периоды. По умолчанию — только встроенные роли"),
     Permission("assessment.edit", "Оценка", "Вносить и править оценки"),
     Permission("assessment.review", "Оценка", "Экспертное ревью оценок"),
+    Permission("ai.expert.evaluate", "Оценка", "Оценка СИИ: эксперт группы",
+               "BL-001 E3 (ГОСТ Р 59898, п. 7.2): вносить свои экспертные оценки субхарактеристик СИИ; "
+               "согласованность группы — коэффициент конкордации Кендалла. Отдельное право, не роль"),
     Permission("dataio.import", "Оценка", "Импорт данных (Excel)"),
     Permission("incidents.edit", "Оценка", "Вести реестр технических сбоев"),
     Permission("assessment.checklist.fill", "Оценка", "Заполнять чек-лист владельца ИС",
@@ -162,11 +165,12 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
         "systems.edit",
         "assessment.edit", "assessment.review", "dataio.import", "incidents.edit",
         "governance.propose", "governance.decide.minor", "econ.ref.edit", "risk.base.edit",
-        "nonconformity.edit", "assessment.checklist.fill",
+        "nonconformity.edit", "assessment.checklist.fill", "ai.expert.evaluate",
     } | _WITH_RISK_BASE,
     "TEST_ANALYST": {
         "view.dashboard.analytics", "view.assessments", "view.risk_economics",
         "systems.edit", "assessment.edit", "dataio.import", "assessment.checklist.fill",
+        "ai.expert.evaluate",
     } | _WITH_RISK_BASE,
     "RISK_MANAGER": {
         "view.dashboard.risk", "view.dashboard.analytics", "view.dashboard.incidents",
