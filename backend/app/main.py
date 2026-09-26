@@ -57,15 +57,22 @@ app = FastAPI(
     openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
+# ИБ-14: методы и заголовки — перечнем, а не «*».
+CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+CORS_HEADERS = ["Authorization", "Content-Type", "Accept", "X-Request-ID"]
+
 app.add_middleware(
     CORSMiddleware,
+    # ИБ-14 (SEC-13): только явный список origin из настроек. Прежний allow_origin_regex на ЛЮБОЙ
+    # поддомен asokis.ai вместе с allow_credentials отдавал доступ с учётными данными любому
+    # поддомену, в т.ч. заброшенному или перехваченному (subdomain takeover). Штатный сценарий —
+    # same-origin через прокси (Vite в разработке, nginx в проде), CORS нужен только для
+    # отдельно размещённого фронта: его origin перечисляется в CORS_ORIGINS явно.
     allow_origins=settings.CORS_ORIGINS,
-    # Разрешаем рабочий домен и его поддомены (asokis.ai, asok.asokis.ai, …).
-    # Основной сценарий — same-origin через прокси Vite, CORS тут как подстраховка.
-    allow_origin_regex=r"https://([a-z0-9-]+\.)?asokis\.ai",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=CORS_METHODS,
+    allow_headers=CORS_HEADERS,
+    expose_headers=["X-Request-ID", "Retry-After"],
 )
 
 # ИБ-13: заголовки безопасности на каждом ответе; ИБ-08/09: request_id, IP и User-Agent в

@@ -118,7 +118,8 @@ class Settings(BaseSettings):
     TASK_SYNC_API_URL: str = ""
     TASK_SYNC_API_TOKEN: str = ""
 
-    # CORS
+    # CORS (ИБ-14): явный список origin. Фронт штатно ходит на тот же origin через прокси (Vite/nginx),
+    # сюда добавляется только отдельно размещённый фронт, например ["https://asok.asokis.ai"].
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -182,6 +183,9 @@ class Settings(BaseSettings):
             issues.append(
                 "DEMO_AUTH_BYPASS включён: запросы без токена обслуживаются как ADMIN"
             )
+        # ИБ-14: «*» вместе с allow_credentials — отдать учётные данные любому сайту.
+        if any(o.strip() == "*" for o in self.CORS_ORIGINS):
+            issues.append("CORS_ORIGINS содержит «*» — перечислите origin фронта явно (ИБ-14)")
         return issues
 
 
