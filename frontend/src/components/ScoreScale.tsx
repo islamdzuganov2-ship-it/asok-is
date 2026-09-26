@@ -52,7 +52,8 @@ export const deltaText = (s: ScoreScaleData): string | null => {
   return `${sign}${s.delta.toFixed(1)} п.п. к прошлому периоду (по ${s.comparedSystems} из ${s.totalSystems} ИС)`;
 };
 
-export const ScoreScale: React.FC<{ data: ScoreScaleData }> = ({ data }) => {
+/** `hideLevel` — когда уровень словами уже стоит рядом с цифрой (заголовок карточки индекса). */
+export const ScoreScale: React.FC<{ data: ScoreScaleData; hideLevel?: boolean }> = ({ data, hideLevel }) => {
   const pos = (v: number) => `${Math.max(0, Math.min(100, v))}%`;
   const delta = deltaText(data);
   return (
@@ -76,7 +77,7 @@ export const ScoreScale: React.FC<{ data: ScoreScaleData }> = ({ data }) => {
         )}
       </div>
       <Space size={12} wrap style={{ marginTop: 6 }}>
-        <Text strong style={{ color: data.score != null ? ragToken(data.score).strong : undefined }}>{data.level}</Text>
+        {!hideLevel && <Text strong style={{ color: data.score != null ? ragToken(data.score).strong : undefined }}>{data.level}</Text>}
         {delta && (
           <Text type="secondary" style={TYPE.caption}>{delta}</Text>
         )}

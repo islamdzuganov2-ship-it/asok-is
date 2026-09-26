@@ -23,11 +23,7 @@ import { ragToken, solidTagStyle, BRAND } from '../theme/ragPalette';
 import { SPACE, premiumCard, accentDot, GOLD, TYPE } from '../theme/premium';
 import { numericColumn, numericText, sorterFor } from '../theme/table';
 import FieldHint from '../components/FieldHint';
-import {
-  ARRAY_FIELDS, CURVE_FIELDS, INPUT_LABEL, KIND_SCHEMAS, VERDICT_TAG, parseCsv, parseCurve,
-  type AiGroup, type AiPeriod, type AiValue,
-  type CalcOut, type ConfReport, type ConfRow, type SystemLite,
-} from './aiAssessment/aiModel';
+import { ARRAY_FIELDS, CURVE_FIELDS, INPUT_LABEL, KIND_SCHEMAS, VERDICT_TAG, parseCsv, parseCurve, type AiGroup, type AiPeriod, type AiValue, type CalcOut, type ConfReport, type SystemLite } from './aiAssessment/aiModel';
 import AiConformanceModal from './aiAssessment/AiConformanceModal';
 import AiE3Section from './aiAssessment/AiE3Section';
 import AiCompareCard from './aiAssessment/AiCompareCard';

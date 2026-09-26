@@ -12,7 +12,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import MeasureCatalogHint from './MeasureCatalogHint';
-import { Modal, Typography, Tag, Input, Button, Space, Divider, List, Tooltip, Empty } from 'antd';
+import { Modal, Typography, Tag, Input, Button, Space, Divider, Tooltip } from 'antd';
 import { message } from '../theme/appMessage';
 import { CheckOutlined, CloseOutlined, EditOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
@@ -20,10 +20,9 @@ import { useAppDispatch } from '../store/hooks';
 import { RootState } from '../store';
 import {
   approveProposal, rejectProposal, setExecution, updateProposalMeta, editProposal,
-  type EditableProposalFields, type Proposal, type ProposalStatus,
+  type EditableProposalFields, type Proposal,
 } from '../store/slices/governanceSlice';
-import { DollarOutlined, FileTextOutlined } from '@ant-design/icons';
-import { ragToken, solidTagStyle, RAG, ACCENT } from '../theme/ragPalette';
+import { ragToken, solidTagStyle } from '../theme/ragPalette';
 import { SPACE, TYPE } from '../theme/premium';
 import { fmtMoney, fmtNum } from '../utils/money';
 import { MeasureCardExtras } from './MeasureCardExtras';
@@ -31,7 +30,7 @@ import MeasureEconomicsBlock from './MeasureEconomicsBlock';
 import MeasureHistoryModal from './MeasureHistoryModal';
 import MeasureManagementSummary from './MeasureManagementSummary';
 import FieldHint from './FieldHint';
-import { fetchRosiHorizon, horizonCache, MEASURE_TYPE_LABEL, VERDICT_LABEL, STATUS_TAG } from './measureCardMeta';
+import { fetchRosiHorizon, horizonCache, STATUS_TAG } from './measureCardMeta';
 import MeasureWorkPanel from './MeasureWorkPanel';
 import LangModeToggle, { useLangMode } from './LangModeToggle';
 

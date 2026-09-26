@@ -6,10 +6,9 @@
  * считает его бэкенд, здесь только вызов и подача.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { PlusOutlined, SwapOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
 import { message } from '../../theme/appMessage';
 import FieldHint from '../../components/FieldHint';
 import { premiumCard } from '../../theme/premium';
@@ -18,11 +17,7 @@ import { numericColumn, sorterFor } from '../../theme/table';
 import { BP_KINDS } from './bpKinds';
 import BenchmarksPanel from './BenchmarksPanel';
 import RatesCard from './RatesCard';
-import {
-  api, fmtMoney, fmtNum,
-  bpCostParams, bpTimeProfile,
-  type BenchmarkComparison, type BpCost, type BusinessProcess, type SupportRate,
-} from './shared';
+import { api, fmtMoney, bpCostParams, bpTimeProfile, type BenchmarkComparison, type BpCost, type BusinessProcess, type SupportRate } from './shared';
 
 const { Text } = Typography;
 

@@ -13,15 +13,14 @@
  */
 import React from 'react';
 import { Tag, Space } from 'antd';
-import type { CockpitTile, TileValue, Tone } from './types';
-import type { Slice } from '../../store/slice/sliceTypes';
-import { useGetCockpitBundleQuery, useGetHeatmapMoneyLayerQuery, useGetSystemsQuery } from '../../store/api/apiSlice';
+import type { CockpitTile, TileValue } from './types';
+import { useGetHeatmapMoneyLayerQuery, useGetSystemsQuery } from '../../store/api/apiSlice';
 import { lensOf } from '../../store/slice/sliceTypes';
 import { moneyBySystem, sortForLens } from './lensMath';
 import { useSingleSystemName } from './useSliceSystemName';
 import { fmtMoney, fmtMoneyCompact } from '../../utils/money';
 
-import { Text, detailTable, l3Link, loadErrorValue, taskplanHref, useCeoBundle } from './ceoTileKit';
+import { detailTable, loadErrorValue, taskplanHref, useCeoBundle } from './ceoTileKit';
 import { ClosureTile, RegulatorTile, DegradationTile, TopRiskTile } from './ceoTilesMore';
 import { numericColumn } from '../../theme/table';
 

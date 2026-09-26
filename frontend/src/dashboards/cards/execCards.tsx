@@ -59,7 +59,7 @@ export const ExecIndexCard: React.FC = () => {
             {globalIndex}% · {levelLabel(globalIndex)}
           </Title>
           {/* УК-03: пороги, цель и дельта к прошлому периоду — рядом с цифрой. */}
-          <ScoreScale data={isLive && live?.scoreScale ? live.scoreScale : localScale(globalIndex)} />
+          <ScoreScale hideLevel data={isLive && live?.scoreScale ? live.scoreScale : localScale(globalIndex)} />
           <Text type="secondary">
             <Tag color={isLive ? 'green' : 'default'}>{isLive ? 'LLM · live' : 'Демо'}</Tag>
           </Text>

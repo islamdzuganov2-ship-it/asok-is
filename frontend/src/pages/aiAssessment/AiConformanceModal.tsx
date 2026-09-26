@@ -25,6 +25,11 @@ export const AiConformanceModal: React.FC<Props> = ({ report, open, onClose }) =
       title={<span><FileDoneOutlined /> Отчёт соответствия базовым значениям</span>}
       open={open} onCancel={onClose} footer={null} width={860}
     >
+      {report?.test_conditions && (
+        <Alert type={report.test_conditions.ready ? 'success' : 'warning'} showIcon style={{ marginBottom: 10 }}
+          message={report.test_conditions.ready ? 'Условия испытаний подтверждены (разд. 7.2, 9)' : 'Условия испытаний подтверждены не полностью'}
+          description={report.test_conditions.ready ? undefined : report.test_conditions.gaps.join('; ')} />
+      )}
       {report && (
         <Space direction="vertical" style={{ width: '100%' }} size={10}>
           <Space size="large" wrap>
