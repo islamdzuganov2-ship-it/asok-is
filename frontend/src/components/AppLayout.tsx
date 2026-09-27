@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Button, Dropdown, Layout, Menu, Spin, Typography } from 'antd';
 import {
     LogoutOutlined,
+    KeyOutlined,
     SettingOutlined,
     UserOutlined,
     TeamOutlined,
@@ -191,6 +192,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
     const userMenu = {
         items: [
+            { key: 'password', icon: <KeyOutlined />, label: 'Сменить пароль', onClick: () => navigate('/change-password') },
             { key: 'logout', danger: true, icon: <LogoutOutlined />, label: 'Выйти', onClick: handleLogout },
         ],
     };

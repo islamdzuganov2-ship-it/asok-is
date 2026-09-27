@@ -12,6 +12,7 @@ REST API администрирования доступа (BL-008): управ�
 до изменения, перестают приниматься сразу, а не по истечении TTL).
 """
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -21,6 +22,12 @@ from app.infrastructure.database import get_db
 from app.modules.iam import audit, sessions
 from app.modules.iam.deps import get_current_user, require_permission
 from app.modules.iam.models import User, UserPreference
+from app.modules.iam.password_policy import (
+    PasswordPolicyError,
+    ensure_acceptable,
+    previous_hashes,
+    push_history,
+)
 from app.modules.iam.permissions import PERMISSIONS, group_order
 from app.modules.iam.permissions_service import (
     BuiltinRoleError,
@@ -54,7 +61,21 @@ def _user_out(u: User) -> UserAdminOut:
     return UserAdminOut(
         id=str(u.id), username=u.username, email=u.email,
         full_name=u.full_name, role=u.role, is_active=u.is_active,
+        must_change_password=bool(u.must_change_password),
     )
+
+
+def _set_temporary_password(user: User, password: str, previous: list[str]) -> None:
+    """ИБ-11: пароль от администратора проверяется политикой и считается временным —
+    при первом входе пользователь обязан его сменить (auth_service.change_password)."""
+    try:
+        ensure_acceptable(password, user.username, previous)
+    except PasswordPolicyError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    user.password_hash = get_password_hash(password)
+    user.password_history = push_history(previous, user.password_hash)
+    user.password_changed_at = datetime.now(timezone.utc)
+    user.must_change_password = True
 
 
 def _validate_role(role: str) -> None:
@@ -208,9 +229,9 @@ async def create_user(
         username=payload.username,
         email=payload.email,
         full_name=payload.full_name or payload.username.title(),
-        password_hash=get_password_hash(payload.password),
         role=payload.role,
     )
+    _set_temporary_password(user, payload.password, [])
     db.add(user)
     await db.flush()
     await audit.record(db, audit.USER_CREATE, user=current_user, entity_type="user", entity_id=user.id,
@@ -276,7 +297,8 @@ async def reset_password(
     current_user: dict = Depends(require_permission("admin.users.manage")),
 ) -> dict:
     user = await _get_user_or_404(db, user_id)
-    user.password_hash = get_password_hash(payload.password)
+    # Сброс на один из недавних паролей — тоже нарушение политики: история + действующий.
+    _set_temporary_password(user, payload.password, previous_hashes(user.password_hash, user.password_history))
     # Пароль в журнал не пишется — только факт сброса (audit._SECRET_FIELDS).
     await audit.record(db, audit.USER_PASSWORD_RESET, user=current_user, entity_type="user", entity_id=user.id)
     await db.commit()

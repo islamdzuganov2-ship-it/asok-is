@@ -31,6 +31,8 @@ class TokenPayload(BaseModel):
     sid: Optional[str] = None       # сессия (вход): общая для access и цепочки refresh
     iat: Optional[float] = None     # время выдачи, unix (с миллисекундами)
     type: Optional[str] = None      # access | refresh
+    # ИБ-11: временный пароль ещё не сменён — токен пускает только к смене пароля и выходу.
+    pwd_change: Optional[bool] = None
 
 
 class LogoutRequest(BaseModel):
@@ -63,11 +65,19 @@ class UserAdminOut(BaseModel):
     full_name: Optional[str] = None
     role: str
     is_active: bool
+    must_change_password: bool = False   # ИБ-11: временный пароль ещё не сменён
+
+
+class PasswordChangeRequest(BaseModel):
+    """ИБ-11: смена собственного пароля (обязательная после выдачи временного или по желанию)."""
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=1, max_length=128)
 
 
 class UserCreateIn(BaseModel):
     username: str = Field(..., min_length=1, max_length=100)
-    password: str = Field(..., min_length=6, max_length=128)
+    # Требования к паролю (ИБ-11) проверяет iam/password_policy.py — с понятными формулировками.
+    password: str = Field(..., min_length=1, max_length=128)
     email: Optional[str] = Field(default=None, max_length=255)
     full_name: Optional[str] = Field(default=None, max_length=255)
     role: str
@@ -105,7 +115,7 @@ class AuditEventOut(BaseModel):
 
 
 class PasswordResetIn(BaseModel):
-    password: str = Field(..., min_length=6, max_length=128)
+    password: str = Field(..., min_length=1, max_length=128)   # политика — iam/password_policy.py
 
 
 class PermissionOut(BaseModel):

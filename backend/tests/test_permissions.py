@@ -47,6 +47,15 @@ async def _login(ac, username: str, password: str) -> str:
     return r.json()["access_token"]
 
 
+async def _first_login(ac, username: str, temporary: str, permanent: str) -> str:
+    """ИБ-11: пароль от администратора временный — первый вход завершается его сменой."""
+    token = await _login(ac, username, temporary)
+    r = await ac.post(f"{API}/auth/change-password", headers=_auth(token),
+                      json={"current_password": temporary, "new_password": permanent})
+    assert r.status_code == 200, r.text
+    return r.json()["access_token"]
+
+
 def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
@@ -134,12 +143,12 @@ async def test_user_crud_flow(aclient, db_session):
     await ps.seed_rbac_defaults(db_session)
     h = _auth(await _login(aclient, "superadmin", "Super123!"))
     created = await aclient.post(f"{API}/iam/users", headers=h,
-                                 json={"username": "newbie", "password": "Newbie123!", "role": "TEST_ANALYST"})
+                                 json={"username": "newbie", "password": "Sunny-Meadow-42", "role": "TEST_ANALYST"})
     assert created.status_code == 201, created.text
     uid = created.json()["id"]
 
     assert (await aclient.post(f"{API}/iam/users", headers=h,
-            json={"username": "newbie", "password": "Newbie123!", "role": "TEST_ANALYST"})).status_code == 409
+            json={"username": "newbie", "password": "Sunny-Meadow-42", "role": "TEST_ANALYST"})).status_code == 409
     assert (await aclient.post(f"{API}/iam/users", headers=h,
             json={"username": "x", "password": "Xxxxxx1!", "role": "WIZARD"})).status_code == 422
 
@@ -147,8 +156,8 @@ async def test_user_crud_flow(aclient, db_session):
     assert patched.status_code == 200 and patched.json()["role"] == "QUALITY_MANAGER"
 
     assert (await aclient.post(f"{API}/iam/users/{uid}/reset-password", headers=h,
-            json={"password": "Reset123!"})).status_code == 200
-    assert await _login(aclient, "newbie", "Reset123!")
+            json={"password": "Quiet-River-2031"})).status_code == 200
+    assert await _login(aclient, "newbie", "Quiet-River-2031")
 
     assert (await aclient.delete(f"{API}/iam/users/{uid}", headers=h)).status_code == 200
     listed = (await aclient.get(f"{API}/iam/users", headers=h)).json()
@@ -159,7 +168,7 @@ async def test_cannot_delete_self(aclient, db_session):
     await ps.seed_rbac_defaults(db_session)
     h = _auth(await _login(aclient, "superadmin", "Super123!"))
     me = (await aclient.post(f"{API}/iam/users", headers=h,
-          json={"username": "selfie", "password": "Selfie12!", "role": "ADMIN"})).json()
+          json={"username": "selfie", "password": "Amber-Orbit-77x", "role": "ADMIN"})).json()
     self_token = create_access_token({"sub": me["id"], "role": "SUPER_ADMIN", "username": "selfie"})
     r = await aclient.delete(f"{API}/iam/users/{me['id']}", headers=_auth(self_token))
     assert r.status_code == 400
@@ -330,9 +339,9 @@ async def test_mandatory_sections_admin_role_also_denied(aclient, db_session):
     await ps.seed_rbac_defaults(db_session)
     su = _auth(await _login(aclient, "superadmin", "Super123!"))
     created = await aclient.post(f"{API}/iam/users", headers=su,
-                                 json={"username": "admin2", "password": "Admin2123!", "role": "ADMIN"})
+                                 json={"username": "admin2", "password": "Cobalt-Harbor-58", "role": "ADMIN"})
     assert created.status_code == 201, created.text
-    token = await _login(aclient, "admin2", "Admin2123!")
+    token = await _first_login(aclient, "admin2", "Cobalt-Harbor-58", "Silver-Lantern-93")
     r = await aclient.put(f"{API}/iam/mandatory-sections", headers=_auth(token),
                           json={"permissions": ["view.dashboard.manager"]})
     assert r.status_code == 403

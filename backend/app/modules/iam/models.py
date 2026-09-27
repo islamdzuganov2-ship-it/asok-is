@@ -4,7 +4,7 @@ ORM-модели домена iam (ТЗ v13): пользователь и жур
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DDL, Boolean, DateTime, String, UniqueConstraint, event, func
+from sqlalchemy import DDL, Boolean, DateTime, String, UniqueConstraint, event, func, text
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,6 +43,14 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     role: Mapped[str] = mapped_column(String(50), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ИБ-11: пароль, заданный администратором (создание, сброс), временный — до его смены токен
+    # пускает только к смене пароля и выходу. История — bcrypt-хэши последних паролей
+    # (действующий первым), чтобы не вернуться к недавнему (iam/password_policy.py).
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"),
+                                                       nullable=False)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    password_history: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"),
+                                                   nullable=False)
 
 
 class AuditLog(Base):

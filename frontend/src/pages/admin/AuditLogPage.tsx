@@ -27,6 +27,7 @@ const ACTION_LABELS: Record<string, string> = {
   'user.update': 'Изменён пользователь',
   'user.delete': 'Удалён пользователь',
   'user.password_reset': 'Сброс пароля',
+  'user.password_change': 'Смена пароля',
   'user.sessions_revoked': 'Сессии отозваны',
   'rbac.matrix_change': 'Изменена матрица прав',
   'rbac.mandatory_sections_change': 'Изменены обязательные разделы',

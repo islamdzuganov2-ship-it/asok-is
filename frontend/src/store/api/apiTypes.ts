@@ -328,6 +328,7 @@ export interface AdminUser {
     full_name?: string | null;
     role: string;
     is_active: boolean;
+    must_change_password?: boolean;   // ИБ-11: временный пароль ещё не сменён
 }
 export interface UserCreateDto {
     username: string; password: string; email?: string; full_name?: string; role: string;

@@ -7,7 +7,8 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { RootState } from '../index';
-import { logout } from '../slices/authSlice';
+import { logout, requirePasswordChange } from '../slices/authSlice';
+import { isPasswordChangeRequired } from '../../utils/passwordPolicy';
 import { qs as qsCockpit } from '../../utils/apiFetch';
 import type {
     CockpitBundle, CockpitBundleArgs, CockpitInsightArgs, CockpitInsightResult,
@@ -78,6 +79,8 @@ const rawBaseQuery = fetchBaseQuery({
  *
  * Refresh-токен на клиенте не хранится (в localStorage кладётся только access), поэтому
  * молчаливое продление невозможно — корректный сценарий именно выход.
+ *
+ * 403 PASSWORD_CHANGE_REQUIRED (ИБ-11) → не выход, а экран смены временного пароля.
  */
 const baseQueryWithAuthGuard: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
     async (args, api, extraOptions) => {
@@ -87,6 +90,8 @@ const baseQueryWithAuthGuard: BaseQueryFn<string | FetchArgs, unknown, FetchBase
             if (state.auth.isAuthenticated) {
                 api.dispatch(logout());
             }
+        } else if (result.error && isPasswordChangeRequired(result.error.status, result.error.data)) {
+            api.dispatch(requirePasswordChange());
         }
         return result;
     };

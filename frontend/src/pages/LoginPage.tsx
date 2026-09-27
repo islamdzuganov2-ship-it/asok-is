@@ -18,6 +18,7 @@ interface LoginResponse {
     access_token: string;
     role: string;
     full_name?: string;
+    must_change_password?: boolean;   // ИБ-11: вход временным паролем от администратора
 }
 
 export const LoginPage: React.FC = () => {
@@ -47,8 +48,13 @@ export const LoginPage: React.FC = () => {
                     token: data.access_token,
                     role: data.role,
                     fullName: data.full_name || values.username,
+                    mustChangePassword: !!data.must_change_password,
                 }),
             );
+            if (data.must_change_password) {
+                navigate('/change-password', { replace: true });
+                return;
+            }
             message.success('Успешный вход в систему');
             navigate('/dashboard', { replace: true });
         } catch (err) {

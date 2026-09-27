@@ -143,15 +143,17 @@ async def test_open_surface_did_not_grow(db_session):
 
     root = Path(__file__).resolve().parent.parent / "app"
     open_count = sum(
-        f.read_text(encoding="utf-8").count("Depends(get_current_user)")
+        f.read_text(encoding="utf-8").count(dep)
         for f in root.rglob("*.py")
+        for dep in ("Depends(get_current_user)", "Depends(get_current_user_changing_password)")
         # deps.py — не эндпоинты: там `get_current_user` стоит внутри самих проверяющих
         # `require_role`/`require_permission`, то есть считался бы дважды и не по делу.
         if f.name != "deps.py"
     )
-    # 16 = 15 по ревью 2026-09-07 + POST /auth/logout (ИБ-12): выход отзывает только
-    # собственную сессию, право на него было бы бессмысленным.
-    assert open_count == 16, (
-        f"эндпоинтов без проверки права: {open_count}, ожидалось 16. "
+    # 17 = 15 по ревью 2026-09-07 + POST /auth/logout (ИБ-12): выход отзывает только
+    # собственную сессию, право на него было бы бессмысленным + POST /auth/change-password
+    # (ИБ-11): смена собственного пароля, доступна и с временным паролем.
+    assert open_count == 17, (
+        f"эндпоинтов без проверки права: {open_count}, ожидалось 17. "
         "Если открытие намеренное — обновите список и обоснование в ТЗ-23 §6."
     )

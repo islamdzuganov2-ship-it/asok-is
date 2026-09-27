@@ -16,6 +16,7 @@ import {
 import { roleLabel } from '../../constants/roles';
 import { pageContainer, pageTitle, GOLD, premiumCard, TYPE } from '../../theme/premium';
 import { RAG, BRAND, solidTagStyle } from '../../theme/ragPalette';
+import { MIN_PASSWORD_LENGTH, clientPasswordIssues } from '../../utils/passwordPolicy';
 import { sorterFor } from '../../theme/table';
 import FieldHint from '../../components/FieldHint';
 
@@ -24,6 +25,12 @@ const { Title, Text } = Typography;
 const apiError = (e: unknown, fallback: string): string => {
   const detail = (e as { data?: { detail?: string } })?.data?.detail;
   return typeof detail === 'string' ? detail : fallback;
+};
+
+/** ИБ-11: мгновенная проверка формы; окончательно пароль проверяет сервер (словарь, история). */
+const passwordRule = (value: string | undefined, username?: string | null): Promise<void> => {
+  const issues = value ? clientPasswordIssues(value, username) : [];
+  return issues.length ? Promise.reject(new Error(`Нужно: ${issues.join('; ')}`)) : Promise.resolve();
 };
 
 const UsersAdminPage: React.FC = () => {
@@ -105,7 +112,13 @@ const UsersAdminPage: React.FC = () => {
     {
       title: 'Статус', dataIndex: 'is_active', key: 'is_active',
       sorter: sorterFor((r: AdminUser) => (r.is_active ? 1 : 0)),
-      render: (a: boolean) => <Tag style={solidTagStyle(a ? RAG.good.strong : RAG.muted.strong)}>{a ? 'Активен' : 'Отключён'}</Tag>,
+      render: (a: boolean, r: AdminUser) => (
+        <Space size={4} wrap>
+          <Tag style={solidTagStyle(a ? RAG.good.strong : RAG.muted.strong)}>{a ? 'Активен' : 'Отключён'}</Tag>
+          {/* ИБ-11: пароль выдан администратором и ещё не сменён пользователем. */}
+          {r.must_change_password && <Tag style={solidTagStyle(RAG.medium.strong)}>Временный пароль</Tag>}
+        </Space>
+      ),
     },
     {
       title: '', key: 'actions', width: 260,
@@ -153,7 +166,10 @@ const UsersAdminPage: React.FC = () => {
           <Form.Item name="role" label={<FieldHint title="Определяет набор прав и состав дашбордов, доступных пользователю после входа.">Роль</FieldHint>} rules={[{ required: true, message: 'Выберите роль' }]}>
             <Select options={roleOptions} placeholder="Роль" />
           </Form.Item>
-          <Form.Item name="password" label={<FieldHint title="Минимум 6 символов. Пользователь сможет сменить пароль сам после первого входа.">Пароль</FieldHint>} rules={[{ required: true, min: 6, message: 'Минимум 6 символов' }]}>
+          <Form.Item name="password" dependencies={['username']} label={<FieldHint title={`Временный пароль: при первом входе пользователь обязан сменить его на собственный. Не короче ${MIN_PASSWORD_LENGTH} символов, минимум 3 группы из 4 (строчные, прописные, цифры, спецсимволы), без логина и словарных слов.`}>Временный пароль</FieldHint>} rules={[
+            { required: true, message: 'Укажите пароль' },
+            ({ getFieldValue }) => ({ validator: (_, v: string) => passwordRule(v, getFieldValue('username')) }),
+          ]}>
             <Input.Password autoComplete="new-password" />
           </Form.Item>
         </Form>
@@ -175,9 +191,12 @@ const UsersAdminPage: React.FC = () => {
       <Modal title={`Сброс пароля: ${pwdFor?.username ?? ''}`} open={!!pwdFor} onOk={submitPwd}
         onCancel={() => setPwdFor(null)} okText="Сбросить" cancelText="Отмена">
         <Alert type="info" showIcon style={{ marginBottom: 12 }}
-          message="Новый пароль сообщите пользователю по защищённому каналу." />
+          message="Новый пароль сообщите пользователю по защищённому каналу — при входе он будет обязан сменить его на собственный." />
         <Form form={pwdForm} layout="vertical" requiredMark={false}>
-          <Form.Item name="password" label={<FieldHint title="Минимум 6 символов. Действующий пароль пользователя перестанет работать сразу после сброса.">Новый пароль</FieldHint>} rules={[{ required: true, min: 6, message: 'Минимум 6 символов' }]}>
+          <Form.Item name="password" label={<FieldHint title={`Временный пароль: действующий перестанет работать сразу после сброса, при входе пользователь обязан сменить новый на собственный. Не короче ${MIN_PASSWORD_LENGTH} символов, минимум 3 группы из 4, без логина, не из 5 последних.`}>Временный пароль</FieldHint>} rules={[
+            { required: true, message: 'Укажите пароль' },
+            { validator: (_, v: string) => passwordRule(v, pwdFor?.username) },
+          ]}>
             <Input.Password autoComplete="new-password" />
           </Form.Item>
         </Form>

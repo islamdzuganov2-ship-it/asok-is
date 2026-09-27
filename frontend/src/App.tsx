@@ -11,6 +11,7 @@ import { THEMES, antdThemeOf, fontStackOf } from './theme/themes';
 import { registerAppApi } from './theme/appMessage';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const ExecutiveDashboard = lazy(() => import('./pages/dashboard/ExecutiveDashboard'));
 const CtoDashboard = lazy(() => import('./pages/dashboard/CtoDashboard'));
@@ -52,6 +53,13 @@ const PageLoader = () => (
 );
 
 const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+    const { isAuthenticated, mustChangePassword } = useSelector((state: RootState) => state.auth);
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    // ИБ-11: с временным паролем — только экран его смены (сервер на остальное отвечает 403).
+    return mustChangePassword ? <Navigate to="/change-password" replace /> : children;
+};
+
+const RequireSession: React.FC<{ children: React.ReactElement }> = ({ children }) => {
     const { isAuthenticated } = useSelector((state: RootState) => state.auth);
     return isAuthenticated ? children : <Navigate to="/login" replace />;
 };
@@ -145,6 +153,7 @@ export const App: React.FC = () => {
                 <Suspense fallback={<PageLoader />}>
                     <Routes>
                         <Route path="/login" element={<LoginPage />} />
+                        <Route path="/change-password" element={<RequireSession><ChangePasswordPage /></RequireSession>} />
                         <Route path="/*" element={<RequireAuth><AppLayout><Suspense fallback={<PageLoader />}><Routes>
                             <Route path="dashboard" element={<DashboardRouter />} />
                             {/* Личный дашборд (ТЗ-22, КД-22): состав собирает сам пользователь. */}

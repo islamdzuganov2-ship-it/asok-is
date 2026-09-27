@@ -81,4 +81,5 @@ def decode_token(token: str, expected_type: Optional[str] = None) -> TokenPayloa
         sid=payload.get("sid"),
         iat=payload.get("iat"),
         type=payload.get("type"),
+        pwd_change=payload.get("pwd_change"),
     )
