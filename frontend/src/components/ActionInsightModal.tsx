@@ -8,7 +8,7 @@
  * Минимум текста и цвета, спокойные тона.
  */
 import React, { useEffect, useState } from 'react';
-import { Modal, Typography, Tag, Divider, List, Empty, Space, Button, Spin } from 'antd';
+import { Modal, Typography, Tag, Divider, List, Empty, Space, Button, Spin, Tooltip } from 'antd';
 import {
   UserOutlined, RiseOutlined, BulbOutlined, ClockCircleOutlined, RightOutlined, DollarOutlined, WarningOutlined,
 } from '@ant-design/icons';
@@ -24,16 +24,21 @@ import { fmtMoney } from '../utils/money';
 
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
 
-// ТЗ v19 п.4: риски + меры + деньги для ячейки теплокарты (ИС × характеристика).
+// ТЗ v19 п.4 (УК-10): риски + меры + деньги для ячейки теплокарты (ИС × характеристика).
 interface CellMeasure {
   proposalId: string; title: string; status: string;
-  aleReductionShare: number | null; rosi: number | null; verdict: string | null;
+  aleReductionShare: number | null; deltaAle?: number | null; rosi: number | null; verdict: string | null;
 }
 interface CellRisk {
   id: string; code: string; title: string; aleAvg: number | null; aleP90: number | null;
+  aleInCell?: number | null; characteristicsCount?: number;
   status: string; subcharacteristics: string[]; measures: CellMeasure[];
 }
-interface CellDetail { systemName: string; characteristic: string; totalAle: number; risks: CellRisk[] }
+interface CellSubchar { name: string; score: number | null; unmeasurable: boolean }
+interface CellDetail {
+  systemName: string; characteristic: string; totalAle: number; totalDeltaAle?: number;
+  period?: string | null; subcharacteristics?: CellSubchar[]; risks: CellRisk[];
+}
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -159,6 +164,21 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
           <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
             <DollarOutlined /> Риски и деньги по «{characteristic}»
           </Text>
+          {/* УК-10: баллы подхарактеристик ячейки за последний период ИС. */}
+          {!cellLoading && cell?.subcharacteristics && cell.subcharacteristics.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
+                Подхарактеристики{cell.period ? ` · ${cell.period}` : ''}
+              </Text>
+              <Space wrap size={4} style={{ display: 'flex', marginTop: 4 }}>
+                {cell.subcharacteristics.map((s) => (
+                  <Tag key={s.name} style={s.score != null ? solidTagStyle(ragToken(s.score).strong) : undefined}>
+                    {s.name}: {s.score != null ? `${s.score}%` : s.unmeasurable ? 'невозможно измерить' : 'нет данных'}
+                  </Tag>
+                ))}
+              </Space>
+            </div>
+          )}
           <div style={{ marginTop: 8 }}>
             {cellLoading ? (
               <Spin size="small" />
@@ -169,7 +189,8 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
             ) : (
               <Space direction="vertical" style={{ width: '100%' }} size={8}>
                 <Text strong style={{ color: RAG.bad.strong }}>
-                  Суммарный ALE: {fmtMoney(cell.totalAle)} / год
+                  Деньги под ячейкой: {fmtMoney(cell.totalAle)} / год
+                  {cell.totalDeltaAle ? ` · меры снимают ${fmtMoney(cell.totalDeltaAle)} / год` : ''}
                 </Text>
                 {cell.risks.map((r) => (
                   <div key={r.id} style={{ background: BRAND.surfaceSoft, borderRadius: 8, padding: 10 }}>
@@ -179,7 +200,11 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
                         <Text strong style={{ fontSize: TYPE.bodySm.fontSize }}>{r.title}</Text>
                       </Space>
                       {r.aleAvg != null && (
-                        <Tag color="red">{fmtMoney(r.aleAvg)}/год</Tag>
+                        <Tooltip title={(r.characteristicsCount ?? 1) > 1
+                          ? `Риск затрагивает ${r.characteristicsCount} характеристик — в ячейку входит 1/${r.characteristicsCount} его ALE (${fmtMoney(r.aleAvg)}/год)`
+                          : undefined}>
+                          <Tag color="red">{fmtMoney(r.aleInCell ?? r.aleAvg)}/год</Tag>
+                        </Tooltip>
                       )}
                     </Space>
                     <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, display: 'block', marginTop: 2 }}>
@@ -194,6 +219,7 @@ export const ActionInsightModal: React.FC<Props> = ({ open, system, characterist
                             {m.aleReductionShare != null && (
                               <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize }}>
                                 {' '}· снимает {Math.round(m.aleReductionShare * 100)}% ALE
+                                {m.deltaAle != null ? ` (${fmtMoney(m.deltaAle)}/год)` : ''}
                               </Text>
                             )}
                             {m.rosi != null && (

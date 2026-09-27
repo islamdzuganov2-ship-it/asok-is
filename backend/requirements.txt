@@ -1,6 +1,6 @@
 # backend/requirements.txt — ОЧИЩЕННЫЙ ВАРИАНТ
 # === Core ===
-fastapi==0.109.0
+fastapi==0.109.2
 uvicorn[standard]==0.27.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
@@ -15,10 +15,13 @@ psycopg2-binary==2.9.9
 pgvector==0.3.6
 
 # === Security ===
-python-jose[cryptography]==3.3.0
+# ИБ-03 (SEC-02): python-jose 3.5.0 — CVE-2024-33663/33664 закрыты с 3.4.0; python-multipart 0.0.32 —
+# CVE-2024-24762/CVE-2024-53981 и последующие; fastapi 0.109.2 — выше 0.109.1 (CVE-2024-24762).
+# Минимальные пины без смены мажоров; Starlette <0.40 остаётся — ИБ-47 (обновление ветки FastAPI).
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
-python-multipart==0.0.6
+python-multipart==0.0.32
 
 # === Tasks & Cache ===
 celery==5.3.6

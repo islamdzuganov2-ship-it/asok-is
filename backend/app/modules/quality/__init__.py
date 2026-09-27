@@ -5,6 +5,8 @@
 Расчётные функции и константы модели используются доменами assessment/reporting/dataio.
 """
 from app.modules.quality.ai_calculation import aggregate as ai_aggregate
+from app.modules.quality import ai_e3
+from app.modules.quality.qm_nodes import MODEL_KINDS as QM_MODEL_KINDS, list_qm_nodes, seed_qm_nodes
 from app.modules.quality.ai_calculation import compute_metric as ai_compute_metric
 from app.modules.quality.ai_calculation import normalize_to_baseline as ai_normalize_to_baseline
 from app.modules.quality.ai_quality_model import (
@@ -15,6 +17,17 @@ from app.modules.quality.ai_quality_model import (
     ai_model_tree,
 )
 from app.modules.quality.calculation import calculate_metric, map_to_level
+from app.modules.quality.scoring import reading_level, score_reading
+from app.modules.quality.depth import (
+    DEPTH_FULL,
+    DEPTH_LABELS,
+    DEPTH_PROFILE,
+    DEPTH_SCREENING,
+    DEPTHS,
+    depth_for_criticality,
+    required_pairs,
+    required_set,
+)
 from app.modules.quality.models import (
     FormulaType,
     MetricAttribute,
@@ -52,6 +65,7 @@ from app.modules.quality.weight_versions import (
     preview_weight_edit,
     recompute_and_snapshot,
     save_weight_edit,
+    score_points,
     validate_weight_edit,
     weight_for,
 )
@@ -71,6 +85,17 @@ __all__ = [
     "FormulaType",
     "calculate_metric",
     "map_to_level",
+    "reading_level",
+    "score_reading",
+    # RE-19: глубина оценки по классу ИС
+    "DEPTH_FULL",
+    "DEPTH_PROFILE",
+    "DEPTH_SCREENING",
+    "DEPTHS",
+    "DEPTH_LABELS",
+    "depth_for_criticality",
+    "required_pairs",
+    "required_set",
     "QUALITY_MODEL",
     "QUALITY_PAIRS",
     "QUALITY_PAIR_KEYS",
@@ -91,6 +116,10 @@ __all__ = [
     "ai_compute_metric",
     "ai_normalize_to_baseline",
     "ai_aggregate",
+    "ai_e3",
+    "list_qm_nodes",
+    "seed_qm_nodes",
+    "QM_MODEL_KINDS",
     # ТЗ v19 УК-04..07: веса, свёртка, версии/история
     "SUBCHAR_WEIGHTS",
     "CHARACTERISTIC_WEIGHTS",
@@ -111,12 +140,13 @@ __all__ = [
     "recompute_and_snapshot",
     "combined_weights_for_version",
     "weight_for",
+    "score_points",
     "validate_weight_edit",
     "save_weight_edit",
     "preview_weight_edit",
     "CRITICALITY_PROFILES",
     "DEFAULT_CHAR_WEIGHTS",
     "DEFAULT_SUBCHAR_WITHIN_CHAR",
-    # ТЗ v19 УК-13 (п.13): вес меры для нагрузки/балансировки исполнителей
+    # ТЗ v19 УК-31 (п.13): вес меры для нагрузки/балансировки исполнителей
     "measure_weight",
 ]

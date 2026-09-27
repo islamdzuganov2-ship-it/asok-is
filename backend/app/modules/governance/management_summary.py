@@ -1,4 +1,4 @@
-"""ТЗ v19 п.14 (УК-14) — карточка меры на языке топ-менеджмента.
+"""ТЗ v19 п.14 (УК-34, УК-35, УК-35а) — карточка меры на языке топ-менеджмента.
 
 Пользователь настоял явно (сессия ТЗ v19): изложение проблемы/решения строится АНАЛИЗОМ уже
 посчитанных полей меры, а не подстановкой в формулу и не переписыванием чужого текста слово в
@@ -42,6 +42,19 @@ def _fmt_date(p: Proposal) -> str | None:
     if p.due_on is not None:
         return p.due_on.strftime("%d.%m.%Y")
     return p.due_date or None
+
+
+def _meaning(characteristic: str | None) -> str | None:
+    """УК-34: смысл характеристики — определение и последствия для бизнеса из глоссария
+    стандарта. Контекст для генерации записки, а не её текст."""
+    from app.modules.llm.knowledge import GLOSSARY
+    from app.modules.quality import canonical_characteristic
+
+    entry = GLOSSARY.get(canonical_characteristic(characteristic or "") or characteristic or "")
+    if entry is None:
+        return None
+    definition, _causes, impact = entry
+    return f"{definition}; последствия для бизнеса: {impact}"
 
 
 def build_management_summary(p: Proposal) -> ManagementSummaryOut:
@@ -89,7 +102,7 @@ def build_management_summary(p: Proposal) -> ManagementSummaryOut:
     text = generate_management_summary(
         problem=problem, ask=ask, money_note=money_note, deadline_note=deadline_note,
         cost_note=cost_note, result_note=result_note, responsible_note=responsible_note,
-        responsible_name=responsible_name,
+        responsible_name=responsible_name, meaning_note=_meaning(p.characteristic),
     )
 
     return ManagementSummaryOut(

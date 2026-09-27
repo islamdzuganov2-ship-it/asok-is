@@ -4,7 +4,7 @@ ORM-модели домена assessment (ТЗ v13): периоды оценки
 """
 import uuid
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -19,6 +19,15 @@ class AssessmentPeriod(Base, TimestampMixin):
     system_id = Column(UUID(as_uuid=True), ForeignKey("systems.id"), nullable=False, index=True)
     period = Column(String(20), nullable=False)
     status = Column(String(20), default="DRAFT")
+    # RE-19 (рычаг 2): глубина оценки по классу ИС — FULL (Mission) / PROFILE (Business) /
+    # SCREENING (Support). Фиксируется при создании периода (quality.depth), finalize требует
+    # только обязательный для глубины набор подхарактеристик. NULL — период до RE-19 → FULL.
+    depth = Column(String(16), nullable=True)
+    # RE-19 (норматив ч/ч): фактические часы аналитика на оценку — вводятся при завершении.
+    analyst_hours = Column(Numeric(8, 2), nullable=True)
+    # RE-19 (рычаг 4): период-источник дельта-переоценки (значения перенесены, пересчитаны
+    # только изменённые подхарактеристики).
+    carried_from_period_id = Column(UUID(as_uuid=True), nullable=True)
 
     __table_args__ = (UniqueConstraint('system_id', 'period', name='uq_system_period'),)
 
@@ -45,6 +54,9 @@ class AssessmentValue(Base, TimestampMixin):
     expert_comment = Column(Text, nullable=True)
     artifact_links = Column(JSONB, nullable=True)
     data_source = Column(String(20), default="MANUAL")
+    # RE-19 (дельта-переоценка): значение перенесено из прошлого периода без изменений. Правка
+    # значения снимает флаг — так видно, какие подхарактеристики реально переоценены.
+    carried_over = Column(Boolean, nullable=False, default=False, server_default="false")
 
     metric = relationship("MetricCatalog", lazy="select")
 
@@ -103,6 +115,71 @@ class AiWeight(Base, TimestampMixin):
     )
 
 
+class AiTestDataset(Base, TimestampMixin):
+    """Тестовый набор данных оценки СИИ (ГОСТ Р 59898-2021, разд. 9; BL-001 E3).
+
+    Стандарт требует описать набор, на котором измерены метрики: объём, происхождение,
+    репрезентативность и КРИТЕРИЙ ВЫБРОСОВ — без этого значения метрик невоспроизводимы.
+    Результат проверки выбросов (метод, порог, число, доля) хранится рядом с набором.
+    """
+    __tablename__ = "ai_test_datasets"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    purpose = Column(String(16), nullable=False, default="TEST")       # TEST | VALIDATION | STRESS
+    records = Column(Integer, nullable=True)
+    source = Column(Text, nullable=True)
+    collected_from = Column(String(32), nullable=True)                 # период сбора, свободный текст «2026-Q2»
+    representativeness = Column(Text, nullable=True)                   # чем набор репрезентативен для эксплуатации
+    class_balance = Column(JSONB, nullable=True)                       # {класс: доля} для классификации
+    outlier_method = Column(String(16), nullable=True)                 # IQR | ZSCORE
+    outlier_k = Column(Numeric(6, 3), nullable=True)
+    outlier_feature = Column(String(255), nullable=True)
+    outliers_count = Column(Integer, nullable=True)
+    outliers_share = Column(Numeric(6, 4), nullable=True)
+    outlier_handling = Column(String(16), nullable=True)               # REMOVED | KEPT | WINSORIZED | FLAGGED
+    notes = Column(Text, nullable=True)
+
+
+class AiEnvParity(Base, TimestampMixin):
+    """Паритет тестовой и эксплуатационной сред по фактору табл. 3 ГОСТ Р 59898-2021 (E3)."""
+    __tablename__ = "ai_env_parity"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id", ondelete="CASCADE"), nullable=False, index=True)
+    factor = Column(String(32), nullable=False)
+    test_env = Column(Text, nullable=True)
+    prod_env = Column(Text, nullable=True)
+    status = Column(String(16), nullable=False)                        # MATCH | ACCEPTABLE | MISMATCH
+    justification = Column(Text, nullable=True)
+
+    __table_args__ = (UniqueConstraint("period_id", "factor", name="uq_ai_env_parity_factor"),)
+
+
+class AiExpertScore(Base, TimestampMixin):
+    """Оценка одного эксперта группы по субхарактеристике (ГОСТ Р 59898-2021, п. 7.2; E3).
+
+    Группа экспертов оценивает субхарактеристики независимо; согласованность группы —
+    коэффициент конкордации Кендалла (quality.ai_e3.kendall_w). Только при согласованной
+    группе среднее переносится в значение метрики EXPERT_SCALE.
+    """
+    __tablename__ = "ai_expert_scores"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id", ondelete="CASCADE"), nullable=False, index=True)
+    characteristic = Column(String(255), nullable=False)
+    subcharacteristic = Column(String(255), nullable=False)
+    expert = Column(String(100), nullable=False)                       # логин эксперта
+    expert_name = Column(String(255), nullable=True)
+    score = Column(Numeric(6, 2), nullable=False)                      # 0–100, та же шкала, что EXPERT_SCALE
+    comment = Column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("period_id", "characteristic", "subcharacteristic", "expert", name="uq_ai_expert_score"),
+    )
+
+
 class ProfessionalJudgment(Base, TimestampMixin):
     """Профессиональное суждение менеджера по качеству по подхарактеристике (НЕ мера).
 
@@ -135,3 +212,31 @@ class ExpertJudgmentHistory(Base, TimestampMixin):
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     assessment_value = relationship("AssessmentValue", backref="expert_judgments")
+
+
+class OwnerChecklistItem(Base, TimestampMixin):
+    """RE-19 (рычаг 3): self-service чек-лист владельца ИС.
+
+    Владелец ИС сам собирает артефакты подтверждения по обязательным подхарактеристикам периода
+    (ответ + ссылка на артефакт), аналитик верифицирует не всё, а СЛУЧАЙНУЮ выборку — это и
+    снимает с аналитика сбор (перегруз объёмом §6.2), и сохраняет контроль достоверности.
+    verification: PENDING (ждёт ответа) → SUBMITTED (владелец ответил) → VERIFIED/REJECTED
+    (аналитик проверил выборку); NOT_SAMPLED — принято без проверки, в выборку не попало.
+    """
+    __tablename__ = "owner_checklist_items"
+    __table_args__ = (UniqueConstraint("period_id", "characteristic", "subcharacteristic", name="uq_checklist_pair"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("assessment_periods.id", ondelete="CASCADE"), nullable=False, index=True)
+    characteristic = Column(String(255), nullable=False)
+    subcharacteristic = Column(String(255), nullable=False)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=True)
+    artifact_url = Column(String(1024), nullable=True)
+    submitted_by = Column(String(255), nullable=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    sampled = Column(Boolean, nullable=False, default=False, server_default="false")
+    verification = Column(String(16), nullable=False, default="PENDING", server_default="PENDING")
+    verified_by = Column(String(255), nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    verifier_comment = Column(Text, nullable=True)

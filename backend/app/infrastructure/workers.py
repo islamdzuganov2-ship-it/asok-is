@@ -46,10 +46,20 @@ celery_app.conf.update(
             "task": "tasks.recompute_price_of_inaction",
             "schedule": crontab(hour=2, minute=0),
         },
-        # ТЗ v19 §17.9 (УК-59/60): автоэскалация по SLA (минор 30 дней / критично 3 дня).
+        # ТЗ v19 §17.9 (УК-59, УК-60): автоэскалация по SLA (минор 30 дней / критично 3 дня).
         "nonconformity-sla-autoescalate-daily": {
             "task": "tasks.nonconformity_sla_autoescalate",
             "schedule": crontab(hour=2, minute=15),
+        },
+        # ТЗ v19 п.6 (УК-15): события по расписанию («срок истекает», «измерение просрочено»)
+        # утром, до начала рабочего дня, и повтор упавших отправок раз в час.
+        "notifications-daily-scan": {
+            "task": "tasks.notifications_daily_scan",
+            "schedule": crontab(hour=7, minute=0),
+        },
+        "notifications-retry-failed-hourly": {
+            "task": "tasks.notifications_retry_failed",
+            "schedule": crontab(minute=20),
         },
     },
 )

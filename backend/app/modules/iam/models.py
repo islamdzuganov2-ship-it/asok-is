@@ -4,7 +4,7 @@ ORM-модели домена iam (ТЗ v13): пользователь и жур
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, UniqueConstraint, func
+from sqlalchemy import DDL, Boolean, DateTime, String, UniqueConstraint, event, func, text
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,25 +43,72 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     role: Mapped[str] = mapped_column(String(50), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ИБ-11: пароль, заданный администратором (создание, сброс), временный — до его смены токен
+    # пускает только к смене пароля и выходу. История — bcrypt-хэши последних паролей
+    # (действующий первым), чтобы не вернуться к недавнему (iam/password_policy.py).
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"),
+                                                       nullable=False)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    password_history: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"),
+                                                   nullable=False)
 
 
 class AuditLog(Base):
-    """Журнал аудита действий (append-only). Задел под ИБ-события по ролям (ролевая модель v12 §7,
-    backlog S10): кто/что/над какой сущностью/старое→новое/IP. Перенесён из легаси `models/audit.py`
-    в домен iam (T-19, 2026-07-06) — аудит принадлежит контуру пользователей/доступа."""
+    """Журнал событий информационной безопасности (ИБ-08; SEC-03). Append-only.
+
+    Кто (user_id + username — логин на момент события, переживает удаление пользователя) /
+    что (action — код из iam.audit.EVENTS) / над чем (entity_type + entity_id или entity_key
+    для не-UUID сущностей: роль, право, вид выгрузки) / старое→новое / исход (success/failure/
+    denied) / откуда (IP, User-Agent) / сквозной request_id — по нему находятся строки
+    прикладного лога того же запроса.
+
+    Append-only обеспечивается на уровне БД триггером (см. _AUDIT_APPEND_ONLY ниже и миграцию
+    023): UPDATE/DELETE/TRUNCATE отвергаются даже для владельца таблицы — журнал нельзя
+    «подчистить» из приложения, в том числе при компрометации его учётной записи БД.
+    """
     __tablename__ = "audit_log"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    action: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    action: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
     entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    entity_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     old_values: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     new_values: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     ip_address: Mapped[str | None] = mapped_column(INET, nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default="now()", nullable=False
+        DateTime(timezone=True), server_default="now()", nullable=False, index=True,
     )
+
+
+# Append-only на уровне БД (ИБ-08). Тот же SQL выполняет миграция 023 на существующих базах;
+# здесь — для баз, создаваемых create_all (тестовая БД), чтобы страж работал и в тестах.
+AUDIT_APPEND_ONLY_SQL = (
+    """
+    CREATE OR REPLACE FUNCTION audit_log_append_only() RETURNS trigger AS $$
+    BEGIN
+        RAISE EXCEPTION USING MESSAGE = 'audit_log is append-only: ' || TG_OP || ' is forbidden';
+    END;
+    $$ LANGUAGE plpgsql
+    """,
+    "DROP TRIGGER IF EXISTS audit_log_no_update_delete ON audit_log",
+    """
+    CREATE TRIGGER audit_log_no_update_delete BEFORE UPDATE OR DELETE ON audit_log
+    FOR EACH ROW EXECUTE FUNCTION audit_log_append_only()
+    """,
+    "DROP TRIGGER IF EXISTS audit_log_no_truncate ON audit_log",
+    """
+    CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON audit_log
+    FOR EACH STATEMENT EXECUTE FUNCTION audit_log_append_only()
+    """,
+)
+for _stmt in AUDIT_APPEND_ONLY_SQL:
+    event.listen(AuditLog.__table__, "after_create", DDL(_stmt).execute_if(dialect="postgresql"))
 
 
 class RolePermission(Base):

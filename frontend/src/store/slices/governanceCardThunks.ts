@@ -133,3 +133,28 @@ export async function fetchBudgetVariance(id: string): Promise<BudgetVariance> {
 export async function fetchEffectTimeline(id: string): Promise<EffectTimeline> {
   return govApi(`/proposals/${id}/effect-timeline`, 'GET');
 }
+
+export interface TakeToWorkArg {
+  id: string; owner: string; dueDate?: string; effortHours?: number | null;
+  executorBrief?: string; sendCalendar?: boolean;
+}
+
+/** УК-38: «В работу» — одно действие: исполнитель, срок, трудоёмкость, текст для исполнителя,
+ * запись на внутреннем Ганте, уведомление и приглашение в календарь (УК-17). */
+export const takeToWork = createAsyncThunk<Proposal | null, TakeToWorkArg, { state: RootState }>(
+  'governance/take-to-work',
+  async ({ id, ...body }, { getState }) => {
+    if (isLive(getState())) return (await govApi(`/proposals/${id}/take-to-work`, 'POST', body)).proposal;
+    const p = getState().governance.proposals.find((x) => x.id === id);
+    if (!p || p.status !== 'APPROVED') return null;
+    const due = body.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(body.dueDate)
+      ? body.dueDate.split('-').reverse().join('.') : body.dueDate;
+    return {
+      ...p, owner: body.owner, dueDate: due || p.dueDate,
+      effortHours: body.effortHours ?? p.effortHours,
+      executorBrief: body.executorBrief || p.executorBrief
+        || `Что сделать: ${p.expectation || p.rationale}. Срок: ${due ? `до ${due}` : 'не назначен'}.`,
+      taskRef: `local://proposal/${id}`, takenToWorkAt: new Date().toISOString(),
+    };
+  },
+);

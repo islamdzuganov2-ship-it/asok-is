@@ -10,13 +10,20 @@
  * читает его через `useSlice()` и раздаёт плиткам. Панель управления разрезом — `SliceBar`
  * в `CockpitScopeToolbar`: конструктор рендерит панели активных скоупов над сеткой, поэтому
  * фильтр появляется ровно там, где на дашборде есть плитки кокпита, и нигде больше.
+ *
+ * Открытая шторка L2 — тоже в адресной строке (`?tile=<id>`, ТЗ-21 §7.4, КП-ПР-4): «Скопировать
+ * ссылку» отдаёт экран вместе с открытым разложением, а «← К кокпиту» с L3 возвращает в ту же
+ * шторку. Запись — с `replace`: открытие/закрытие шторки не засоряет историю браузера.
  */
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Drawer, Typography } from 'antd';
 import { PREMIUM, SPACE } from '../../theme/premium';
 import { isSliceEmpty, type Slice } from '../../store/slice/sliceTypes';
 import { useSlice, sliceSummaryText } from '../../store/slice/sliceUrl';
 import SliceBar from '../../components/SliceBar';
+import { DemoDataBanner } from '../../components/DataModeToggle';
+import { TILE_PARAM } from '../../store/slice/cockpitReturn';
 import { CEO_TILES } from '../cockpit/ceoTiles';
 import { CTO_TILES } from '../cockpit/ctoTiles';
 import type { CockpitTile } from '../cockpit/types';
@@ -41,9 +48,18 @@ export function useCockpitScope(): CockpitScopeValue {
 }
 
 export const CockpitScopeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [openTileId, setOpenTileId] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
   const [slice] = useSlice();
+  const openTileId = params.get(TILE_PARAM);
+  // Неизвестный id (плитку убрали из реестра, ссылка старая) — шторка просто не открывается.
   const openTile = openTileId ? ALL_TILES.get(openTileId) ?? null : null;
+  const setOpenTileId = useCallback((id: string | null) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set(TILE_PARAM, id); else next.delete(TILE_PARAM);
+      return next;
+    }, { replace: true });
+  }, [setParams]);
 
   return (
     <Ctx.Provider value={{ slice, setOpenTile: setOpenTileId }}>
@@ -70,4 +86,10 @@ export const CockpitScopeProvider: React.FC<{ children: React.ReactNode }> = ({ 
   );
 };
 
-export const CockpitScopeToolbar: React.FC = () => <SliceBar />;
+export const CockpitScopeToolbar: React.FC = () => (
+  <>
+    {/* КП-43 (ТЗ-21 §9.1): вместо тумблера в шапке — заметная плашка над плитками. */}
+    <DemoDataBanner />
+    <SliceBar />
+  </>
+);

@@ -11,7 +11,8 @@
  * которая открывается кнопкой-иконкой (только иконка истории, без текста).
  */
 import React, { useEffect, useState } from 'react';
-import { Modal, Typography, Tag, Input, Button, Space, Divider, List, Tooltip, Empty } from 'antd';
+import MeasureCatalogHint from './MeasureCatalogHint';
+import { Modal, Typography, Tag, Input, Button, Space, Divider, Tooltip } from 'antd';
 import { message } from '../theme/appMessage';
 import { CheckOutlined, CloseOutlined, EditOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
@@ -19,10 +20,9 @@ import { useAppDispatch } from '../store/hooks';
 import { RootState } from '../store';
 import {
   approveProposal, rejectProposal, setExecution, updateProposalMeta, editProposal,
-  type EditableProposalFields, type Proposal, type ProposalStatus,
+  type EditableProposalFields, type Proposal,
 } from '../store/slices/governanceSlice';
-import { DollarOutlined, FileTextOutlined } from '@ant-design/icons';
-import { ragToken, solidTagStyle, RAG, ACCENT } from '../theme/ragPalette';
+import { ragToken, solidTagStyle } from '../theme/ragPalette';
 import { SPACE, TYPE } from '../theme/premium';
 import { fmtMoney, fmtNum } from '../utils/money';
 import { MeasureCardExtras } from './MeasureCardExtras';
@@ -30,46 +30,11 @@ import MeasureEconomicsBlock from './MeasureEconomicsBlock';
 import MeasureHistoryModal from './MeasureHistoryModal';
 import MeasureManagementSummary from './MeasureManagementSummary';
 import FieldHint from './FieldHint';
+import { fetchRosiHorizon, horizonCache, STATUS_TAG } from './measureCardMeta';
+import MeasureWorkPanel from './MeasureWorkPanel';
+import LangModeToggle, { useLangMode } from './LangModeToggle';
 
 const { Text, Paragraph } = Typography;
-const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
-
-// ТЗ v19 п.15: горизонт/ставка ROSI читаются из /econ/config (EconConfig — редактируется без
-// деплоя, backend/app/modules/econ/service.py). Модуль-уровневый кэш — параметр общий для всех
-// мер и не меняется на лету, повторный фетч на каждое открытие карточки не нужен.
-let horizonCache: { months: number; rate: number } | null = null;
-async function fetchRosiHorizon(): Promise<{ months: number; rate: number } | null> {
-  if (horizonCache) return horizonCache;
-  try {
-    const token = localStorage.getItem('token');
-    const r = await fetch(`${VITE_API}/econ/config`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-    if (!r.ok) return null;
-    const items: { key: string; value: unknown }[] = await r.json();
-    const months = items.find((i) => i.key === 'rosi_horizon_months')?.value;
-    const rate = items.find((i) => i.key === 'discount_rate_annual')?.value;
-    if (typeof months === 'number' && typeof rate === 'number') {
-      horizonCache = { months, rate };
-      return horizonCache;
-    }
-  } catch { /* необязательная подпись — тихо остаёмся без неё, ROSI-число всё равно верное */ }
-  return null;
-}
-
-const MEASURE_TYPE_LABEL: Record<string, string> = {
-  ELIMINATING: 'Устраняющая (снимает первопричину)',
-  COMPENSATING: 'Компенсирующая (снижает ущерб/вероятность)',
-};
-const VERDICT_LABEL: Record<string, { label: string; color: string }> = {
-  ELIMINATE: { label: 'Устранить', color: 'green' },
-  COMPENSATE: { label: 'Компенсировать', color: 'gold' },
-  ACCEPT: { label: 'Принять риск', color: 'default' },
-};
-
-const STATUS_TAG: Record<ProposalStatus, { color: string; label: string }> = {
-  PENDING_APPROVAL: { color: 'gold', label: 'Ожидает решения' },
-  APPROVED: { color: 'green', label: 'Одобрена' },
-  REJECTED: { color: 'red', label: 'Отклонена' },
-};
 
 interface Props {
   open: boolean;
@@ -106,6 +71,8 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Partial<EditableProposalFields>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
+  // УК-34: управленческий язык скрывает метрику/формулы/профсуждение — ничего не удаляя.
+  const technical = useLangMode() === 'technical';
 
   useEffect(() => {
     setComment(''); setExecComment('');
@@ -196,6 +163,7 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
             <Tag color={st.color}>{st.label}</Tag>
           </Space>
           <Space size={4}>
+            <LangModeToggle />
             {canEdit && !editing && (
               <Button size="small" icon={<EditOutlined />} onClick={startEdit}>Внести правки</Button>
             )}
@@ -215,10 +183,12 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
       <Space wrap style={{ marginBottom: 8 }}>
         <Tag>{p.systemName}</Tag>
         <Tag>{p.characteristic}</Tag>
-        <Tag style={solidTagStyle(tok.strong)}>{p.calculatedScore}%</Tag>
+        {technical && <Tag style={solidTagStyle(tok.strong)}>{p.calculatedScore}%</Tag>}
       </Space>
 
       <MeasureManagementSummary open={open} proposalId={proposal?.id} />
+      {/* RE-10: типовые устраняющие/компенсирующие меры каталога по характеристике меры. */}
+      {technical && <MeasureCatalogHint characteristic={p.characteristic} />}
 
       {hasEconomics && (
         <MeasureEconomicsBlock
@@ -261,15 +231,23 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
         </>
       ) : (
         <>
-          <Field label="Метрика">
-            <Text>{p.metricName}</Text>
-          </Field>
+          {technical && (
+            <Field label="Метрика">
+              <Text>{p.metricName}</Text>
+            </Field>
+          )}
           <Field label="Что ожидается от ЛПР и почему">
             <Text>{p.expectation || '—'}</Text>
           </Field>
-          <Field label="Обоснование (профессиональное суждение)">
-            <Paragraph style={{ marginBottom: 0 }}>{p.rationale}</Paragraph>
-          </Field>
+          {technical ? (
+            <Field label="Обоснование (профессиональное суждение)">
+              <Paragraph style={{ marginBottom: 0 }}>{p.rationale}</Paragraph>
+            </Field>
+          ) : (
+            <Text type="secondary" style={{ fontSize: TYPE.caption.fontSize, display: 'block', marginBottom: SPACE.cozy }}>
+              Метрика и профессиональное суждение скрыты в управленческом режиме — переключите на «Техн.».
+            </Text>
+          )}
           {isPending && canEditMeta ? (
             <Field label="Ответственный и срок (можно изменить перед решением)">
               <Space direction="vertical" size={6} style={{ width: '100%' }}>
@@ -278,13 +256,9 @@ export const MeasureDecisionModal: React.FC<Props> = ({ open, proposal, onClose 
                 <Input value={editDue} onChange={(e) => setEditDue(e.target.value)} placeholder="Срок выполнения (ДД.ММ.ГГГГ)" />
               </Space>
             </Field>
-          ) : (p.owner || p.dueDate) ? (
-            <Field label="Ответственный / срок">
-              <Text>
-                {p.owner || '—'}{p.ownerRole ? `, ${p.ownerRole}` : ''}
-                {p.dueDate ? ` · до ${p.dueDate}` : ''}
-              </Text>
-            </Field>
+          ) : (p.owner || p.dueDate || isApproved) ? (
+            // УК-40/38/17: ответственный (ОМ), «В работу», срок в календарь.
+            <MeasureWorkPanel p={p} />
           ) : null}
 
           <Divider style={{ margin: '12px 0' }} />

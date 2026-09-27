@@ -22,9 +22,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.infrastructure.config import settings
 from app.infrastructure.database import get_db
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
-from app.modules.iam import get_current_user, get_role_permissions, require_permission
+from app.modules.iam import audit, get_current_user, get_role_permissions, require_permission
 from app.modules.llm import brain as llm_brain
 from app.modules.quality import (
     CHARACTERISTICS,
@@ -37,7 +38,9 @@ from app.modules.quality import (
     portfolio_score,
     weight_for,
     weighted_system_score,
+    score_reading,
 )
+from app.modules.reporting import score_sheet
 from app.modules.reporting.models import DefectMatrix, QualityPlanMatrix, RiskMatrix
 from app.modules.reporting.schemas import (
     DashboardDataOut,
@@ -83,8 +86,13 @@ router = APIRouter()
 
 @router.get("/llm-status")
 async def get_llm_status(_: dict = Depends(get_current_user)) -> dict:
-    """Статус встроенной LLM: паспорт загруженной модели (архитектура/контекст) + мозг."""
-    return llm_service.model_info()
+    """Статус встроенной LLM: паспорт загруженной модели (архитектура/контекст) + мозг.
+
+    `demo_data` (ТЗ-21 §9.1, КП-43): бэкенд работает на демо-наборе (DEMO_MODE). Плитки кокпита
+    читают бэкенд всегда, независимо от клиентского тумблера «Демо/LLM», поэтому честная плашка
+    «Демонстрационные данные» над ними опирается на этот признак. Данных оценки не раскрывает.
+    """
+    return {**llm_service.model_info(), "demo_data": settings.DEMO_MODE}
 
 
 @router.get("/llm-models")
@@ -521,7 +529,9 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
         score = float(value.calculated_x)
         present_chars.add(canon)
         cells[(value.period.system.name, canon)].append(score)
-        subchar_x[value.period.system.name][(canon, value.metric.subcharacteristic)] = score * 100
+        # УК-02: X в ЦЕЛЫХ процентах — как /assessments/dashboard и Excel, иначе цифры на экранах
+        # расходились бы в десятых на одних и тех же данных.
+        subchar_x[value.period.system.name][(canon, value.metric.subcharacteristic)] = round(score * 100)
         if score < 0.41:
             low_counts[value.period.system.id] += 1
 
@@ -547,6 +557,8 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
         system_scores[name] = weighted_system_score(subchar_scores).score
     portfolio = portfolio_score(system_scores, crit_by_name, DEFAULT_CRITICALITY_WEIGHTS)
     global_score = round(portfolio.score, 2) if portfolio.score is not None else 0.0
+    score_scale = await _executive_score_scale(db, all_values, system_scores, crit_by_name,
+                                               weights_by_profile, portfolio.score)
 
     # Канонические характеристики в фиксированном порядке модели (только присутствующие).
     characteristic_names = [c for c in CHARACTERISTICS if c in present_chars]
@@ -618,6 +630,56 @@ async def get_executive_dashboard(db: AsyncSession = Depends(get_db),
         yAxisLabels=system_names,
         problematicSystems=problematic,
         periodsUsed=periods_used,
+        scoreScale=score_scale,
+        # УК-02: балл каждой ИС — та же свёртка, что у глобальной цифры, теплокарты и Excel.
+        systemScores={n: (round(s, 2) if s is not None else None) for n, s in system_scores.items()},
+    )
+
+
+async def _executive_score_scale(db, all_values, system_scores, crit_by_name, weights_by_profile,
+                                 portfolio_pct) -> dict:
+    """УК-03 на дашборде CEO: уровень словами, цель, дельта к прошлому периоду — по тем же ИС,
+    той же свёрткой (УК-02), что и /assessments/dashboard."""
+    from app.modules.econ import config_value  # отложенно: econ тянет governance → цикл при старте
+
+    periods_by_system: dict = defaultdict(list)
+    for v in sorted(all_values, key=lambda v: period_sort_key(v.period.period), reverse=True):
+        seen = periods_by_system[v.period.system_id]
+        if v.period_id not in seen:
+            seen.append(v.period_id)
+    prev_x: dict[str, dict[tuple[str, str], float]] = defaultdict(dict)
+    prev_label: dict[str, str] = {}
+    for v in all_values:
+        seen = periods_by_system[v.period.system_id]
+        if len(seen) < 2 or seen[1] != v.period_id or v.calculated_x is None:
+            continue
+        canon = canonical_characteristic(v.metric.characteristic)
+        if canon is None:
+            continue
+        prev_x[v.period.system.name][(canon, v.metric.subcharacteristic)] = round(float(v.calculated_x) * 100)
+        prev_label[v.period.system.name] = v.period.period
+    prev_scores: dict[str, float | None] = {}
+    for name, xs in prev_x.items():
+        prev_scores[name] = weighted_system_score([
+            SubcharScore(characteristic=c, subcharacteristic=s,
+                         weight=weight_for(weights_by_profile, crit_by_name.get(name), c, s),
+                         x=xs.get((c, s)))
+            for c, subs_def in QUALITY_MODEL for s, _ in subs_def
+        ]).score
+    common = [n for n, s in prev_scores.items() if s is not None and system_scores.get(n) is not None]
+    previous_pct = comparable_pct = None
+    if common:
+        prev = portfolio_score({n: prev_scores[n] for n in common}, crit_by_name, DEFAULT_CRITICALITY_WEIGHTS)
+        cur = portfolio_score({n: system_scores[n] for n in common}, crit_by_name, DEFAULT_CRITICALITY_WEIGHTS)
+        previous_pct = round(prev.score, 1) if prev.score is not None else None
+        comparable_pct = round(cur.score, 1) if cur.score is not None else None
+    target = await config_value(db, "quality_score_target", 0.81)
+    return score_reading(
+        round(portfolio_pct, 1) if portfolio_pct is not None else None,
+        previous_pct=previous_pct, comparable_pct=comparable_pct,
+        target_pct=round(float(target) * 100, 1) if target is not None else None,
+        compared_systems=len(common), total_systems=len(system_scores),
+        previous_periods={n: prev_label[n] for n in common if n in prev_label},
     )
 
 
@@ -880,7 +942,7 @@ async def _load_period_matrices(db: AsyncSession, period_id: UUID):
 
 @router.get("/export/{period_id}/xlsx")
 async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db),
-                             _: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
+                             user: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
     """Выгрузка реестров периода в .xlsx (T-14): характеристики качества, риски, недостатки, план.
 
     Управленческая выгрузка «одним файлом» (4 листа) — то, что в ТЗ v11 R2.1 просилось экспортом
@@ -912,6 +974,9 @@ async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db)
         ["N", "Характеристика", "Цифровой показатель", "Уровень качества", "Описание недостатка"],
         [[r.id, r.characteristic, r.digital_metric, r.quality_metric_level, r.defect_description] for r in defects],
     )
+    # ТЗ v19 УК-02: балл ИС той же свёрткой и весами, что на дашбордах — цифры совпадают.
+    _write_sheet(wb.create_sheet("Балл ИС"), score_sheet.HEADERS,
+                 await score_sheet.period_score_rows(db, period, vals))
     _write_sheet(
         wb.create_sheet("План качества"),
         ["N", "Характеристика", "Подхарактеристика", "Задача", "ВНД", "Ответственный", "Срок"],
@@ -921,6 +986,10 @@ async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db)
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
+    # ИБ-08: выгрузка реестров (в т.ч. ФИО ответственных) — событие журнала ИБ.
+    await audit.record(db, audit.REPORT_EXPORT, user=user, entity_type="assessment_period", entity_id=period_id,
+                       new={"format": "xlsx", "period": period.period})
+    await db.commit()
     fname = f"asok_report_{period.period}.xlsx".replace(" ", "_")
     return StreamingResponse(
         buf, media_type=_XLSX_MEDIA,
@@ -930,7 +999,7 @@ async def export_period_xlsx(period_id: UUID, db: AsyncSession = Depends(get_db)
 
 @router.get("/export/{period_id}/pdf")
 async def export_period_pdf(period_id: UUID, db: AsyncSession = Depends(get_db),
-                            _: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
+                            user: dict = Depends(require_permission("view.reports"))) -> StreamingResponse:
     """Сводный отчёт периода одним PDF (ДЕФ-18, T-14, БТ-283).
 
     Экспорт в xlsx работал, PDF — нет, хотя в требованиях он стоял рядом («экспорт xlsx +
@@ -966,6 +1035,9 @@ async def export_period_pdf(period_id: UUID, db: AsyncSession = Depends(get_db),
     buf = await asyncio.to_thread(
         _build_summary_pdf, period.period, system.name if system else "—", blocks,
     )
+    await audit.record(db, audit.REPORT_EXPORT, user=user, entity_type="assessment_period", entity_id=period_id,
+                       new={"format": "pdf", "period": period.period})
+    await db.commit()
     fname = f"asok_report_{period.period}.pdf".replace(" ", "_")
     return StreamingResponse(
         buf, media_type=_PDF_MEDIA,

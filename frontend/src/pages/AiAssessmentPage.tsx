@@ -23,11 +23,10 @@ import { ragToken, solidTagStyle, BRAND } from '../theme/ragPalette';
 import { SPACE, premiumCard, accentDot, GOLD, TYPE } from '../theme/premium';
 import { numericColumn, numericText, sorterFor } from '../theme/table';
 import FieldHint from '../components/FieldHint';
-import {
-  ARRAY_FIELDS, CURVE_FIELDS, INPUT_LABEL, KIND_SCHEMAS, VERDICT_TAG, parseCsv, parseCurve,
-  type AiGroup, type AiPeriod, type AiValue,
-  type CalcOut, type ConfReport, type ConfRow, type SystemLite,
-} from './aiAssessment/aiModel';
+import { ARRAY_FIELDS, CURVE_FIELDS, INPUT_LABEL, KIND_SCHEMAS, VERDICT_TAG, parseCsv, parseCurve, type AiGroup, type AiPeriod, type AiValue, type CalcOut, type ConfReport, type SystemLite } from './aiAssessment/aiModel';
+import AiConformanceModal from './aiAssessment/AiConformanceModal';
+import AiE3Section from './aiAssessment/AiE3Section';
+import AiCompareCard from './aiAssessment/AiCompareCard';
 
 const { Title, Text } = Typography;
 const VITE_API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1';
@@ -482,36 +481,9 @@ const AiAssessmentPage: React.FC = () => {
         </Space>
       </Modal>
 
-      {/* Отчёт соответствия (критерий приёмки 7) */}
-      <Modal
-        title={<span><FileDoneOutlined /> Отчёт соответствия базовым значениям</span>}
-        open={reportOpen} onCancel={() => setReportOpen(false)} footer={null} width={860}
-      >
-        {report && (
-          <Space direction="vertical" style={{ width: '100%' }} size={10}>
-            <Space size="large" wrap>
-              <Text strong style={numericText}>Q = {report.q != null ? report.q.toFixed(3) : '—'}</Text>
-              <Tag>{report.level}</Tag>
-              <Tag color="green">В допуске: {report.conformant_count}</Tag>
-              <Tag color="red">Вне допуска: {report.nonconformant_count}</Tag>
-              <Tag>Без эталона: {report.no_baseline_count}</Tag>
-            </Space>
-            <Table<ConfRow>
-              dataSource={report.rows} rowKey={(r) => `${r.characteristic}|${r.subcharacteristic}`}
-              size="small" bordered pagination={false} scroll={{ y: 400 }}
-              columns={[
-                { title: 'Характеристика', dataIndex: 'characteristic', width: 180, ellipsis: true, sorter: sorterFor((r: ConfRow) => r.characteristic) },
-                { title: 'Субхарактеристика', dataIndex: 'subcharacteristic', ellipsis: true, sorter: sorterFor((r: ConfRow) => r.subcharacteristic) },
-                { title: 'Значение', dataIndex: 'raw_value', width: 90, sorter: sorterFor((r: any) => r.raw_value), render: (v: number | null) => v == null ? '—' : v.toFixed(3) },
-                numericColumn({ title: 'Эталон', dataIndex: 'baseline', width: 80, sorter: sorterFor((r: any) => r.baseline), render: (v: number | null) => v == null ? '—' : v }),
-                numericColumn({ title: 'ε⁻/ε⁺', key: 'tol', width: 90, sorter: sorterFor((r: any) => r.tol_low), render: (_: unknown, r: any) => r.baseline == null ? '—' : `${r.tol_low ?? 0}/${r.tol_high ?? 0}` }),
-                numericColumn({ title: 'X', dataIndex: 'normalized_x', width: 70, sorter: sorterFor((r: any) => r.normalized_x), render: (v: number | null) => v == null ? '—' : v.toFixed(3) }),
-                { title: 'Вердикт', dataIndex: 'verdict', width: 150, sorter: sorterFor((r: ConfRow) => r.verdict), render: (v: string) => <Tag color={VERDICT_TAG[v]}>{v}</Tag> },
-              ]}
-            />
-          </Space>
-        )}
-      </Modal>
+      {periodId && <AiE3Section periodId={periodId} model={model} onValuesChanged={() => loadValues(periodId)} />}
+      <AiCompareCard />
+      <AiConformanceModal report={report} open={reportOpen} onClose={() => setReportOpen(false)} />
     </div>
   );
 };

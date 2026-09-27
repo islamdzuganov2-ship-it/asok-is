@@ -11,6 +11,7 @@ import { THEMES, antdThemeOf, fontStackOf } from './theme/themes';
 import { registerAppApi } from './theme/appMessage';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const ExecutiveDashboard = lazy(() => import('./pages/dashboard/ExecutiveDashboard'));
 const CtoDashboard = lazy(() => import('./pages/dashboard/CtoDashboard'));
@@ -34,6 +35,8 @@ const RiskEconomicsPage = lazy(() => import('./pages/RiskEconomicsPage'));
 const UsersAdminPage = lazy(() => import('./pages/admin/UsersAdminPage'));
 const PermissionsMatrixPage = lazy(() => import('./pages/admin/PermissionsMatrixPage'));
 const LlmQualityPage = lazy(() => import('./pages/admin/LlmQualityPage'));
+const AuditLogPage = lazy(() => import('./pages/admin/AuditLogPage'));
+const NotificationsLogPage = lazy(() => import('./pages/admin/NotificationsLogPage'));
 const MeasureDepartmentsPage = lazy(() => import('./pages/admin/MeasureDepartmentsPage'));
 const WeightsEditorPage = lazy(() => import('./pages/admin/WeightsEditorPage'));
 
@@ -50,6 +53,13 @@ const PageLoader = () => (
 );
 
 const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+    const { isAuthenticated, mustChangePassword } = useSelector((state: RootState) => state.auth);
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    // ИБ-11: с временным паролем — только экран его смены (сервер на остальное отвечает 403).
+    return mustChangePassword ? <Navigate to="/change-password" replace /> : children;
+};
+
+const RequireSession: React.FC<{ children: React.ReactElement }> = ({ children }) => {
     const { isAuthenticated } = useSelector((state: RootState) => state.auth);
     return isAuthenticated ? children : <Navigate to="/login" replace />;
 };
@@ -143,9 +153,10 @@ export const App: React.FC = () => {
                 <Suspense fallback={<PageLoader />}>
                     <Routes>
                         <Route path="/login" element={<LoginPage />} />
+                        <Route path="/change-password" element={<RequireSession><ChangePasswordPage /></RequireSession>} />
                         <Route path="/*" element={<RequireAuth><AppLayout><Suspense fallback={<PageLoader />}><Routes>
                             <Route path="dashboard" element={<DashboardRouter />} />
-                            {/* Личный дашборд (ТЗ v22, БТ-500): состав собирает сам пользователь. */}
+                            {/* Личный дашборд (ТЗ-22, КД-22): состав собирает сам пользователь. */}
                             <Route path="dashboard/my" element={<RequirePermission perm="view.my_dashboard"><MyDashboardPage /></RequirePermission>} />
                             <Route path="dashboard/analytics" element={<RequirePermission perm="view.dashboard.analytics"><DashboardPage /></RequirePermission>} />
                             <Route path="dashboard/cto" element={<RequirePermission perm="view.dashboard.cto"><CtoDashboard /></RequirePermission>} />
@@ -173,6 +184,8 @@ export const App: React.FC = () => {
                             <Route path="admin/measure-departments" element={<RequirePermission perm="admin.permissions.manage"><MeasureDepartmentsPage /></RequirePermission>} />
                             <Route path="admin/weights" element={<RequirePermission perm="quality.weights.edit"><WeightsEditorPage /></RequirePermission>} />
                             <Route path="admin/llm-quality" element={<RequirePermission perm="view.admin.llm_quality"><LlmQualityPage /></RequirePermission>} />
+                            <Route path="admin/audit" element={<RequirePermission perm="view.admin.audit"><AuditLogPage /></RequirePermission>} />
+                            <Route path="admin/notifications" element={<RequirePermission perm="view.admin.notifications"><NotificationsLogPage /></RequirePermission>} />
                             <Route index element={<Navigate to="/dashboard" replace />} />
                             {/* ДЕФ-36: неизвестный URL внутри лэйаута рендерил пустую область
                                 без единого сообщения. Уводим на посадочную страницу роли. */}

@@ -213,7 +213,13 @@ async def seed_data() -> None:
             {"username": "executor", "email": "executor@example.com", "password": "Executor123!",
              "role": "EXECUTOR", "full_name": "Петрова А.С."},
         ]
-        assert {u["role"] for u in users_data} == set(User.ALL_ROLES), "seed users must cover all roles"
+        # ИБ-15 (SEC-22): явная проверка вместо assert — assert исчезает при `python -O`.
+        seeded_roles = {u["role"] for u in users_data}
+        if seeded_roles != set(User.ALL_ROLES):
+            raise RuntimeError(
+                f"Демо-сид должен покрывать ровно роли системы: нет {sorted(set(User.ALL_ROLES) - seeded_roles)}, "
+                f"лишние {sorted(seeded_roles - set(User.ALL_ROLES))}"
+            )
         for item in users_data:
             result = await db.execute(select(User).where(User.username == item["username"]))
             if result.scalar_one_or_none() is None:

@@ -54,6 +54,15 @@ class IncidentRecord:
     severity: str
     opened_at: str
     resolved_at: str | None = None
+    # BL-007 RE-23…RE-26 (контракт данных §2.6): поля выгрузки ITSM, нужные экономике сбоя.
+    # Все необязательны — адаптер, который их не знает, остаётся совместимым с портом.
+    title: str | None = None
+    assignment_group: str | None = None     # группа назначения — ключ привязки к ИС (RE-25)
+    ci_name: str | None = None              # конфигурационная единица / сервис из тикета
+    category: str | None = None
+    parent_ref: str | None = None           # родительский тикет, если ITSM его ведёт (RE-26)
+    # Журнал переназначений: ((момент ISO, линия L1/L2/L3 или группа), ...) — для RE-24.
+    reassignments: tuple[tuple[str, str], ...] = ()
 
 
 @runtime_checkable
@@ -78,10 +87,19 @@ class DataWarehouseSink(Protocol):
     def write_analytics(self, dataset: str, rows: Sequence[dict[str, Any]]) -> int: ...
 
 
-# ─── Уведомления (ТЗ v19 п.6): доставка вовне — канал НЕ выбран заказчиком ────────
+# ─── Уведомления (ТЗ v19 п.6, УК-15/16): доставка вовне — канал НЕ выбран заказчиком ────────
 # Решение сессии (docs/ТЗ_19 §4): SMTP/мессенджер не определены — строим порт и заглушку,
 # домены эмитят события ЭТОГО контракта уже сейчас (см. shared/notification_events.py — каталог
-# типов), реальный канал подключается адаптером без изменений в доменах.
+# типов), реальный канал подключается адаптером без изменений в доменах. Журнал отправок и
+# повторы — modules/notifications (УК-15), не адаптер: адаптер только доставляет.
+@dataclass(frozen=True)
+class NotificationAttachment:
+    """Вложение события — например, календарное приглашение .ics (УК-17)."""
+    filename: str
+    content_type: str
+    content: str
+
+
 @dataclass(frozen=True)
 class NotificationEvent:
     """Одно событие, о котором нужно оповестить получателя — не привязано к каналу доставки."""
@@ -91,6 +109,11 @@ class NotificationEvent:
     body: str
     entity_type: str    # "proposal" | "nonconformity" — на что ссылается событие
     entity_id: str
+    # Адрес доставки, разрешённый журналом уведомлений (email пользователя или список адресов
+    # роли). None — адреса нет: событие всё равно передаётся порту (заглушка его логирует), а в
+    # журнале оно попадает в «недоставляемые» (УК-15).
+    address: str | None = None
+    attachments: tuple[NotificationAttachment, ...] = ()
 
 
 @runtime_checkable

@@ -1,5 +1,5 @@
 /**
- * catalog.ts — ЕДИНЫЙ каталог карточек всей системы (ТЗ v22, БТ-500).
+ * catalog.ts — ЕДИНЫЙ каталог карточек всей системы (ТЗ-22, КД-05, КД-07).
  *
  * Это то место, ради которого затевался конструктор: раньше состав дашборда был зашит в его
  * компонент, и «взять карточку сбоев на дашборд менеджера» означало правку кода. Теперь любой
@@ -54,7 +54,7 @@ export const CARD_REGISTRY: CardDef[] = [
   { id: 'manager.judgments', title: 'Профессиональные суждения', source: 'manager', perm: 'view.dashboard.manager', scope: 'manager', w: 12, h: 10, minW: 4, minH: 5, hint: 'Заполненные суждения по выбранному срезу' , Component: lazyCard(() => import('./cards/managerCards'), 'ManagerJudgmentsCard') },
 
   // ─── Аналитический дашборд ───
-  { id: 'analytics.kpi', title: 'Ключевые показатели ландшафта', source: 'analytics', perm: 'view.dashboard.analytics', scope: 'analytics', w: 12, h: 5, minW: 4, minH: 4, hint: 'Глобальный балл, ИС, метрики, низкие метрики, меры' , Component: lazyCard(() => import('./cards/analyticsCards'), 'AnalyticsKpiCard') },
+  { id: 'analytics.kpi', title: 'Ключевые показатели ландшафта', source: 'analytics', perm: 'view.dashboard.analytics', scope: 'analytics', w: 12, h: 7, minW: 4, minH: 5, hint: 'Глобальный балл, ИС, метрики, низкие метрики, меры' , Component: lazyCard(() => import('./cards/analyticsCards'), 'AnalyticsKpiCard') },
   { id: 'analytics.levels', title: 'Распределение по уровням качества', source: 'analytics', perm: 'view.dashboard.analytics', scope: 'analytics', w: 5, h: 12, minW: 3, minH: 7, hint: 'Круговая диаграмма уровней ГОСТ 25010' , Component: lazyCard(() => import('./cards/analyticsCards'), 'AnalyticsLevelsCard') },
   { id: 'analytics.problemSystems', title: 'Проблемные ИС', source: 'analytics', perm: 'view.dashboard.analytics', scope: 'analytics', w: 7, h: 12, minW: 4, minH: 7, hint: 'Наибольшее число низких метрик' , Component: lazyCard(() => import('./cards/analyticsCards'), 'AnalyticsProblemSystemsCard') },
   { id: 'analytics.heatmap', title: 'Тепловая карта: характеристики ИС', source: 'analytics', perm: 'view.dashboard.analytics', scope: 'analytics', w: 12, h: 15, minW: 5, minH: 8, hint: 'Детальная карта с выбором системы' , Component: lazyCard(() => import('./cards/analyticsCards'), 'AnalyticsHeatmapCard') },
@@ -76,6 +76,11 @@ export const CARD_REGISTRY: CardDef[] = [
   { id: 'taskplan.employees', title: 'Эффективность сотрудников (план задач)', source: 'taskplan', perm: 'view.dashboard.taskplan', scope: 'taskplan', w: 12, h: 11, minW: 4, minH: 6, hint: 'По выборке текущих фильтров плана задач' , Component: lazyCard(() => import('./cards/taskPlanCards'), 'TaskPlanEmployeesCard') },
   { id: 'taskplan.gantt', title: 'Временная диаграмма (Ганта)', source: 'taskplan', perm: 'view.dashboard.taskplan', scope: 'taskplan', w: 12, h: 15, minW: 5, minH: 7, hint: 'Сроки и статусы задач по времени' , Component: lazyCard(() => import('./cards/taskPlanCards'), 'TaskPlanGanttCard') },
   { id: 'taskplan.bubbles', title: 'Пузырьковая карта задач', source: 'taskplan', perm: 'view.dashboard.taskplan', scope: 'taskplan', w: 12, h: 15, minW: 5, minH: 7, hint: 'Ответственные × сроки, зоны просрочки' , Component: lazyCard(() => import('./cards/taskPlanCards'), 'TaskPlanBubblesCard') },
+
+  // ─── ТЗ-19: управленческий контур (самодостаточные карточки) ───
+  { id: 'taskplan.executorLoad', title: 'Нагрузка и балансировка исполнителей', source: 'taskplan', perm: 'view.dashboard.taskplan', scope: 'none', w: 12, h: 12, minW: 5, minH: 6, hint: 'УК-32/33: кто перегружен, кто свободен, что кому передать', Component: lazyCard(() => import('./cards/controlCards'), 'ExecutorLoadCard') },
+  { id: 'manager.executionControl', title: 'Сверка исполнения мер со сбоями', source: 'manager', perm: 'view.dashboard.manager', scope: 'none', w: 12, h: 10, minW: 4, minH: 5, hint: 'УК-45: мера исполнена, а сбои продолжаются', Component: lazyCard(() => import('./cards/controlCards'), 'ExecutionControlCard') },
+  { id: 'econ.budgetQueue', title: 'Приоритет бюджетных заявок (CAPEX)', source: 'econ', perm: 'view.risk_economics', scope: 'none', w: 12, h: 11, minW: 5, minH: 6, hint: 'УК-54: очередь по составному весу и бюджет', Component: lazyCard(() => import('./cards/controlCards'), 'BudgetQueueCard') },
 
   // ─── Владелец риска ───
   ...RISK_CARDS,

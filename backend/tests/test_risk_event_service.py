@@ -136,12 +136,21 @@ async def test_cell_detail_aggregates_risks_and_money(db_session):
 
     result = await service.cell_detail(db_session, "ИС-теплокарта", "Надёжность")
     assert result.system_name == "ИС-теплокарта"
-    assert result.total_ale == 150000.0
     assert len(result.risks) == 2
-    # Отсортировано по ALE по убыванию — риск A (100000) первый.
-    assert result.risks[0].code == "RE-CELL-1"
-    assert result.risks[0].subcharacteristics == ["Отказоустойчивость"]
-    assert result.risks[1].code == "RE-CELL-2"
+    by_code = {r.code: r for r in result.risks}
+    # УК-10 (В-14): риск A привязан к ДВУМ характеристикам — в ячейку входит половина его ALE.
+    assert by_code["RE-CELL-1"].characteristics_count == 2
+    assert by_code["RE-CELL-1"].ale_in_cell == 50000.0
+    assert by_code["RE-CELL-1"].ale_avg == 100000.0          # полный ALE риска тоже виден
+    assert by_code["RE-CELL-1"].subcharacteristics == ["Отказоустойчивость"]
+    assert by_code["RE-CELL-2"].ale_in_cell == 50000.0
+    assert result.total_ale == 100000.0
+
+    # Критерий УК-10: сумма ALE по ячейкам одной ИС сходится с ALE этой ИС (150 000), а не 200 000.
+    other = await service.cell_detail(db_session, "ИС-теплокарта", "Защищённость")
+    assert result.total_ale + other.total_ale == 150000.0
+    layer = [c for c in await service.heatmap_money_layer(db_session) if c.system_name == "ИС-теплокарта"]
+    assert sum(c.total_ale for c in layer) == 150000.0
 
 
 async def test_cell_detail_includes_linked_measures_with_money(db_session):
@@ -166,6 +175,9 @@ async def test_cell_detail_includes_linked_measures_with_money(db_session):
     assert measures[0].ale_reduction_share == 0.7
     assert measures[0].rosi == 1.8
     assert measures[0].verdict == "ELIMINATE"
+    # УК-10: деньги меры — в рублях, не только долей: 80 000 × 0.7.
+    assert measures[0].delta_ale == 56000.0
+    assert result.total_delta_ale == 56000.0
 
 
 async def test_cell_detail_unknown_system_returns_empty_not_error(db_session):

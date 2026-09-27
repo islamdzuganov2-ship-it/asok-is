@@ -1,5 +1,5 @@
 /**
- * SliceBar.tsx — панель сквозного разреза (ТЗ v21 §3.4, КП-07…КП-10).
+ * SliceBar.tsx — панель сквозного разреза (ТЗ v21 §3.4, КП-07, КП-08, КП-09, КП-10).
  *
  * Свёрнута по умолчанию: руководителю, которому разрез не нужен, не показываем набор контролов.
  * Но активные фильтры видны чипами ДАЖЕ свёрнутой — цифра на экране не должна читаться как
@@ -9,10 +9,11 @@
  * отдельного места в `AppLayout` не занимает и на чужих дашбордах не появляется.
  */
 import React, { useState } from 'react';
-import { Button, Select, Space, Tag, Typography } from 'antd';
+import { useLocation } from 'react-router-dom';
+import { Button, Segmented, Select, Space, Tag, Typography } from 'antd';
 import { DownOutlined, LinkOutlined, UpOutlined } from '@ant-design/icons';
 import { useSlice, sliceSummaryText } from '../store/slice/sliceUrl';
-import { activeFilterCount, type Slice } from '../store/slice/sliceTypes';
+import { activeFilterCount, lensOf, LENSES, LENS_LABELS, type Lens, type Slice } from '../store/slice/sliceTypes';
 import { useGetSystemsQuery } from '../store/api/apiSlice';
 import { QUALITY_MODEL } from '../constants/qualityModel';
 import { message } from '../theme/appMessage';
@@ -27,8 +28,15 @@ const CRIT_OPTIONS = [
   { value: 'BO', label: 'Business Operational' },
 ];
 
+/** Линза по умолчанию для экрана (ТЗ-21 §3.2): `ale` у кокпита CEO, `score` у остальных. */
+export function defaultLensFor(pathname: string): Lens {
+  return pathname.startsWith('/dashboard/ceo') ? 'ale' : 'score';
+}
+
 const SliceBar: React.FC = () => {
   const [slice, patch, reset] = useSlice();
+  const { pathname } = useLocation();
+  const lens = lensOf(slice, defaultLensFor(pathname));
   const [expanded, setExpanded] = useState(false);
   const { data: systemsResp } = useGetSystemsQuery();
   const systemOptions = (systemsResp?.items ?? []).map((s) => ({ value: s.id, label: s.name }));
@@ -51,6 +59,7 @@ const SliceBar: React.FC = () => {
           {slice.characteristic && <Tag>{slice.characteristic}</Tag>}
           {slice.owner && <Tag>{slice.owner}</Tag>}
           {slice.criticality.map((c) => <Tag key={c}>{c}</Tag>)}
+          {slice.lens && <Tag>линза: {LENS_LABELS[slice.lens]}</Tag>}
         </Space>
         <Space size={SPACE.tight}>
           {count > 0 && <Button size="small" onClick={reset}>Сбросить</Button>}
@@ -85,6 +94,14 @@ const SliceBar: React.FC = () => {
             // Подхарактеристика принадлежит характеристике: смена родителя обнуляет ребёнка,
             // иначе в разрезе остаётся пара, которой не существует.
             onChange={(v) => patch({ characteristic: v ?? null, subcharacteristic: null })}
+          />
+          {/* Денежная линза (§3.1): способ показа, не фильтр — поэтому «Сбросить» её не трогает. */}
+          <Segmented
+            size="small"
+            aria-label="Денежная линза"
+            options={LENSES.map((l) => ({ value: l, label: LENS_LABELS[l] }))}
+            value={lens}
+            onChange={(v) => patch({ lens: v as Lens })}
           />
         </div>
       )}

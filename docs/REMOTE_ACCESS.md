@@ -14,6 +14,18 @@
 Есть три варианта. Все используют один источник (Vite проксирует `/api` на бэкенд), поэтому
 ссылка работает «как есть», без настройки CORS.
 
+> **ИБ-06: публикация — только на демо-стенде.** Сервисы туннелей, Caddy и DDNS вынесены из
+> продуктивного `docker-compose.yml` в оверлей `docker-compose.demo.yml` (там же `DEMO_MODE=true`
+> и Vite dev). Подключите оверлей в `.env` демо-стенда — и все команды ниже работают как раньше:
+>
+> ```
+> COMPOSE_PATH_SEPARATOR=:
+> COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.demo.yml
+> ```
+>
+> Без этих строк `docker compose --profile tunnel up -d` не найдёт сервис туннеля — так и задумано
+> для продуктива.
+
 > Важно: используется протокол **http2** (не QUIC). Это обходит проблемы QUIC/UDP в Docker
 > Desktop (предупреждение `failed to increase receive buffer`) и ошибку Cloudflare **1033**.
 
@@ -87,6 +99,9 @@ docker compose stop tunnel tunnel-named tunnel-ngrok
    где стенд разворачивался из старого клона.
 3. **Закрыть `/docs`.** В `.env` (корень репозитория) выставить `API_DOCS_ENABLED=false`
    **до** `docker compose --profile ... up -d`.
+   **Пароль Redis (ИБ-Ф1).** В том же `.env` задать `REDIS_PASSWORD` (не значение по умолчанию
+   `asok_redis_dev`; сгенерировать — `python -c "import secrets; print(secrets.token_urlsafe(32))"`)
+   и пересоздать `redis`, `backend`, `celery_worker` — пароль подставляется во все три.
 4. **Закрыть саму ссылку** — рекомендуемый способ зависит от варианта:
    - **Вариант 2 (named tunnel, рекомендуется для показа):** Cloudflare **Zero Trust →
      Access → Applications → Add an application → Self-hosted**, домен `asok.asokis.ai`,
@@ -107,8 +122,9 @@ docker compose stop tunnel tunnel-named tunnel-ngrok
    (см. раздел «Остановить публичный доступ» выше).
 
 ## Безопасность (общее, вне показа)
-Публичная ссылка открывает доступ всем, у кого она есть, а стенд по умолчанию в `DEMO_MODE`
-(вход = ADMIN). **Не публикуйте туннель с реальными данными** — см. чек-лист выше. Для
-продуктивной эксплуатации (не демо-показа): `DEMO_MODE=false`, полный список необходимых
+Публичная ссылка открывает доступ всем, у кого она есть, а демо-стенд работает в `DEMO_MODE`
+(встроенные демо-учётки, включая администратора). **Не публикуйте туннель с реальными данными** — см. чек-лист выше. Для
+продуктивной эксплуатации (не демо-показа): базовый `docker-compose.yml` без оверлея
+(`DEMO_MODE` там выключен по умолчанию, ИБ-02), полный список необходимых
 доработок — [BACKLOG_ИБ.md](BACKLOG_ИБ.md) (гейт «перед внедрением»), обоснование —
 [SECURITY_AUDIT_RF_2026-09-08.md](SECURITY_AUDIT_RF_2026-09-08.md).

@@ -19,6 +19,7 @@ from app.modules.incidents import TechIncident
 from app.modules.risk.event_schemas import (
     AleResultOut,
     HeatmapCellDetailOut,
+    HeatmapCellSubcharOut,
     HeatmapCellMeasureOut,
     HeatmapCellRiskOut,
     HeatmapMoneyCellOut,
@@ -271,6 +272,7 @@ async def recompute_ale(db: AsyncSession, ev: RiskEvent) -> AleResultOut:
         sle_p90 = None
 
     result = annual_loss_expectancy(aro or 0.0, sle_avg, sle_p90, max_sle)
+    prev_ale = float(ev.ale_avg) if ev.ale_avg is not None else 0.0
     ev.ale_avg = result.ale_avg
     ev.ale_p90 = result.ale_p90
     ev.max_sle = result.max_sle
@@ -278,6 +280,7 @@ async def recompute_ale(db: AsyncSession, ev: RiskEvent) -> AleResultOut:
         ev.aro = aro
     await db.commit()
     await db.refresh(ev)
+    await _notify_threshold_crossed(db, ev, prev_ale)
 
     return AleResultOut(
         risk_event_id=ev.id, aro=aro, incidents_counted=len(incidents), incidents_costed=len(costs),
@@ -285,7 +288,92 @@ async def recompute_ale(db: AsyncSession, ev: RiskEvent) -> AleResultOut:
     )
 
 
-# ═══════════════════ Ячейка теплокарты: риски × меры × деньги (ТЗ v19 п.4) ═══════════════════
+_APPETITE_KEY_BY_CRITICALITY = {
+    "MISSION CRITICAL": "Mission Critical",
+    "BUSINESS CRITICAL": "Business Critical",
+    "BUSINESS OPERATIONAL": "Support",
+}
+
+
+async def risk_appetite_of(db: AsyncSession, ev: RiskEvent) -> float | None:
+    """Риск-аппетит риска: заданный на самом риске, иначе по классу критичности его ИС (§3.2)."""
+    if ev.risk_appetite is not None:
+        return float(ev.risk_appetite)
+    if ev.system_id is None:
+        return None
+    system = await db.get(System, ev.system_id)
+    crit = getattr(getattr(system, "criticality_class", None), "value", None)
+    key = _APPETITE_KEY_BY_CRITICALITY.get(crit or "")
+    by_class = await config_value(db, "risk_appetite_by_class", {}) or {}
+    value = by_class.get(key) if key else None
+    return float(value) if value is not None else None
+
+
+async def _notify_threshold_crossed(db: AsyncSession, ev: RiskEvent, prev_ale: float) -> None:
+    """УК-15, событие «риск превысил порог»: только при ПЕРЕХОДЕ через риск-аппетит снизу вверх —
+    риск, давно стоящий выше аппетита, не должен слать письмо на каждый пересчёт."""
+    appetite = await risk_appetite_of(db, ev)
+    new_ale = float(ev.ale_avg or 0)
+    if appetite is None or not (prev_ale <= appetite < new_ale):
+        return
+    from app.modules.notifications import emit
+    from app.shared.notification_events import EVENT_RISK_THRESHOLD_EXCEEDED
+    from app.shared.money import fmt_rub
+
+    system = await db.get(System, ev.system_id) if ev.system_id else None
+    await emit(
+        db, EVENT_RISK_THRESHOLD_EXCEEDED, ev.owner, entity_type="risk_event", entity_id=str(ev.id),
+        title=ev.title, system=system.name if system else "портфель",
+        ale=fmt_rub(new_ale) + "/год", appetite=fmt_rub(appetite) + "/год",
+    )
+
+
+# ═══════════════ Ячейка теплокарты: баллы × риски × меры × деньги (ТЗ v19 п.4, УК-10) ═══════════════
+
+async def _characteristics_per_risk(db: AsyncSession, risk_ids) -> dict[uuid.UUID, int]:
+    """Сколько РАЗНЫХ характеристик у риска — делитель его ALE между ячейками (В-14: поровну)."""
+    if not risk_ids:
+        return {}
+    rows = (await db.execute(
+        select(RiskEventSubchar.risk_event_id, RiskEventSubchar.characteristic)
+        .where(RiskEventSubchar.risk_event_id.in_(list(risk_ids)))
+    )).all()
+    chars: dict[uuid.UUID, set[str]] = defaultdict(set)
+    for rid, ch in rows:
+        chars[rid].add(ch)
+    return {rid: max(len(c), 1) for rid, c in chars.items()}
+
+
+async def _subchar_scores(db: AsyncSession, system_id, characteristic: str):
+    """Баллы подхарактеристик характеристики за последний период ИС (УК-10)."""
+    from app.modules.assessment import AssessmentPeriod, AssessmentValue
+    from app.modules.quality import QUALITY_MODEL, MetricCatalog, canonical_characteristic
+    from app.shared.periods import period_sort_key
+
+    periods = (await db.execute(
+        select(AssessmentPeriod.id, AssessmentPeriod.period).where(AssessmentPeriod.system_id == system_id)
+    )).all()
+    subs_def = next((subs for title, subs in QUALITY_MODEL if title == characteristic), [])
+    if not periods:
+        return None, [HeatmapCellSubcharOut(name=sub) for sub, _ in subs_def]
+    period_id, label = max(periods, key=lambda r: period_sort_key(r[1]))
+    values = (await db.execute(
+        select(AssessmentValue, MetricCatalog)
+        .join(MetricCatalog, AssessmentValue.metric_id == MetricCatalog.id)
+        .where(AssessmentValue.period_id == period_id)
+    )).all()
+    by_sub: dict[str, HeatmapCellSubcharOut] = {}
+    for value, metric in values:
+        if canonical_characteristic(metric.characteristic) != characteristic:
+            continue
+        if value.unmeasurable:
+            by_sub[metric.subcharacteristic] = HeatmapCellSubcharOut(name=metric.subcharacteristic, unmeasurable=True)
+        elif value.calculated_x is not None:
+            by_sub[metric.subcharacteristic] = HeatmapCellSubcharOut(
+                name=metric.subcharacteristic, score=round(float(value.calculated_x) * 100))
+    ordered = [by_sub.get(sub, HeatmapCellSubcharOut(name=sub)) for sub, _ in subs_def]
+    ordered += [s for name, s in by_sub.items() if name not in {sub for sub, _ in subs_def}]
+    return label, ordered
 
 async def cell_detail(db: AsyncSession, system_name: str, characteristic: str) -> HeatmapCellDetailOut:
     """Риски этой ИС, привязанные к этой характеристике (через RiskEventSubchar), с их деньгами
@@ -297,6 +385,7 @@ async def cell_detail(db: AsyncSession, system_name: str, characteristic: str) -
     system = (await db.execute(select(System).where(System.name == system_name))).scalar_one_or_none()
     if system is None:
         return HeatmapCellDetailOut(system_name=system_name, characteristic=characteristic, total_ale=0.0, risks=[])
+    period_label, subchars = await _subchar_scores(db, system.id, characteristic)
 
     rows = (await db.execute(
         select(RiskEvent, RiskEventSubchar.subcharacteristic)
@@ -314,6 +403,8 @@ async def cell_detail(db: AsyncSession, system_name: str, characteristic: str) -
         risks_by_id[ev.id] = ev
         subchars_by_risk[ev.id].add(subchar)
 
+    n_chars = await _characteristics_per_risk(db, risks_by_id.keys())
+    in_cell = {rid: float(ev.ale_avg or 0) / n_chars.get(rid, 1) for rid, ev in risks_by_id.items()}
     measures_by_risk: dict[uuid.UUID, list[HeatmapCellMeasureOut]] = defaultdict(list)
     if risks_by_id:
         m_rows = (await db.execute(
@@ -322,11 +413,13 @@ async def cell_detail(db: AsyncSession, system_name: str, characteristic: str) -
             .where(RiskEventMeasure.risk_event_id.in_(risks_by_id.keys()))
         )).all()
         for link, proposal in m_rows:
+            share = float(link.ale_reduction_share) if link.ale_reduction_share is not None else None
             measures_by_risk[link.risk_event_id].append(HeatmapCellMeasureOut(
                 proposal_id=proposal.id,
                 title=proposal.risk_title or proposal.metric_name or "Мера",
                 status=proposal.status,
-                ale_reduction_share=float(link.ale_reduction_share) if link.ale_reduction_share is not None else None,
+                ale_reduction_share=share,
+                delta_ale=round(in_cell[link.risk_event_id] * share, 2) if share is not None else None,
                 rosi=float(proposal.rosi) if proposal.rosi is not None else None,
                 verdict=proposal.verdict,
             ))
@@ -336,17 +429,25 @@ async def cell_detail(db: AsyncSession, system_name: str, characteristic: str) -
             id=ev.id, code=ev.code, title=ev.title,
             ale_avg=float(ev.ale_avg) if ev.ale_avg is not None else None,
             ale_p90=float(ev.ale_p90) if ev.ale_p90 is not None else None,
+            ale_in_cell=round(in_cell[ev.id], 2),
+            characteristics_count=n_chars.get(ev.id, 1),
             status=ev.status,
             subcharacteristics=sorted(subchars_by_risk[ev.id]),
             measures=measures_by_risk.get(ev.id, []),
         )
         for ev in risks_by_id.values()
     ]
-    risks_out.sort(key=lambda r: r.ale_avg or 0, reverse=True)
-    total_ale = round(sum(r.ale_avg or 0 for r in risks_out), 2)
+    risks_out.sort(key=lambda r: r.ale_in_cell or 0, reverse=True)
+    total_ale = round(sum(r.ale_in_cell or 0 for r in risks_out), 2)
+    # Σ долей снятия по риску ограничена 1: две меры по 60% не снимают 120% риска.
+    total_delta = round(sum(
+        (r.ale_in_cell or 0) * min(1.0, sum(m.ale_reduction_share or 0 for m in r.measures))
+        for r in risks_out
+    ), 2)
 
     return HeatmapCellDetailOut(
-        system_name=system.name, characteristic=characteristic, total_ale=total_ale, risks=risks_out,
+        system_name=system.name, characteristic=characteristic, total_ale=total_ale,
+        total_delta_ale=total_delta, period=period_label, subcharacteristics=subchars, risks=risks_out,
     )
 
 
@@ -354,9 +455,9 @@ async def heatmap_money_layer(db: AsyncSession) -> list[HeatmapMoneyCellOut]:
     """УК-11: денежный слой ВСЕЙ теплокарты за один запрос — та же агрегация, что cell_detail(),
     по всем ячейкам (ИС × характеристика) сразу вместо N×M отдельных вызовов на весь грид.
 
-    Оговорка: если риск привязан к подхарактеристикам ДВУХ разных характеристик (RiskEventSubchar
-    допускает M:N), его ALE войдёт в обе ячейки — то же допущение, что уже принято в cell_detail()
-    (сумма по одной ячейке не защищена от риска, распределённого по нескольким характеристикам)."""
+    Риск, привязанный к подхарактеристикам n разных характеристик (RiskEventSubchar допускает M:N),
+    входит в каждую ячейку долей 1/n (В-14: поровну) — сумма по ячейкам ИС сходится с ALE ИС
+    (критерий УК-10), мера не удваивает эффект в двух ячейках."""
     rows = (await db.execute(
         select(RiskEvent, RiskEventSubchar.characteristic, System.name)
         .join(RiskEventSubchar, RiskEventSubchar.risk_event_id == RiskEvent.id)
@@ -383,13 +484,18 @@ async def heatmap_money_layer(db: AsyncSession) -> list[HeatmapMoneyCellOut]:
             float(link.ale_reduction_share) if link.ale_reduction_share is not None else 0.0
         )
 
+    n_chars = await _characteristics_per_risk(db, all_risk_ids)
+
+    def in_cell(ev: RiskEvent) -> float:
+        return float(ev.ale_avg or 0) / n_chars.get(ev.id, 1)
+
     out: list[HeatmapMoneyCellOut] = []
     for (system_name, characteristic), risks in cell_risks.items():
-        total_ale = sum(float(ev.ale_avg or 0) for ev in risks.values())
+        total_ale = sum(in_cell(ev) for ev in risks.values())
         total_delta_ale = sum(
-            float(ev.ale_avg or 0) * sum(shares_by_risk.get(ev.id, [])) for ev in risks.values()
+            in_cell(ev) * min(1.0, sum(shares_by_risk.get(ev.id, []))) for ev in risks.values()
         )
-        covered_ale = sum(float(ev.ale_avg or 0) for ev in risks.values() if shares_by_risk.get(ev.id))
+        covered_ale = sum(in_cell(ev) for ev in risks.values() if shares_by_risk.get(ev.id))
         coverage_pct = round(covered_ale / total_ale * 100, 1) if total_ale > 0 else 0.0
         out.append(HeatmapMoneyCellOut(
             system_name=system_name, characteristic=characteristic,
@@ -499,6 +605,8 @@ async def portfolio_risk_summary(
     )).all()
 
     covered = 0.0
+    covered_elim = 0.0
+    covered_comp = 0.0
     expected = 0.0
     investment = 0.0
     seen_proposals: set[uuid.UUID] = set()
@@ -507,6 +615,10 @@ async def portfolio_risk_summary(
         effect = ale_by_risk.get(link.risk_event_id, 0.0) * share
         if proposal.execution == "DONE":
             covered += effect
+            if proposal.measure_type == "COMPENSATING":
+                covered_comp += effect
+            else:
+                covered_elim += effect
         else:
             expected += effect
         if proposal.id not in seen_proposals:
@@ -523,4 +635,7 @@ async def portfolio_risk_summary(
         expected_effect=round(expected, 2),
         risks_count=len(risks),
         measures_count=len(seen_proposals),
+        covered_by_eliminating=round(covered_elim, 2),
+        covered_by_compensating=round(covered_comp, 2),
+        residual_with_compensating_only=round(total_at_risk - covered_comp, 2),
     )

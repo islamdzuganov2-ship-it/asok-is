@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.modules.assessment.ai_router import router as ai_assessments_router  # контур СИИ ГОСТ 59898 (BL-001)
+from app.modules.assessment.ai_e3_router import router as ai_e3_router  # СИИ, этап E3 (BL-001)
 from app.modules.assessment.router import router as assessments_router  # домен assessment мигрирован (ТЗ v13)
 from app.modules.dataio.router import router as excel_router  # домен dataio мигрирован (ТЗ v13)
 from app.modules.econ.router import router as econ_router  # риск-эконом. контур (BL-007)
@@ -9,6 +10,7 @@ from app.modules.iam.admin_router import router as iam_admin_router  # упра�
 from app.modules.iam.router import router as auth_router  # домен iam мигрирован (ТЗ v13)
 from app.modules.incidents.router import router as incidents_router  # аналитика техсбоев (T-21)
 from app.modules.nonconformity.router import router as nonconformity_router  # замыкание контура (BL-007)
+from app.modules.notifications.router import router as notifications_router  # журнал уведомлений (ТЗ v19, УК-15)
 from app.modules.quality.router import router as metrics_router  # домен quality мигрирован (ТЗ v13)
 from app.modules.reporting.router import router as reporting_router  # домен reporting мигрирован (ТЗ v13)
 from app.modules.risk.event_router import router as risk_events_router  # числовой контур риска (BL-007)
@@ -21,6 +23,7 @@ api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 api_router.include_router(iam_admin_router, prefix="/iam", tags=["iam-admin"])
 api_router.include_router(systems_router, prefix="/systems", tags=["systems"])
 api_router.include_router(assessments_router, prefix="/assessments", tags=["assessments"])
+api_router.include_router(ai_e3_router, prefix="/ai-assessments", tags=["ai-assessments"])  # литеральные пути E3 — до /{period_id}
 api_router.include_router(ai_assessments_router, prefix="/ai-assessments", tags=["ai-assessments"])
 api_router.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 api_router.include_router(reporting_router, prefix="/reports", tags=["reports"])
@@ -31,3 +34,4 @@ api_router.include_router(governance_router, prefix="/governance", tags=["govern
 api_router.include_router(incidents_router, prefix="/incidents", tags=["incidents"])
 api_router.include_router(econ_router, prefix="/econ", tags=["econ"])
 api_router.include_router(nonconformity_router, prefix="/nonconformities", tags=["nonconformities"])
+api_router.include_router(notifications_router, prefix="/notifications", tags=["notifications"])

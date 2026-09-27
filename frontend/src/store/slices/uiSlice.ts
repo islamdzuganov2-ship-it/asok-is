@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { type ThemeName, isThemeName, DEFAULT_FONT_KEY, FONT_OPTIONS } from '../../theme/themes';
+import { normalizeNavGroups } from '../../constants/navOrderMath';
 
 /** Источник данных дашбордов: 'mock' — демо для презентации, 'live' — реальное API + LLM. */
 export type DataMode = 'mock' | 'live';
@@ -7,10 +8,18 @@ export type DataMode = 'mock' | 'live';
 const DATA_MODE_KEY = 'asok_data_mode';
 const FEATURE_KEY = 'asok_exec_features';
 const ORDER_KEY = 'asok_nav_order';
-/** Переносы пунктов между группами меню (БТ-500): { <право>: <название группы> }. */
+/** Переносы пунктов между группами меню (без ТЗ, ТЗ-23 §5): { <право>: <название группы> }. */
 const GROUPS_KEY = 'asok_nav_groups';
 const THEME_KEY = 'asok_theme';
 const FONT_KEY = 'asok_font';
+/** ТЗ v19 п.14 (УК-34): язык карточек — технический / управленческий; null — по роли. */
+const LANG_KEY = 'asok_lang_mode';
+export type LangMode = 'technical' | 'executive';
+
+function loadLangMode(): LangMode | null {
+  const v = localStorage.getItem(LANG_KEY);
+  return v === 'technical' || v === 'executive' ? v : null;
+}
 
 function loadDataMode(): DataMode {
   return localStorage.getItem(DATA_MODE_KEY) === 'live' ? 'live' : 'mock';
@@ -42,26 +51,35 @@ function loadFontKey(): string {
  * `question` (ТЗ v21 §8.1, КП-36) — вопрос, на который отвечает раздел. Названия разделов
  * описывают артефакт («База рисков»), а руководитель ищет ответ («что мы уже знаем о рисках»).
  * Поле используется командной строкой Ctrl+K как второй ключ поиска — раздел находится и по
- * вопросу тоже. ПЕРЕГРУППИРОВКА меню по глубине раскрытия (§8.2) намеренно НЕ выполнена:
- * она переименовывает привычные группы у всех ролей сразу — решение по продукту, не по коду.
+ * вопросу тоже.
+ *
+ * `group` (ТЗ-21 §8.2, КП-37) — группа по глубине раскрытия, см. NAV_GROUPS в navOrderMath.ts.
+ * Прежние группы «Основное / Сбор и анализ данных / Формирование техдолга» делили меню по типу
+ * артефакта: кокпит CEO стоял в одном ряду с аналитическим дашбордом, «Мои задачи» — рядом с
+ * риск-радаром. Сохранённые пользователями переносы старых групп переводятся при чтении
+ * (normalizeNavGroups), а не теряются.
  */
 export const NAV_SECTIONS: ReadonlyArray<{ perm: string; label: string; group: string; question: string }> = [
-  // «Мой дашборд» первым в группе: это личный набор пользователя, к нему возвращаются чаще всего.
-  { perm: 'view.my_dashboard', label: 'Мой дашборд', group: 'Основное', question: 'Что я собрал под себя?' },
-  { perm: 'view.dashboard.cto', label: 'Дашборд CTO', group: 'Основное', question: 'Что требует моего решения?' },
-  { perm: 'view.dashboard.ceo', label: 'Дашборд CEO', group: 'Основное', question: 'Сколько нам это стоит и что требует подписи?' },
-  { perm: 'view.dashboard.manager', label: 'Основное', group: 'Основное', question: 'Где просело и что предложить?' },
-  { perm: 'view.dashboard.risk', label: 'Основное — риск', group: 'Основное', question: 'Что мы уже знаем о своих рисках?' },
-  { perm: 'view.dashboard.analytics', label: 'Аналитический дашборд', group: 'Основное', question: 'Что показывают цифры за период?' },
-  { perm: 'view.dashboard.dynamics', label: 'Динамика качества', group: 'Основное', question: 'Куда движемся?' },
-  { perm: 'view.assessments', label: 'Внесение данных', group: 'Сбор и анализ данных', question: 'Откуда берутся цифры?' },
-  { perm: 'view.dashboard.incidents', label: 'Аналитика сбоев', group: 'Сбор и анализ данных', question: 'Насколько мы надёжны?' },
-  { perm: 'view.risks', label: 'База рисков', group: 'Сбор и анализ данных', question: 'Что может произойти?' },
-  { perm: 'view.risk_economics', label: 'Риск-экономика', group: 'Сбор и анализ данных', question: 'Во что это превращается в рублях?' },
-  { perm: 'view.reports', label: 'Отчёты', group: 'Сбор и анализ данных', question: 'Что выгрузить наружу?' },
-  { perm: 'view.dashboard.taskplan', label: 'План задач', group: 'Формирование техдолга', question: 'Что и когда должно быть сделано?' },
-  { perm: 'view.my_tasks', label: 'Мои задачи', group: 'Формирование техдолга', question: 'Что поручено лично мне?' },
-  { perm: 'view.dashboard.risk_radar', label: 'Риск-радар', group: 'Формирование техдолга', question: 'Что может рвануть?' },
+  // Моя картина — посадочные экраны ролей (L1). «Мой дашборд» первым: к личному набору возвращаются чаще всего.
+  { perm: 'view.my_dashboard', label: 'Мой дашборд', group: 'Моя картина', question: 'Что я собрал под себя?' },
+  { perm: 'view.dashboard.cto', label: 'Дашборд CTO', group: 'Моя картина', question: 'Что требует моего решения?' },
+  { perm: 'view.dashboard.ceo', label: 'Дашборд CEO', group: 'Моя картина', question: 'Сколько нам это стоит и что требует подписи?' },
+  { perm: 'view.dashboard.manager', label: 'Основное', group: 'Моя картина', question: 'Где просело и что предложить?' },
+  { perm: 'view.dashboard.risk', label: 'Основное — риск', group: 'Моя картина', question: 'Что мы уже знаем о своих рисках?' },
+  { perm: 'view.my_tasks', label: 'Мои задачи', group: 'Моя картина', question: 'Что поручено лично мне?' },
+
+  // Разрезы — аналитика «почему так» (L2).
+  { perm: 'view.dashboard.analytics', label: 'Аналитический дашборд', group: 'Разрезы', question: 'Что показывают цифры за период?' },
+  { perm: 'view.dashboard.dynamics', label: 'Динамика качества', group: 'Разрезы', question: 'Куда движемся?' },
+  { perm: 'view.dashboard.incidents', label: 'Аналитика сбоев', group: 'Разрезы', question: 'Насколько мы надёжны?' },
+  { perm: 'view.dashboard.risk_radar', label: 'Риск-радар', group: 'Разрезы', question: 'Что может рвануть?' },
+  { perm: 'view.dashboard.taskplan', label: 'План задач', group: 'Разрезы', question: 'Что и когда должно быть сделано?' },
+
+  // Работа с данными — первичные записи и выгрузки (L3).
+  { perm: 'view.assessments', label: 'Внесение данных', group: 'Работа с данными', question: 'Откуда берутся цифры?' },
+  { perm: 'view.risks', label: 'База рисков', group: 'Работа с данными', question: 'Что может произойти?' },
+  { perm: 'view.risk_economics', label: 'Риск-экономика', group: 'Работа с данными', question: 'Во что это превращается в рублях?' },
+  { perm: 'view.reports', label: 'Отчёты', group: 'Работа с данными', question: 'Что выгрузить наружу?' },
 ];
 
 /** Скрытые пользователем разделы. Храним именно СКРЫТЫЕ, чтобы новый раздел из релиза
@@ -109,9 +127,11 @@ export function loadNavGroups(): Record<string, string> {
   try {
     const raw = JSON.parse(localStorage.getItem(GROUPS_KEY) || '{}');
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    return Object.fromEntries(
+    const strings = Object.fromEntries(
       Object.entries(raw as Record<string, unknown>).filter(([, v]) => typeof v === 'string'),
     ) as Record<string, string>;
+    // КП-37: переносы в группы со старыми названиями переводятся, а не теряются.
+    return normalizeNavGroups(strings, NAV_SECTIONS);
   } catch {
     return {};
   }
@@ -125,11 +145,13 @@ interface UiState {
   /** Ключ выбранного шрифта (theme/themes.ts FONT_OPTIONS). */
   fontKey: string;
   dataMode: DataMode;
+  /** Явный выбор языка карточек (УК-34); null — по умолчанию для роли. */
+  langMode: LangMode | null;
   /** Разделы, скрытые пользователем (ДЕФ-12). */
   hiddenSections: HiddenMap;
   /** Порядок разделов (ДЕФ-14). Ключи вне списка идут следом в исходном порядке. */
   navOrder: string[];
-  /** Пункты, перенесённые пользователем в другую группу меню (БТ-500). */
+  /** Пункты, перенесённые пользователем в другую группу меню (без ТЗ, ТЗ-23 §5). */
   navGroups: Record<string, string>;
 }
 
@@ -141,6 +163,7 @@ const uiSlice = createSlice({
     themeName: loadThemeName(),
     fontKey: loadFontKey(),
     dataMode: loadDataMode(),
+    langMode: loadLangMode(),
     hiddenSections: loadHidden(),
     navOrder: loadOrder(),
     navGroups: loadNavGroups(),
@@ -161,6 +184,10 @@ const uiSlice = createSlice({
       state.dataMode = action.payload;
       localStorage.setItem(DATA_MODE_KEY, action.payload);
     },
+    setLangMode(state, action: PayloadAction<LangMode>) {
+      state.langMode = action.payload;
+      localStorage.setItem(LANG_KEY, action.payload);
+    },
     /** Показать/скрыть раздел меню (ДЕФ-12). */
     setSectionVisible(state, action: PayloadAction<{ perm: string; visible: boolean }>) {
       const { perm, visible } = action.payload;
@@ -173,7 +200,7 @@ const uiSlice = createSlice({
       state.navOrder = action.payload;
       localStorage.setItem(ORDER_KEY, JSON.stringify(action.payload));
     },
-    /** Перенести пункт в другую группу меню (БТ-500). */
+    /** Перенести пункт в другую группу меню (без ТЗ, ТЗ-23 §5). */
     setNavGroup(state, action: PayloadAction<{ perm: string; group: string | null }>) {
       const { perm, group } = action.payload;
       if (group === null) delete state.navGroups[perm];
@@ -181,7 +208,7 @@ const uiSlice = createSlice({
       localStorage.setItem(GROUPS_KEY, JSON.stringify(state.navGroups));
     },
     /**
-     * Применить настройки меню, пришедшие с сервера (БТ-500).
+     * Применить настройки меню, пришедшие с сервера (без ТЗ, ТЗ-23 §5).
      *
      * localStorage остаётся быстрым кэшем — он рисует меню до ответа сети и не даёт ему
      * «прыгнуть» при загрузке. Источник истины — серверные prefs: они переносят настройку между
@@ -202,8 +229,9 @@ const uiSlice = createSlice({
         localStorage.setItem(FEATURE_KEY, JSON.stringify(hiddenSections));
       }
       if (navGroups) {
-        state.navGroups = navGroups;
-        localStorage.setItem(GROUPS_KEY, JSON.stringify(navGroups));
+        // Серверные prefs могли быть сохранены до КП-37 — со старыми названиями групп.
+        state.navGroups = normalizeNavGroups(navGroups, NAV_SECTIONS);
+        localStorage.setItem(GROUPS_KEY, JSON.stringify(state.navGroups));
       }
     },
     /** Сбросить персонализацию к виду по умолчанию. */
@@ -219,7 +247,7 @@ const uiSlice = createSlice({
 });
 
 export const {
-  openModal, closeModal, setGlobalLoading, setThemeName, setFontKey, setDataMode,
+  openModal, closeModal, setGlobalLoading, setThemeName, setFontKey, setDataMode, setLangMode,
   setSectionVisible, setNavOrder, setNavGroup, hydrateNavPrefs, resetPersonalization,
 } = uiSlice.actions;
 export const uiReducer = uiSlice.reducer;

@@ -1,5 +1,5 @@
 /**
- * SidebarNavEditor.tsx — режим «Порядок» левого меню (БТ-500).
+ * SidebarNavEditor.tsx — режим «Порядок» левого меню (без ТЗ, ТЗ-23 §5).
  *
  * Раньше порядок разделов менялся только на отдельной странице «Настройка» и только внутри своей
  * группы: чтобы поменять местами два дашборда, надо было уйти со страницы, где на них смотришь.
@@ -18,14 +18,14 @@ import type { RootState } from '../store';
 import { useAppDispatch } from '../store/hooks';
 import { setNavOrder, setNavGroup, NAV_SECTIONS } from '../store/slices/uiSlice';
 import { useSaveNavPrefs } from '../hooks/useNavPreferences';
-import { moveNavItem } from '../constants/navOrderMath';
+import { moveNavItem, NAV_GROUPS } from '../constants/navOrderMath';
 import { PREMIUM, GOLD, SPACE, TYPE } from '../theme/premium';
 
 const { Text } = Typography;
 
 /** Группы, доступные для перестановки. «Администрирование» и «Настройка» не трогаем: их состав
  *  задаётся правами администратора, а не вкусом пользователя. */
-export const REORDERABLE_GROUPS = ['Основное', 'Сбор и анализ данных', 'Формирование техдолга'];
+export const REORDERABLE_GROUPS: readonly string[] = NAV_GROUPS;
 
 interface Props {
   /** Заголовок группы в стиле сайдбара (общий с AppLayout). */

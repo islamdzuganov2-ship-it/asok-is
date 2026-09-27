@@ -80,3 +80,5 @@ class AiConformanceReport(BaseModel):
     conformant_count: int
     nonconformant_count: int
     no_baseline_count: int
+    # BL-001 E3: условия испытаний — тестовый набор с критерием выбросов, паритет сред, экспертная группа.
+    test_conditions: dict | None = None

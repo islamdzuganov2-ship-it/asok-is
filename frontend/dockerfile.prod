@@ -1,0 +1,21 @@
+# ИБ-04 (SEC-04): прод-образ фронта — статическая сборка Vite, раздача nginx.
+# В контейнере нет dev-сервера, исходников, node_modules и sourcemap; nginx работает не от root.
+# Dev-сервер Vite с HMR — отдельный образ `dockerfile` в оверлее docker-compose.demo.yml.
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+# Относительный адрес API: запросы идут на тот же origin и проксируются nginx на бэкенд.
+ARG VITE_API_BASE_URL=/api/v1
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+# Сборка падает, если в dist попали sourcemap: они раскрывают исходники фронта.
+RUN npm run build && if find dist -name '*.map' | grep -q .; then echo "sourcemap в dist" >&2; exit 1; fi
+
+FROM nginxinc/nginx-unprivileged:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx-security-headers.conf /etc/nginx/snippets/security-headers.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+# Порт 3000 — как у dev-сервера: туннели и Caddy ходят на frontend:3000 в обоих вариантах.
+EXPOSE 3000

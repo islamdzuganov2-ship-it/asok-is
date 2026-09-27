@@ -18,9 +18,14 @@ from app.modules.assessment.models import AssessmentPeriod, AssessmentValue
 from app.modules.quality import QUALITY_PAIRS, FormulaType, MetricCatalog, calculate_metric, map_to_level
 from app.modules.reporting.models import DefectMatrix, QualityPlanMatrix, RiskMatrix
 from app.modules.reporting.router import export_period_xlsx
+
+# Вызов обработчика напрямую, мимо FastAPI: пользователь передаётся явно — выгрузка
+# пишет событие в журнал ИБ (ИБ-08) от его имени.
+_USER = {"id": "00000000-0000-0000-0000-0000000000aa", "username": "analyst", "roles": ["TEST_ANALYST"]}
 from app.modules.systems import CriticalityClass, System
 
-SHEETS = ["Характеристики качества", "Риски", "Недостатки", "План качества"]
+# УК-02: лист «Балл ИС» — та же свёртка и веса, что на дашбордах.
+SHEETS = ["Характеристики качества", "Риски", "Недостатки", "Балл ИС", "План качества"]
 
 
 async def _system(db, name="АБС Core") -> System:
@@ -90,12 +95,12 @@ async def test_export_xlsx_has_four_sheets_with_data(db_session):
     ))
     await db_session.flush()
 
-    response = await export_period_xlsx(period.id, db_session)
+    response = await export_period_xlsx(period.id, db_session, _USER)
     assert response.media_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     assert f"asok_report_{period.period}.xlsx" in response.headers["Content-Disposition"]
 
     wb = await _read_xlsx(response)
-    # Четыре листа в фиксированном порядке (управленческая выгрузка «одним файлом»).
+    # Листы в фиксированном порядке (управленческая выгрузка «одним файлом»).
     assert wb.sheetnames == SHEETS
 
     quality = wb["Характеристики качества"]
@@ -121,7 +126,7 @@ async def test_export_xlsx_empty_registers_still_valid(db_session):
     metrics = await _metrics(db_session)
     period = await _period(db_session, system, metrics)
 
-    wb = await _read_xlsx(await export_period_xlsx(period.id, db_session))
+    wb = await _read_xlsx(await export_period_xlsx(period.id, db_session, _USER))
     assert wb.sheetnames == SHEETS
     assert wb["Риски"].max_row == 1          # только шапка
     assert wb["Недостатки"].max_row == 1
@@ -130,5 +135,26 @@ async def test_export_xlsx_empty_registers_still_valid(db_session):
 
 async def test_export_xlsx_unknown_period_404(db_session):
     with pytest.raises(HTTPException) as err:
-        await export_period_xlsx(uuid.uuid4(), db_session)
+        await export_period_xlsx(uuid.uuid4(), db_session, _USER)
     assert err.value.status_code == 404
+
+
+async def test_export_score_sheet_matches_dashboard(db_session):
+    """УК-02: балл ИС в Excel совпадает с цифрой дашборда на тех же данных (одна свёртка)."""
+    from app.modules.assessment.router import get_dashboard
+
+    system = await _system(db_session)
+    metrics = await _metrics(db_session)
+    period = await _period(db_session, system, metrics, x=0.63)
+
+    wb = await _read_xlsx(await export_period_xlsx(period.id, db_session, _USER))
+    sheet = wb["Балл ИС"]
+    assert sheet.cell(row=2, column=1).value == "Балл ИС, %"
+    excel_score = sheet.cell(row=2, column=4).value
+    assert sheet.cell(row=3, column=4).value == "Выше среднего"
+
+    dashboard = await get_dashboard(db_session, {})
+    assert excel_score == round(dashboard["globalHealthScore"] * 100)
+    # УК-03: рядом с цифрой — уровень словами и шкала порогов.
+    assert dashboard["scoreScale"]["level"] == "Выше среднего"
+    assert [b["to"] for b in dashboard["scoreScale"]["bands"]] == [21.0, 41.0, 61.0, 81.0, 100.0]

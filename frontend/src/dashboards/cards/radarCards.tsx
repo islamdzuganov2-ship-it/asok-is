@@ -6,6 +6,7 @@
  * оказалась на дашборде рядом с другой такой же.
  */
 import React, { useMemo, useState } from 'react';
+import MeasureCatalogHint from '../../components/MeasureCatalogHint';
 import { Alert, Empty, List, Select, Space, Spin, Tag, Typography } from 'antd';
 import { AlertOutlined, SafetyCertificateOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
@@ -116,6 +117,8 @@ export const RadarTriggersCard: React.FC = () => {
                       <Text strong style={TYPE.captionStrong}>Меры минимизации: </Text>{r.mitigation}
                     </Paragraph>
                   )}
+                  {/* RE-10: типовые меры каталога по характеристике сработавшего риска. */}
+                  <MeasureCatalogHint characteristic={r.characteristic} max={2} />
                 </Space>
               </List.Item>
             );

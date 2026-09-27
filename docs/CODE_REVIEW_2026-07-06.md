@@ -46,7 +46,8 @@ status: draft
 | **R3 — Отчёты** (T-11..T-14) | ✅ **готово** | все четыре задачи релиза закрыты |
 | **T-20** (pgvector) | ✅ **готово** | образ `pgvector/pgvector:pg14` + `risk_base.embedding` (Vector 256) + миграция 012; `LexicalEmbeddingProvider` за швом `EmbeddingProvider` (без ML-зависимостей, БЕЗ обращения к LLM); `GET /risks/semantic-search` (косинус) + `POST /risks/reembed`; graceful-fallback на ILIKE; verify — `tests/test_risk_semantic.py` (8 passed) + живой смоук (надёжность выше ИБ/перф по парафразу) |
 | **Весь трек ревью (R1–R6)** | ✅ **готово** | T-17/T-18 (СИИ E3, ML-эксперт) держим отложёнными по решению заказчика; T-07 (Ollama-легаси) — отдельный LLM-аудит |
-| T-17, T-18 (СИИ E3, ML-эксперт) | ⏸ отложено | СИИ закрыт «под развитие» |
+| T-17 (СИИ E3) | ✅ готово 26.09.2026 | наборы/выбросы, паритет сред, W Кендалла, сравнение СИИ, `qm_node` |
+| T-18 (ML-эксперт) | ✅ закрыто иначе | вместо роли — право `ai.expert.evaluate` (решение заказчика) |
 | T-07 (Ollama-легаси) | ⏸ отдельный LLM-аудит | LLM в активной правке заказчика (v16: `config.py`, `llm/service.py`) |
 
 **Заготовка от предыдущей сессии:** `test_governance_e2e.py` (E2E SoD-цикл) уже был написан

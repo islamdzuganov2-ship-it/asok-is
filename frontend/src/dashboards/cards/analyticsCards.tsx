@@ -18,6 +18,7 @@ import { useAnalyticsScope, LEVEL_ORDER } from '../scopes/AnalyticsScope';
 import GridCard from '../GridCard';
 import AutoChart from '../AutoChart';
 import { Table, Tag } from 'antd';
+import ScoreScale, { localScale } from '../../components/ScoreScale';
 
 const { Text } = Typography;
 
@@ -46,6 +47,8 @@ export const AnalyticsKpiCard: React.FC = () => {
         <KpiCard title="Низких метрик" value={lowTotal} color={RAG.bad.strong} loading={loading} onClick={() => openDetail('low')} />
         <KpiCard title="Метрик имеющих меры" value={measureLinksCount} color={RAG.good.strong} loading={loading} onClick={() => openDetail('measures')} />
       </div>
+      {/* УК-03: как читать глобальный балл — полоса порогов, цель, дельта к прошлому периоду. */}
+      {!loading && data && <ScoreScale data={!isMock && data.scoreScale ? data.scoreScale : localScale(healthPct)} />}
     </GridCard>
   );
 };

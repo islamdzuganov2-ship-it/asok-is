@@ -101,7 +101,7 @@ class Proposal(Base, TimestampMixin):
     )
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # ТЗ v19 УК-13/16: трудоёмкость в часах — проставляет исполнитель вручную при переводе
+    # ТЗ v19 УК-31 (п.13): трудоёмкость в часах — проставляет исполнитель вручную при переводе
     # меры «в работу» (решение по В-41, docs/ТЗ_19). Отсутствие значения ≠ 0 — карточка мер
     # без оценки считается отдельно ("без оценки часов"), а не как нулевая нагрузка.
     effort_hours: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
@@ -110,7 +110,7 @@ class Proposal(Base, TimestampMixin):
     )
     effort_hours_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # ТЗ v19 УК-16 (п.16): переписывание меры на язык исполнителя (персона EXECUTOR) —
+    # ТЗ v19 УК-38 (п.16): переписывание меры на язык исполнителя (персона EXECUTOR) —
     # конкретные шаги вместо профсуждения (rationale) и вместо просьбы к ЛПР (expectation, п.14).
     # Запускает менеджер по качеству кнопкой «Переписать для исполнителя»; появляется на
     # карточке задачи в «Плане задач» (внутренний Гант) и на «Моих задачах» исполнителя.
@@ -120,7 +120,15 @@ class Proposal(Base, TimestampMixin):
     )
     executor_brief_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # ТЗ v19 п.16 (УК-38, УК-18): «В работу» — мера становится задачей внутреннего Ганта.
+    # task_ref — ссылка, которую вернул TaskSyncPort (сейчас заглушка «stub://…»: внешний
+    # менеджер задач не выбран, В-21а); taken_to_work_at — когда мера взята в работу.
+    task_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    taken_to_work_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # --- План задач / эскалация ---
+    # УК-41: делегирование — ВНЕ АСОК. Оргструктуры «руководитель → подчинённые» в системе нет и
+    # не строится: распределение на нижестоящих идёт в СУЗ, мост — эта ручная ссылка (В-18).
     suz_link: Mapped[str | None] = mapped_column(String(512), nullable=True)
     top_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     escalated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -143,6 +151,10 @@ class Proposal(Base, TimestampMixin):
     # Кэш расчёта движка (RE-12): ROSI и рекомендованный вердикт (устранить/компенсировать/принять).
     rosi: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     recommended_verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # RE-20 (антигейминг §7.2): ΔALE, зафиксированный В МОМЕНТ одобрения меры. Метрика «ΔALE под
+    # управлением» руководителя берётся отсюда, а не из текущего delta_ale_cash, который владелец
+    # может «подтянуть» после решения. NULL — мера одобрена до RE-20 (берётся текущее значение).
+    delta_ale_at_decision: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
     verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)  # принятый вердикт (§3.1)
 
     # --- Аудит правок (список записей {at, by, field, from, to}) ---

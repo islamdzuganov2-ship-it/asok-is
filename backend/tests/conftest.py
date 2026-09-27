@@ -29,6 +29,19 @@ def _isolate_llm_brain(tmp_path, monkeypatch):
     from app.infrastructure.config import settings
     monkeypatch.setattr(settings, "LLM_BRAIN_DIR", str(tmp_path / "llm_brain"))
 
+@pytest.fixture(autouse=True)
+def _isolate_kv():
+    """Хранилище сессий и анти-брутфорса (ИБ-10/ИБ-12) — своё на каждый тест, в памяти.
+
+    Иначе счётчик неудачных входов одного теста блокировал бы вход в следующем, а отзыв
+    токена «протекал» бы между тестами через общий Redis.
+    """
+    from app.infrastructure import kv
+    kv.use_store(kv.MemoryKV())
+    yield
+    kv.use_store(None)
+
+
 @pytest.fixture(scope="session")
 def test_database_url():
     """URL тестовой БД (можно переопределить через env)"""

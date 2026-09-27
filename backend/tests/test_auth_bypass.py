@@ -37,7 +37,8 @@ async def aclient(db_session):
 
 @pytest.fixture
 def bypass(monkeypatch):
-    """Включить обход (как на демо-показе)."""
+    """Включить обход (как на демо-показе): только вместе с DEMO_MODE (ИБ-02)."""
+    monkeypatch.setattr(settings, "DEMO_MODE", True)
     monkeypatch.setattr(settings, "DEMO_AUTH_BYPASS", True)
     yield
 
@@ -79,3 +80,11 @@ async def test_no_token_passes_when_bypass_enabled(aclient, bypass):
     """Показ стенда без логина продолжает работать, когда флаг включён осознанно."""
     r = await aclient.get(f"{API}/systems")
     assert r.status_code == 200
+
+
+async def test_bypass_is_ignored_outside_demo_mode(aclient, monkeypatch):
+    """ИБ-02: флаг обхода без DEMO_MODE не действует (в продуктиве он ещё и запрет старта)."""
+    monkeypatch.setattr(settings, "DEMO_MODE", False)
+    monkeypatch.setattr(settings, "DEMO_AUTH_BYPASS", True)
+    r = await aclient.get(f"{API}/systems")
+    assert r.status_code == 401

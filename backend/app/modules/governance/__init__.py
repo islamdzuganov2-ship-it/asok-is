@@ -9,12 +9,12 @@
 import_models(); сервисные функции доступны соседним доменам (напр. reporting/LLM — как источник
 фактов о мерах) через этот фасад.
 """
-from app.modules.governance.models import STATUS_APPROVED, MeasureDepartment, Proposal
+from app.modules.governance.models import EXECUTION_DONE, STATUS_APPROVED, MeasureDepartment, Proposal
 from app.modules.governance.schemas import OverdueSummaryOut, PortfolioEffectCurveOut
 from app.modules.governance.service import list_proposals
 
 __all__ = [
-    "Proposal", "MeasureDepartment", "list_proposals", "STATUS_APPROVED",
+    "Proposal", "MeasureDepartment", "list_proposals", "STATUS_APPROVED", "EXECUTION_DONE",
     # Только схемы (ТЗ v21, КП-41) — НЕ economics_service: тот тянет фасад risk, который тянет
     # governance за STATUS_APPROVED/Proposal — импорт функций сюда замкнул бы цикл (см. докстринг
     # economics_service.py). Схемы cross-domain импортов не имеют, цикл им не грозит.

@@ -15,8 +15,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-asok_pass123}
     # ИБ-05a (SEC-10, docs/SECURITY_AUDIT_RF_2026-09-08.md): порт на хост НЕ публикуется.
     # backend/celery_worker достают postgres по имени сервиса внутри сети asok_net — им
-    # `ports:` не нужен, он открывает БД наружу (в т.ч. в интернет при любом из 4 профилей
-    # публикации: tunnel/tunnel-named/tunnel-ngrok/webserver). Нужен временный доступ с хоста
+    # `ports:` не нужен, он открывает БД наружу (в т.ч. в интернет при любом из профилей
+    # публикации демо-оверлея docker-compose.demo.yml, ИБ-06). Нужен временный доступ с хоста
     # (DB GUI) — `docker compose exec postgres psql -U asok_user asok_is`, либо личный,
     # НЕ коммитимый оверлей (docker-compose -f docker-compose.yml -f docker-compose.override.yml
     # -f docker-compose.local.yml up), а не правка этого файла или отслеживаемого override.yml.
@@ -35,13 +35,19 @@ services:
     container_name: asok_redis
     restart: unless-stopped
     # ИБ-05a (SEC-10): порт на хост не публикуется — та же логика, что у postgres выше.
-    # Redis здесь без пароля (requirepass), поэтому открытый на хост/интернет порт — прямой
-    # путь к записи произвольных файлов через CONFIG SET/EVAL. Пароль Redis — отдельная задача
-    # ИБ-22 (docs/BACKLOG_ИБ.md), она меняет REDIS_URL сразу в трёх местах и непроверяема без
-    # поднятого Docker-стека, поэтому в этот гейт не вошла.
+    # ИБ-Ф1 (пароль Redis, часть ИБ-05/ИБ-22): requirepass. Без пароля любой процесс в сети
+    # asok_net (или с хоста при случайно открытом порте) пишет в Redis — а там теперь список
+    # отозванных токенов и счётчики анти-брутфорса (ИБ-10/ИБ-12): сброс этих ключей = снятие
+    # блокировки подбора и «оживление» отозванных сессий. Пароль — REDIS_PASSWORD в .env;
+    # значение по умолчанию — только для локального стенда: при DEMO_MODE=false бэкенд с ним
+    # не стартует (config.security_issues).
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-asok_redis_dev}", "--protected-mode", "yes"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-asok_redis_dev}
     volumes:
       - redisdata:/data
     healthcheck:
+      # REDISCLI_AUTH выше — redis-cli берёт пароль из окружения, не из командной строки.
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
@@ -63,7 +69,7 @@ services:
       - .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://asok_user:${POSTGRES_PASSWORD:-asok_pass123}@postgres:5432/asok_is
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-asok_redis_dev}@redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,7 +115,7 @@ services:
       - .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://asok_user:${POSTGRES_PASSWORD:-asok_pass123}@postgres:5432/asok_is
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-asok_redis_dev}@redis:6379/0
       # RES-02: воркер НЕ грузит веса. modules/llm/tasks.py использует тот же in-process
       # llama.cpp; при --concurrency=2 это две копии весов сверх копии бэкенда.
       - LLM_ENABLED=false
@@ -151,121 +157,24 @@ services:
       - asok_net
 
   frontend:
+    # ИБ-04 (SEC-04): прод-раздача — статическая сборка Vite под nginx (frontend/dockerfile.prod):
+    # без dev-сервера, исходников и sourcemap в контейнере; /api nginx проксирует на бэкенд
+    # (один origin, без CORS). Dev-сервер Vite с HMR — оверлей docker-compose.demo.yml.
     build:
       context: ./frontend
-      dockerfile: dockerfile
+      dockerfile: dockerfile.prod
+      args:
+        VITE_API_BASE_URL: /api/v1
+    # Явный тег: прод- и dev-образ фронта не подменяют друг друга при смене оверлея.
+    image: asok-is-frontend:prod
     container_name: asok_frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      # Относительный путь — запросы идут на тот же хост и проксируются Vite на бэкенд.
-      # Работает и на localhost, и по публичной ссылке туннеля (один источник, без CORS).
-      - VITE_API_BASE_URL=/api/v1
-      - VITE_PROXY_TARGET=http://backend:8000
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm run dev -- --host 0.0.0.0 --port 3000
     networks:
       - asok_net
-
-  # ── Вариант 1: быстрый туннель (СЛУЧАЙНАЯ ссылка trycloudflare.com) ──────────────
-  # Протокол http2 (не quic) — обходит проблемы QUIC/UDP и ошибку Cloudflare 1033.
-  #   docker compose --profile tunnel up -d
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    container_name: asok_tunnel
-    restart: unless-stopped
-    command: tunnel --no-autoupdate --protocol http2 --url http://frontend:3000
-    depends_on:
-      - frontend
-    networks:
-      - asok_net
-    profiles:
-      - tunnel
-
-  # ── Вариант 2: СТАТИЧНАЯ ссылка на ВАШЕМ домене (named tunnel, Cloudflare) ────────
-  # Стабильный URL https://asok.asokis.ai. Домен asokis.ai уже в Cloudflare.
-  # В Zero Trust → Tunnels создать туннель, Public hostname asok.asokis.ai →
-  # service http://frontend:3000, скопировать токен в .env как TUNNEL_TOKEN. Затем:
-  #   docker compose --profile named up -d
-  tunnel-named:
-    image: cloudflare/cloudflared:latest
-    container_name: asok_tunnel_named
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run --protocol http2 --token ${TUNNEL_TOKEN:-}
-    depends_on:
-      - frontend
-    networks:
-      - asok_net
-    profiles:
-      - named
-
-  # ── Вариант 3: СТАТИЧНЫЙ домен без своего домена (ngrok, бесплатный статик-домен) ──
-  # В дашборде ngrok получить authtoken и забронировать бесплатный домен вида
-  # your-name.ngrok-free.app → задать в .env NGROK_AUTHTOKEN и NGROK_DOMAIN. Затем:
-  #   docker compose --profile ngrok up -d
-  tunnel-ngrok:
-    image: ngrok/ngrok:latest
-    container_name: asok_ngrok
-    restart: unless-stopped
-    environment:
-      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
-    command: http frontend:3000 --url ${NGROK_DOMAIN:-} --log stdout
-    depends_on:
-      - frontend
-    networks:
-      - asok_net
-    profiles:
-      - ngrok
-
-  # ── Вариант 4: ПРЯМОЙ хостинг с вашего ПК (БЕЗ туннеля/прокси в трафике) ──────────
-  # Ваш ПК сам отдаёт https://asokis.ai. Caddy получает TLS-сертификат Let's Encrypt.
-  # Требуется (делается вне ПК): проброс портов 80 и 443 на роутере → 192.168.1.97,
-  # A-запись asokis.ai → ваш публичный IP в режиме DNS-only (серое облако), открытый firewall.
-  #   docker compose --profile direct up -d
-  webserver:
-    image: caddy:2-alpine
-    container_name: asok_caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - frontend
-    networks:
-      - asok_net
-    profiles:
-      - direct
-
-  # ── Доп. к Варианту 4: авто-обновление A-записи при смене домашнего IP (DDNS) ─────
-  # Нужен Cloudflare API-токен с правом Zone:DNS:Edit для зоны asokis.ai.
-  # В .env: CLOUDFLARE_API_TOKEN=... (и при желании DDNS_DOMAINS).
-  #   docker compose --profile ddns up -d
-  ddns:
-    image: favonia/cloudflare-ddns:latest
-    container_name: asok_ddns
-    restart: unless-stopped
-    user: "1000:1000"
-    read_only: true
-    cap_drop: [all]
-    security_opt: [no-new-privileges:true]
-    environment:
-      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
-      - DOMAINS=${DDNS_DOMAINS:-asokis.ai,www.asokis.ai}
-      - PROXIED=false
-      - IP6_PROVIDER=none
-    networks:
-      - asok_net
-    profiles:
-      - ddns
 
 networks:
   asok_net:
@@ -274,5 +183,3 @@ networks:
 volumes:
   pgdata:
   redisdata:
-  caddy_data:
-  caddy_config:

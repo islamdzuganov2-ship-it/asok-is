@@ -8,11 +8,12 @@
 import React from 'react';
 import { Card, Popover, Skeleton, Typography } from 'antd';
 import { RightOutlined, QuestionCircleOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import { PREMIUM, TYPE, SPACE } from '../../theme/premium';
+import { PREMIUM, TYPE, SPACE, premiumCard } from '../../theme/premium';
 import { BRAND, RAG, MONEY_FLOW } from '../../theme/ragPalette';
 import { numericText } from '../../theme/table';
 import { useIsDarkTheme } from '../../theme/useThemeTokens';
 import type { Tone, TileValue, TileFormula } from './types';
+import L3Link from './L3Link';
 
 const { Text } = Typography;
 
@@ -97,7 +98,7 @@ const TileCard: React.FC<TileCardProps> = ({ question, value, formula, onClick }
 
   if (value.loading) {
     return (
-      <Card size="small" style={{ height: '100%', borderRadius: PREMIUM.radius, border: `1px solid ${PREMIUM.border}` }}>
+      <Card size="small" {...premiumCard('none', { height: '100%' })}>
         <div style={{ ...TYPE.caption, color: BRAND.inkSoft, marginBottom: SPACE.snug }}>{question}</div>
         <Skeleton.Input active block size="large" />
       </Card>
@@ -138,9 +139,11 @@ const TileCard: React.FC<TileCardProps> = ({ question, value, formula, onClick }
             <span>{value.empty.reason}</span>
           </Text>
           {value.empty.fixHref && (
-            <a href={value.empty.fixHref} style={{ ...TYPE.micro, display: 'block', marginTop: SPACE.tight }} onClick={(e) => e.stopPropagation()}>
+            // SPA-переход с адресом возврата (КП-39): раньше `<a href>` перезагружал страницу
+            // и терял разрез — «← К кокпиту» возвращала бы на чистый кокпит.
+            <L3Link href={value.empty.fixHref} stopPropagation style={{ ...TYPE.micro, display: 'block', marginTop: SPACE.tight }}>
               {value.empty.fixLabel ?? 'Заполнить →'}
-            </a>
+            </L3Link>
           )}
         </div>
       ) : (

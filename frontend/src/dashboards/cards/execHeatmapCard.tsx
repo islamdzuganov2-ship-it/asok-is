@@ -5,8 +5,8 @@
  * любому столбцу, четыре режима отображения, денежный слой, легенда), и держать её вместе с
  * остальными семью означало файл, который перестаёт читаться целиком.
  */
-import React from 'react';
-import { Button, Segmented, Space, Spin, Tooltip, Typography } from 'antd';
+import React, { useMemo, useState } from 'react';
+import { Button, Segmented, Select, Space, Spin, Tooltip, Typography } from 'antd';
 import { AppstoreOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { RAG, BRAND, ACCENT } from '../../theme/ragPalette';
@@ -15,6 +15,8 @@ import { SortButton } from '../../components/LevelHeatmap';
 import { useExecScope, abbr, MONEY_MODE_OPTIONS, type MoneyMode } from '../scopes/ExecScope';
 import GridCard from '../GridCard';
 import RagDot from './RagDot';
+import { useGetHeatmapMoneyLayerQuery } from '../../store/api/apiSlice';
+import { loadRowOrder, orderHeatRows, ROW_ORDER_OPTIONS, saveRowOrder, type RowOrder } from './heatmapOrder';
 
 const { Text } = Typography;
 // ─────────────────── Тепловая карта характеристик ───────────────────
@@ -26,7 +28,22 @@ export const ExecHeatmapCard: React.FC = () => {
     showAllHeatmap, setShowAllHeatmap, openSystem,
   } = useExecScope();
   const navigate = useNavigate();
-  const shownHeatRows = showAllHeatmap ? sortedHeatRows : sortedHeatRows.slice(0, 5);
+  // УК-29: порядок строк без клика по столбцу — по баллу ИС, критичности, числу низких или
+  // деньгам под риском; выбор запоминается. Клик по заголовку характеристики его перекрывает.
+  const [rowOrder, setRowOrder] = useState<RowOrder>(loadRowOrder);
+  const { data: money } = useGetHeatmapMoneyLayerQuery(undefined, { skip: !isLive || rowOrder !== 'money' });
+  const orderedRows = useMemo(() => {
+    if (heatSort) return sortedHeatRows;
+    const aleBySystem = new Map<string, number>();
+    (money ?? []).forEach((c) => aleBySystem.set(c.systemName, (aleBySystem.get(c.systemName) ?? 0) + c.totalAle));
+    const sysOf = (name: string) => systems.find((s) => s.name === name || s.name.includes(name));
+    return orderHeatRows(orderedHeatRows, rowOrder, {
+      scoreOf: (n) => sysOf(n)?.score ?? null,
+      criticalityOf: (n) => sysOf(n)?.criticality ?? null,
+      moneyOf: (n) => (money ? aleBySystem.get(n) ?? 0 : null),
+    });
+  }, [heatSort, sortedHeatRows, orderedHeatRows, rowOrder, money, systems]);
+  const shownHeatRows = showAllHeatmap ? orderedRows : orderedRows.slice(0, 5);
 
   return (
     <GridCard
@@ -35,6 +52,15 @@ export const ExecHeatmapCard: React.FC = () => {
       title={<><AppstoreOutlined /> Тепловая карта характеристик</>}
       extra={<Button type="link" size="small" onClick={() => navigate('/dashboard/analytics')}>Детали →</Button>}
     >
+      <Space wrap style={{ marginBottom: SPACE.cozy }}>
+        <Text type="secondary" style={TYPE.caption}>Строки:</Text>
+        <Select<RowOrder>
+          size="small" value={heatSort ? undefined : rowOrder} placeholder="по выбранному столбцу"
+          style={{ width: 200 }}
+          onChange={(v) => { setRowOrder(v); saveRowOrder(v); setHeatSort(null); }}
+          options={ROW_ORDER_OPTIONS.filter((o) => o.value !== 'money' || isLive)}
+        />
+      </Space>
       {isLive ? (
         <Segmented
           size="small"

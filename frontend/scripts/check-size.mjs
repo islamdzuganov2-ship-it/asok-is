@@ -15,7 +15,7 @@
  *
  * Запуск: npm run check:size   (ненулевой код возврата = есть нарушения)
  */
-import { globSync, statSync } from 'node:fs';
+import { globSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -35,8 +35,8 @@ const DEFAULT_LIMIT_KB = 20;
 const SIZE_BUDGET_KB = {
   'pages/NewAssessmentPage.tsx': 35,
   'data/mockScaleData.ts': 33,
-  'pages/AiAssessmentPage.tsx': 31,
-  'store/api/apiSlice.ts': 31,
+  'pages/AiAssessmentPage.tsx': 29,
+  'store/api/apiSlice.ts': 22,
   'pages/ExcelReportsPage.tsx': 29,
 };
 
@@ -44,7 +44,14 @@ const sources = globSync('**/*.{ts,tsx}', { cwd: SRC })
   .map((p) => p.replace(/\\/g, '/'))
   .filter((p) => !p.includes('__tests__'));
 
-const sizeKb = (rel) => Math.round(statSync(resolve(SRC, rel)).size / 1024);
+/** Размер в LF-нормализованном виде: иначе один и тот же файл на Windows-чекауте (CRLF)
+ *  оказывается на ~1 КБ «тяжелее», чем в репозитории и на CI, и проверка зависит от ОС. */
+const sizeKb = (rel) => {
+  const buf = readFileSync(resolve(SRC, rel));
+  let cr = 0;
+  for (const b of buf) if (b === 13) cr += 1;
+  return Math.round((buf.length - cr) / 1024);
+};
 
 let failed = 0;
 

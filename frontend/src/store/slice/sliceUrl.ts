@@ -1,5 +1,5 @@
 /**
- * sliceUrl.ts — сериализация сквозного разреза в адресную строку и обратно (ТЗ v21 §3.2, КП-01…КП-06).
+ * sliceUrl.ts — сериализация сквозного разреза в адресную строку и обратно (ТЗ v21 §3.2, КП-01, КП-02, КП-03, КП-04, КП-05, КП-06).
  *
  * Адресная строка — источник истины, а не Redux: ссылка на экран должна открывать ровно тот же
  * разрез у другого человека, без скрытого состояния стора. `useSlice()` — единственный
@@ -9,13 +9,13 @@
  * `system`, `owner`). `paramsToSlice` понимает их как синонимы новых (`char`, `sys`), поэтому
  * ранее разосланные ссылки продолжают открывать то же самое; записываем всегда в новом формате.
  *
- * Денежная линза (`lens` из §3.1) сознательно не реализована: ни одна плитка её не читает,
- * а поле без потребителя — мёртвый код. Появится вместе с переключателем «балл/деньги»
- * на самих плитках (см. ТЗ-21 §13.1).
+ * Денежная линза `lens` (§3.1) — ключ `lens=score|ale|delta|coverage`. Читают её теплокарта
+ * управленческого дашборда (бывший локальный `MoneyMode`) и шторка «Где мы уязвимы?»; выбор —
+ * в панели разреза. Невалидное значение из адреса отбрасывается, а не протаскивается дальше.
  */
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CRITICALITY_TO_CLASS, DEFAULT_SLICE, type Criticality, type Slice } from './sliceTypes';
+import { CRITICALITY_TO_CLASS, DEFAULT_SLICE, isLens, type Criticality, type Slice } from './sliceTypes';
 
 const CRIT_KEYS = new Set<string>(['MC', 'BC', 'BO']);
 
@@ -27,6 +27,7 @@ export function sliceToParams(s: Slice, base?: URLSearchParams): URLSearchParams
   if (s.characteristic) p.set('char', s.characteristic); else p.delete('char');
   if (s.subcharacteristic) p.set('sub', s.subcharacteristic); else p.delete('sub');
   if (s.owner) p.set('owner', s.owner); else p.delete('owner');
+  if (s.lens) p.set('lens', s.lens); else p.delete('lens');
   // Старые синонимы не пишем, но и не оставляем висеть: иначе ссылка несла бы два ключа
   // с расходящимися значениями и следующий читатель получил бы не тот разрез.
   p.delete('system');
@@ -46,7 +47,9 @@ export function paramsToSlice(p: URLSearchParams, defaults: Partial<Slice> = {})
   const characteristic = p.get('char') ?? p.get('characteristic') ?? defaults.characteristic ?? null;
   const subcharacteristic = p.get('sub') ?? defaults.subcharacteristic ?? null;
   const owner = p.get('owner') ?? defaults.owner ?? null;
-  return { period, systems, criticality, characteristic, subcharacteristic, owner };
+  const lensRaw = p.get('lens');
+  const lens = isLens(lensRaw) ? lensRaw : defaults.lens;
+  return { period, systems, criticality, characteristic, subcharacteristic, owner, ...(lens ? { lens } : {}) };
 }
 
 /** Классы критичности в том виде, в каком их ждёт бэкенд (`MISSION CRITICAL` и т.д.). */
@@ -76,8 +79,12 @@ export function useSlice(defaults?: Partial<Slice>): [Slice, (patch: Partial<Sli
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setParams, defaultsKey]);
 
+  // «Сбросить» обнуляет фильтры, но не линзу: линза — способ показа, а не сужение данных.
   const reset = useCallback(() => {
-    setParams((prev) => sliceToParams(DEFAULT_SLICE, prev));
+    setParams((prev) => {
+      const lens = paramsToSlice(prev).lens;
+      return sliceToParams({ ...DEFAULT_SLICE, ...(lens ? { lens } : {}) }, prev);
+    });
   }, [setParams]);
 
   return [slice, patch, reset];

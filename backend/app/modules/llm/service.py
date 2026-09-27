@@ -668,7 +668,7 @@ def generate_summary(system_name: str, period_label: str,
     return text
 
 
-# ─── Резюме карточки меры для топ-менеджмента (ТЗ v19 п.14, УК-14) ─────────────────────
+# ─── Резюме карточки меры для топ-менеджмента (ТЗ v19 п.14, УК-34, УК-35) ─────────────────────
 # Отдельный однопроходный вызов (не общий конвейер reasoning.py: там вход — суждения/риски/
 # метрики по всей ИС за период, здесь — уже посчитанные поля ОДНОЙ меры). Берёт системную роль
 # и формат персоны TOP_MANAGER напрямую (personas.py) — тот же адресат, та же честность.
@@ -680,7 +680,19 @@ def generate_summary(system_name: str, period_label: str,
 # только просьбой в промпте; при нарушении — честный детерминированный fallback (та же
 # деградация, что и у остальных generate_* здесь).
 
-_JARGON_RE = re.compile(r"[A-ZА-Я]\s*=|A/B\b|\bDIRECT\b|\bINVERSE\b", re.IGNORECASE)
+# УК-35а: в управленческом режиме запрещены формулы, DIRECT/INVERSE и служебный термин стандарта
+# «подхарактеристика» — вместо него следствие для бизнеса (ТЗ v19 п.14, принцип 8).
+_JARGON_RE = re.compile(r"[A-ZА-Я]\s*=|A/B\b|\bDIRECT\b|\bINVERSE\b|подхарактеристик", re.IGNORECASE)
+_SUBCHAR_TERM_RE = re.compile(r"подхарактеристик(ами|ам|ах|ой|а|и|у|е)?", re.IGNORECASE)
+_SUBCHAR_ENDINGS = {"а": "ь", "и": "и", "у": "ь", "ой": "ем", "е": "е", "ам": "ям", "ами": "ями",
+                    "ах": "ях", None: "ей"}
+
+
+def _plain_terms(text: str) -> str:
+    """Служебный термин стандарта в свободном тексте менеджера → «показатель» (с согласованием
+    окончания): записка для руководителя не должна говорить языком ГОСТ (УК-35а), а переписывать
+    профсуждение по смыслу мы не вправе — меняется только термин."""
+    return _SUBCHAR_TERM_RE.sub(lambda m: "показател" + _SUBCHAR_ENDINGS.get(m.group(1), "ь"), text or "")
 _ABSENT_MARKERS = ("не оценен", "не назначен", "не сформулирован", "не указан")
 _LONG_NUMBER_RE = re.compile(r"\d[\d\s]{3,}\d")
 
@@ -753,6 +765,7 @@ def _management_summary_fallback(
         words = (s or "").split()
         return (s or "").strip() if len(words) <= n else " ".join(words[:n]) + "…"
 
+    problem, ask = _plain_terms(problem), _plain_terms(ask)
     sentences = [
         f"Что не так: {_clip(problem, 18) or 'проблема не описана в обосновании меры'}.",
         f"Деньги и срок: {money_note}; {deadline_note}.",
@@ -769,7 +782,7 @@ def _management_summary_fallback(
 def generate_management_summary(
     problem: str, ask: str, money_note: str, deadline_note: str,
     cost_note: str, result_note: str, responsible_note: str,
-    responsible_name: str | None = None,
+    responsible_name: str | None = None, meaning_note: str | None = None,
 ) -> str:
     """Управленческая записка по одной мере — контракт «что не так → деньги/срок → решение →
     стоимость → результат → ответственный», ≤80 слов, без формул/технических обозначений.
@@ -778,9 +791,13 @@ def generate_management_summary(
     01.09.2026» либо «не назначен») — их готовит вызывающий код (домен governance, который
     один знает поля Proposal); эта функция ORM не импортирует. `responsible_name` — «сырое»
     имя ответственного, только чтобы проверить, что LLM его не потеряла при пересказе.
+
+    `meaning_note` (УК-34) — смысл характеристики из глоссария: СЛОВАРЬ значения термина, чтобы
+    модель могла сказать «чем грозит бизнесу», а не текст карточки — в записку он не копируется
+    и в детерминированный вариант не входит (иначе это то самое «слепое переписывание»).
     """
     key = hash(("mgmt_summary", problem, ask, money_note, deadline_note,
-                cost_note, result_note, responsible_note))
+                cost_note, result_note, responsible_note, meaning_note))
     cached = _cache_get(key)
     if cached is not None:
         return cached
@@ -798,6 +815,8 @@ def generate_management_summary(
         f"Ожидаемый результат: {result_note}\n"
         f"Ответственный: {responsible_note}"
     )
+    if meaning_note:
+        facts += f"\nСмысл характеристики (словарь, не цитировать): {meaning_note}"
     text = complete(MEASURE_CARD_SUMMARY_PROMPT.format(facts=facts),
                     system=TOP_MANAGER.system_prompt, max_tokens=TOP_MANAGER.max_tokens)
 
@@ -827,7 +846,7 @@ def generate_management_summary(
     return text
 
 
-# ─── Мера на язык исполнителя (ТЗ v19 п.16, УК-16) ─────────────────────────────────────
+# ─── Мера на язык исполнителя (ТЗ v19 п.16, УК-38) ─────────────────────────────────────
 # Персона EXECUTOR (personas.py) уже задаёт нужный формат («Что сделать / Срок и риск / Чем
 # подтвердить / Что уточнить») — конвейер Э0–Э7 не нужен, вход короче (одна мера). Та же
 # деградация к честному fallback'у, но БЕЗ строгого лимита 80 слов (это требование заказчика

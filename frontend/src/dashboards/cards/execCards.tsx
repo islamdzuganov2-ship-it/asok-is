@@ -22,6 +22,7 @@ import EmployeeEffectivenessCard from '../../components/EmployeeEffectivenessCar
 import { useExecScope } from '../scopes/ExecScope';
 import GridCard, { FillCard } from '../GridCard';
 import AutoChart from '../AutoChart';
+import ScoreScale, { localScale } from '../../components/ScoreScale';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -57,6 +58,8 @@ export const ExecIndexCard: React.FC = () => {
           <Title level={4} style={{ margin: 0, color: idxTok.strong }}>
             {globalIndex}% · {levelLabel(globalIndex)}
           </Title>
+          {/* УК-03: пороги, цель и дельта к прошлому периоду — рядом с цифрой. */}
+          <ScoreScale hideLevel data={isLive && live?.scoreScale ? live.scoreScale : localScale(globalIndex)} />
           <Text type="secondary">
             <Tag color={isLive ? 'green' : 'default'}>{isLive ? 'LLM · live' : 'Демо'}</Tag>
           </Text>

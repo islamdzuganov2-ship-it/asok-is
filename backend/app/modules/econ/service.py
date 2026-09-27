@@ -1,5 +1,5 @@
 """
-Логика домена econ (BL-007, RE-01…RE-04): CRUD экономических справочников + финпараметры контура.
+Логика домена econ (BL-007, RE-01, RE-02, RE-03, RE-04): CRUD экономических справочников + финпараметры контура.
 
 Справочники — «фундамент денег»: их наполняет аналитик/риск-менеджер вручную (пилот идёт от ручного
 ввода, не от автовыгрузки ITSM). Значения финпараметров хранятся в БД (EconConfig), а не в коде, —
@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,8 @@ from app.modules.econ.models import (
     EXECUTOR_TYPES,
     EXECUTOR_VENDOR,
     LINES,
+    RATE_SOURCE_MANUAL,
+    RATE_SOURCE_REFERENCE,
     SIZE_CLASSES,
     BusinessProcess,
     BusinessProcessCost,
@@ -38,11 +40,16 @@ from app.modules.econ.models import (
 from app.modules.econ.schemas import (
     BenchmarkComparisonOut,
     BpCostIn,
+    BpCostOut,
     BusinessProcessCreate,
     BusinessProcessUpdate,
     EnterpriseProfileIn,
+    FillDefaultRatesIn,
+    FillDefaultRatesOut,
     MarketBenchmarkCreate,
     MarketBenchmarkOut,
+    RateDeviationOut,
+    RateDeviationsOut,
     SupportRateIn,
     SupportRateUpdate,
     SystemBpCreate,
@@ -63,10 +70,6 @@ DEFAULT_CONFIG: dict[str, dict] = {
     "itsm_history_months": {
         "value": 12,
         "description": "Глубина истории ТС, мес — окно наблюдения для расчёта ARO по фактике (§2.3).",
-    },
-    "k_time": {
-        "value": {"business": 1.0, "evening": 1.5, "weekend": 2.0},
-        "description": "K_время восстановления: рабочее/вечер-ночь/выходные (§2.1).",
     },
     "k_overhead": {
         "value": 1.6,
@@ -99,6 +102,43 @@ DEFAULT_CONFIG: dict[str, dict] = {
     "nc_sla_days": {
         "value": 30,
         "description": "SLA на решение по несоответствию: >N дней в статусе «Оценено» → эскалация (§3.3).",
+    },
+    # RE-20 (§7.2, В-14 ТЗ контура): метрики руководителей — диагностика или мотивация.
+    # 'diagnostic' (по умолчанию, первые 2 квартала): ΔALE под управлением — по выполненным мерам.
+    # 'motivation': засчитывается только ΔALE, подтверждённый независимой верификацией аудитора
+    # (несоответствие в статусе «Верифицировано»), — жёсткий антигейминг при привязке к премии.
+    "manager_metrics_mode": {
+        "value": "diagnostic",
+        "description": "Режим метрик руководителей: diagnostic (наблюдение) | motivation (ΔALE — "
+                        "только подтверждённый аудитором, §7.2)",
+    },
+    # RE-19: норматив человеко-часов аналитика на одну оценку ИС — по глубине оценки.
+    "assessment_norm_hours": {
+        "value": {"FULL": 40, "PROFILE": 16, "SCREENING": 6},
+        "description": "Норматив ч/ч аналитика на оценку ИС по глубине (RE-19): полная / профильная / "
+                        "скрининг. Факт вводится при завершении оценки",
+    },
+    # ТЗ v19 п.10 (УК-26): порог отчёта «ставки, отличающиеся от типовых».
+    "rate_deviation_threshold_pct": {
+        "value": 20,
+        "description": "Порог отчёта отклонений ставок от типовых, % (УК-26)",
+    },
+    # ТЗ v19 п.13 (УК-33, УК-22): норма загрузки исполнителя — часы открытых мер по размеру
+    # предприятия (В-42: норма «на человека», от размера). Выше — перегружен, ниже половины — свободен.
+    "executor_load_norm_hours": {
+        "value": {"MICRO": 120, "SMALL": 140, "MEDIUM": 160, "LARGE": 160, "default": 160},
+        "description": "Норма часов открытых мер на исполнителя по размеру предприятия (УК-33). Предложение",
+    },
+    # ТЗ v19 п.6 (УК-15): за сколько дней до срока меры уведомлять ответственного.
+    "notify_due_soon_days": {
+        "value": 3,
+        "description": "За сколько дней до срока меры уходит уведомление «срок истекает» (УК-15)",
+    },
+    # ТЗ v19 п.1 (УК-03): целевое значение интегрального балла (В-6 б) — отметка на шкале.
+    "quality_score_target": {
+        "value": 0.81,
+        "description": "Цель по интегральному баллу качества, доля 0..1 (УК-03). По умолчанию — "
+                        "нижняя граница «высокого уровня»",
     },
     "nc_review_months": {
         "value": 6,
@@ -261,9 +301,21 @@ async def list_system_bps(db: AsyncSession, system_id: uuid.UUID) -> list[System
 
 # ── Стоимость минуты простоя (C_мин) — одна карточка на БП (upsert) ──
 async def upsert_bp_cost(db: AsyncSession, bp_id: uuid.UUID, data: BpCostIn) -> BusinessProcessCost:
-    await get_bp_or_404(db, bp_id)
+    """RE-02: карточка C_мин. Если базовая стоимость не введена вручную, она считается движком по
+    методу и параметрам (economics.cost_per_minute) — аналитик не открывает Excel. Транзакционный
+    метод — только для выручкообразующих (FRONTAL) процессов: у бэк-офиса нет выручки на минуту,
+    и цифра по такому методу была бы выдуманной."""
+    bp = await get_bp_or_404(db, bp_id)
     if data.method not in COST_METHODS:
         raise ValidationError(f"Недопустимый метод расчёта C_мин: {data.method}")
+    if data.method == economics.COST_METHOD_TRANSACTIONAL and bp.kind != "FRONTAL":
+        raise ValidationError(
+            "Транзакционный метод C_мин применим только к выручкообразующим (фронтальным) процессам"
+        )
+    if data.cost_per_min_base is None:
+        computed = economics.cost_per_minute(data.method, data.params)
+        if computed is not None:
+            data = data.model_copy(update={"cost_per_min_base": computed.base})
     row = (await db.execute(
         select(BusinessProcessCost).where(BusinessProcessCost.business_process_id == bp_id)
     )).scalar_one_or_none()
@@ -277,6 +329,17 @@ async def upsert_bp_cost(db: AsyncSession, bp_id: uuid.UUID, data: BpCostIn) -> 
     await db.commit()
     await db.refresh(row)
     return row
+
+
+def bp_cost_out(row: BusinessProcessCost | None) -> BpCostOut | None:
+    """DTO карточки C_мин с диапазоном экспертной оценки (RE-02) — неопределённость видна рядом."""
+    if row is None:
+        return None
+    out = BpCostOut.model_validate(row)
+    computed = economics.cost_per_minute(row.method, row.params)
+    if computed is not None:
+        out.cost_per_min_low, out.cost_per_min_high = computed.low, computed.high
+    return out
 
 
 async def get_bp_cost(db: AsyncSession, bp_id: uuid.UUID) -> BusinessProcessCost | None:
@@ -310,18 +373,35 @@ async def get_rate_or_404(db: AsyncSession, rate_id: uuid.UUID) -> SupportRate:
 
 async def create_rate(db: AsyncSession, data: SupportRateIn) -> SupportRate:
     _validate_rate(data.line, data.executor_type)
-    rate = SupportRate(**data.model_dump(exclude_none=True))
+    payload = data.model_dump(exclude_none=True)
+    fot = payload.pop("fot_monthly", None)
+    fund = payload.pop("fund_hours_monthly", None)
+    if payload.get("rate_per_hour") is None:
+        # RE-03: внутренняя ставка из ФОТ — полная стоимость часа, а не «голая» зарплата (В-34).
+        k_overhead = float(await config_value(db, "k_overhead", 1.6) or 1.6)
+        computed = economics.internal_hourly_rate(fot or 0, k_overhead, fund or 0)
+        if computed is None:
+            raise ValidationError("Задайте ставку ₽/час или ФОТ в месяц и фонд рабочего времени")
+        payload["rate_per_hour"] = computed
+    rate = SupportRate(**payload)
     db.add(rate)
     await db.commit()
     await db.refresh(rate)
     return rate
 
 
-async def update_rate(db: AsyncSession, rate: SupportRate, data: SupportRateUpdate) -> SupportRate:
+async def update_rate(db: AsyncSession, rate: SupportRate, data: SupportRateUpdate,
+                      username: str | None = None) -> SupportRate:
     patch = data.model_dump(exclude_unset=True)
     _validate_rate(patch.get("line"), patch.get("executor_type"))
     for field, value in patch.items():
         setattr(rate, field, value)
+    # УК-25: правка значения руками — это и есть подтверждение: ставка перестаёт быть
+    # «по справочнику» и больше не обновляется подстановкой дефолтов.
+    if "rate_per_hour" in patch and rate.source == RATE_SOURCE_REFERENCE:
+        rate.source = RATE_SOURCE_MANUAL
+        rate.confirmed_at = datetime.now(timezone.utc)
+        rate.confirmed_by = username
     await db.commit()
     await db.refresh(rate)
     return rate
@@ -329,70 +409,96 @@ async def update_rate(db: AsyncSession, rate: SupportRate, data: SupportRateUpda
 
 async def resolve_support_rate(
     db: AsyncSession, *, line: str, system_id: uuid.UUID | None = None,
+    executor_type: str | None = None,
 ) -> SupportRate | None:
-    """Применимая ставка для линии: сначала специфичная для ИС, иначе глобальная (system_id IS NULL).
+    """Применимая ставка для линии (RE-03): связка ИС × линия × исполнитель.
 
-    Смешанная модель (§2.4): ставка — атрибут связки ИС×линия×исполнитель, единой «ставки L2» нет.
-    Движок C_восстановление берёт ставку отсюда.
+    Порядок: (ИС, исполнитель) → (глобальная, исполнитель) → (ИС, любой) → (глобальная, любой).
+    Смешанная модель (§2.4): часть линий закрывает вендор, часть — внутренняя команда, и у них
+    разные ставки, K по времени, пакеты. Если под нужного исполнителя ставки нет, берётся любая
+    ставка линии — лучше ориентир, чем некостированная линия (это видно в cost_breakdown).
     """
+    async def _find(sys_id: uuid.UUID | None, executor: str | None) -> SupportRate | None:
+        conds = [SupportRate.line == line, SupportRate.is_active.is_(True)]
+        conds.append(SupportRate.system_id == sys_id if sys_id is not None else SupportRate.system_id.is_(None))
+        if executor is not None:
+            conds.append(SupportRate.executor_type == executor)
+        return (await db.execute(select(SupportRate).where(*conds))).scalars().first()
+
+    candidates = []
+    if executor_type is not None:
+        if system_id is not None:
+            candidates.append((system_id, executor_type))
+        candidates.append((None, executor_type))
     if system_id is not None:
-        specific = (await db.execute(
-            select(SupportRate).where(
-                SupportRate.system_id == system_id,
-                SupportRate.line == line,
-                SupportRate.is_active.is_(True),
-            )
-        )).scalars().first()
-        if specific is not None:
-            return specific
-    return (await db.execute(
-        select(SupportRate).where(
-            SupportRate.system_id.is_(None),
-            SupportRate.line == line,
-            SupportRate.is_active.is_(True),
-        )
-    )).scalars().first()
+        candidates.append((system_id, None))
+    candidates.append((None, None))
+    for sys_id, executor in candidates:
+        found = await _find(sys_id, executor)
+        if found is not None:
+            return found
+    return None
+
+
+async def bp_cost_per_min_at(cost: BusinessProcessCost, moment: datetime | None) -> float | None:
+    """C_мин в момент сбоя (RE-02): базовая стоимость × множитель временного профиля."""
+    if cost.cost_per_min_base is None:
+        return None
+    return float(cost.cost_per_min_base) * economics.time_profile_factor(cost.time_profile, moment)
 
 
 # ═══════════════════════ C_ТС: оркестровка стоимости реализации ТС (RE-07) ═══════════════════════
 
-_DEFAULT_K_TIME = {"business": 1.0, "evening": 1.5, "weekend": 2.0}
+# K_время берётся из самой ставки (k_evening/k_weekend, RE-03): у вендора коэффициенты свои.
 
 
-def _k_time_for(occurred_at: datetime | None, cfg: dict) -> float:
-    """K_время по моменту сбоя (§2.1): выходные / вечер-ночь / рабочее время."""
-    if occurred_at is None:
-        return float(cfg.get("business", 1.0))
-    if occurred_at.weekday() >= 5:               # суббота/воскресенье
-        return float(cfg.get("weekend", 2.0))
-    if occurred_at.hour < 8 or occurred_at.hour >= 20:  # вечер/ночь
-        return float(cfg.get("evening", 1.5))
-    return float(cfg.get("business", 1.0))
-
-
-async def compute_incident_cost(db: AsyncSession, incident) -> float:
+async def compute_incident_cost(
+    db: AsyncSession, incident, vendor_hours_used: dict[str, float] | None = None,
+) -> float:
     """C_ТС = C_восстановление + C_простой (+ вторичные) для одного техсбоя (§2.1, RE-07).
 
-    Берёт входы из справочников econ: ставки L1/L2/L3 (по связке ИС×линия) и стоимость минуты БП
-    (через связь ИС↔БП). `incident` — duck-typed (поля TechIncident), домен не импортируется, чтобы
-    econ оставался нижним слоем. Результат кэшируется в `incident.cost_total`; коммит — за вызывающим.
+    Берёт входы из справочников econ: ставки L1/L2/L3 по связке ИС × линия × исполнитель (RE-03:
+    вендорские линии — `labor_vendor_lines`, квант биллинга, K по времени самой ставки, пакет и
+    сверхлимит) и стоимость минуты БП в момент сбоя (RE-02: метод + временной профиль).
+    `incident` — duck-typed (поля TechIncident), домен не импортируется, чтобы econ оставался
+    нижним слоем. `vendor_hours_used` — уже израсходованные в месяце часы пакета по линиям
+    (считает вызывающий домен incidents). Результат кэшируется в `incident.cost_total` и
+    разложение — в `incident.cost_breakdown`; коммит — за вызывающим.
     """
-    k_time_cfg = await config_value(db, "k_time", _DEFAULT_K_TIME) or _DEFAULT_K_TIME
-    k_time = _k_time_for(getattr(incident, "occurred_at", None), k_time_cfg)
+    occurred_at = getattr(incident, "occurred_at", None)
     system_id = getattr(incident, "system_id", None)
+    vendor_lines = set(getattr(incident, "labor_vendor_lines", None) or [])
+    used = vendor_hours_used or {}
 
-    # C_восстановление — по линиям с известной ставкой (иначе линия не костится).
-    labors: list = []
+    # C_восстановление — по линиям с известной ставкой (иначе линия не костится и это видно).
+    recovery = 0.0
+    lines_out: list[dict] = []
     for line, attr in (("L1", "labor_l1_hours"), ("L2", "labor_l2_hours"), ("L3", "labor_l3_hours")):
         hours = getattr(incident, attr, None)
         if not hours:
             continue
-        rate = await resolve_support_rate(db, line=line, system_id=system_id)
+        executor = EXECUTOR_VENDOR if line in vendor_lines else EXECUTOR_INTERNAL
+        rate = await resolve_support_rate(db, line=line, system_id=system_id, executor_type=executor)
         if rate is None:
+            lines_out.append({"line": line, "hours": float(hours), "executor": executor, "cost": None,
+                              "note": "нет ставки для линии — не учтено"})
             continue
-        labors.append(economics.LineLabor(
-            hours=float(hours), rate_per_hour=float(rate.rate_per_hour), k_time=k_time,
-        ))
+        # Квант биллинга — условие вендорского контракта: внутренняя команда работает по факту
+        # времени, округлять её часы вверх значило бы завышать собственный C_восст.
+        billable = (economics.billable_hours(float(hours), float(rate.billing_quantum_min or 0))
+                    if rate.executor_type == EXECUTOR_VENDOR else float(hours))
+        k_time = economics.k_time_for_rate(occurred_at, float(rate.k_evening), float(rate.k_weekend))
+        package_left = None
+        if rate.executor_type == EXECUTOR_VENDOR and rate.package_hours is not None:
+            package_left = max(0.0, float(rate.package_hours) - float(used.get(line, 0.0)))
+        cost = economics.vendor_labor_cost(
+            billable, float(rate.rate_per_hour), k_time, package_left,
+            float(rate.overlimit_rate) if rate.overlimit_rate is not None else None,
+        )
+        recovery += cost
+        lines_out.append({"line": line, "hours": float(hours), "billable_hours": billable,
+                          "executor": rate.executor_type, "rate_per_hour": float(rate.rate_per_hour),
+                          "k_time": k_time, "package_left": package_left, "cost": cost})
 
     # C_простой — по затронутым БП (через связь ИС↔БП и карточку стоимости минуты).
     minutes = getattr(incident, "downtime_minutes", None)
@@ -404,18 +510,27 @@ async def compute_incident_cost(db: AsyncSession, incident) -> float:
     if minutes and system_id is not None:
         for link in await list_system_bps(db, system_id):
             cost = await get_bp_cost(db, link.business_process_id)
-            if cost is None or cost.cost_per_min_base is None:
+            if cost is None:
+                continue
+            per_min = await bp_cost_per_min_at(cost, occurred_at)
+            if per_min is None:
                 continue
             k = getattr(incident, "k_impact", None)
             if k is None:
                 k = link.default_k_impact if link.default_k_impact is not None else 1.0
             downtime.append(economics.DowntimeEntry(
-                minutes=float(minutes), cost_per_min=float(cost.cost_per_min_base),
+                minutes=float(minutes), cost_per_min=per_min,
                 k_impact=float(k), share=float(link.share),
             ))
 
-    total = economics.cost_incident(labors=labors, downtime=downtime, secondary=0.0)
+    downtime_cost = economics.cost_downtime(downtime)
+    total = round(recovery + downtime_cost, 2)
     incident.cost_total = total
+    if hasattr(incident, "cost_breakdown"):
+        incident.cost_breakdown = {
+            "recovery": round(recovery, 2), "downtime": round(downtime_cost, 2), "secondary": 0.0,
+            "total": total, "lines": lines_out, "business_processes": len(downtime),
+        }
     return total
 
 
@@ -433,6 +548,8 @@ def _validate_benchmark(data: MarketBenchmarkCreate) -> None:
         raise ValidationError(f"Недопустимый тип исполнителя для бенчмарка ставки: {data.dimension}")
     if data.company_size_class is not None and data.company_size_class not in SIZE_CLASSES:
         raise ValidationError(f"Недопустимый класс размера: {data.company_size_class}")
+    if data.line is not None and (data.kind != BENCHMARK_SUPPORT_RATE or data.line not in LINES):
+        raise ValidationError("Линия задаётся только для типовой ставки сопровождения: L1/L2/L3")
 
 
 async def create_benchmark(
@@ -499,6 +616,121 @@ async def compare_support_rate(db: AsyncSession, rate_id: uuid.UUID) -> Benchmar
         if bench is not None:
             size_note = " Рынок не сегментирован по размеру банка — показан общий ориентир."
     return _comparison(float(rate.rate_per_hour), "₽/час", bench, no_own="", note_suffix=size_note)
+
+
+# ═══════════════════ Типовые ставки и контроль отклонений (ТЗ v19 п.10, УК-25, УК-26) ═══════════════════
+
+async def typical_rate(
+    db: AsyncSession, *, line: str, executor_type: str,
+) -> MarketBenchmark | None:
+    """Типовая ставка из справочника (УК-25): размер предприятия × отрасль × линия × исполнитель.
+
+    Размер и отрасль — из профиля предприятия (УК-21, УК-22). Запись с пустым разрезом — ориентир
+    «для любых»; из подходящих берётся самая конкретная (линия важнее размера, размер — отрасли),
+    при равенстве — самая свежая. Так рынок, не сегментированный по размеру банка (В-30а), всё
+    равно даёт дефолт, но размерно-специфичная запись, если появится, его вытеснит."""
+    profile = await get_enterprise_profile(db)
+    rows = list((await db.execute(
+        select(MarketBenchmark).where(
+            MarketBenchmark.kind == BENCHMARK_SUPPORT_RATE,
+            MarketBenchmark.dimension == executor_type,
+        )
+    )).scalars().all())
+
+    def score(b: MarketBenchmark) -> tuple[int, date] | None:
+        s = 0
+        for value, own, weight in ((b.line, line, 4), (b.company_size_class, profile.size_class, 2),
+                                   (b.industry, profile.industry, 1)):
+            if value is None:
+                continue
+            if value != own:
+                return None
+            s += weight
+        return s, b.observed_on
+
+    scored = [(sc, b) for b in rows if (sc := score(b)) is not None]
+    return max(scored, key=lambda x: x[0])[1] if scored else None
+
+
+async def fill_default_rates(db: AsyncSession, data: FillDefaultRatesIn) -> FillDefaultRatesOut:
+    """Подстановка типовых ставок вместо ввода с нуля (УК-25). Для каждой линии L1–L3 без ставки
+    этой связки создаётся ставка «по справочнику, не подтверждена». refresh=True обновляет
+    значения ранее подставленных НЕподтверждённых ставок (например, после смены размера
+    предприятия); подтверждённые и ручные ставки не трогаются никогда."""
+    _validate_rate(None, data.executor_type)
+    scope = (SupportRate.system_id == data.system_id if data.system_id is not None
+             else SupportRate.system_id.is_(None))
+    existing = {
+        r.line: r for r in (await db.execute(
+            select(SupportRate).where(SupportRate.executor_type == data.executor_type, scope)
+        )).scalars().all()
+    }
+    created = updated = 0
+    missing: list[str] = []
+    for line in LINES:
+        ref = await typical_rate(db, line=line, executor_type=data.executor_type)
+        if ref is None:
+            missing.append(line)
+            continue
+        rate = existing.get(line)
+        if rate is None:
+            db.add(SupportRate(
+                system_id=data.system_id, line=line, executor_type=data.executor_type,
+                rate_per_hour=float(ref.value), source=RATE_SOURCE_REFERENCE,
+                reference_benchmark_id=ref.id,
+            ))
+            created += 1
+        elif (data.refresh and rate.source == RATE_SOURCE_REFERENCE and rate.confirmed_at is None
+              and float(rate.rate_per_hour) != float(ref.value)):
+            rate.rate_per_hour = float(ref.value)
+            rate.reference_benchmark_id = ref.id
+            updated += 1
+    await db.commit()
+    return FillDefaultRatesOut(created=created, updated=updated, skipped_no_reference=missing)
+
+
+async def confirm_rate(db: AsyncSession, rate: SupportRate, username: str | None) -> SupportRate:
+    """Подтвердить подставленную из справочника ставку (УК-25): значение остаётся, пометка
+    «не подтверждена» снимается, и подстановка дефолтов её больше не перезапишет."""
+    rate.confirmed_at = datetime.now(timezone.utc)
+    rate.confirmed_by = username
+    await db.commit()
+    await db.refresh(rate)
+    return rate
+
+
+async def rate_deviations(db: AsyncSession, threshold_pct: float | None = None) -> RateDeviationsOut:
+    """Отчёт «ставки, отличающиеся от типовых более чем на N%» (УК-26) — и проверка данных, и
+    повод к переговорам с вендором. Ставка без типовой в справочнике попадает в отчёт отдельной
+    строкой «нет типовой» (не как 0% отклонения), чтобы пробел справочника был виден."""
+    if threshold_pct is None:
+        threshold_pct = float(await config_value(db, "rate_deviation_threshold_pct", 20) or 20)
+    profile = await get_enterprise_profile(db)
+    rates = list((await db.execute(
+        select(SupportRate).where(SupportRate.is_active.is_(True)).order_by(SupportRate.line)
+    )).scalars().all())
+    rows: list[RateDeviationOut] = []
+    without = 0
+    for r in rates:
+        ref = await typical_rate(db, line=r.line, executor_type=r.executor_type)
+        own = float(r.rate_per_hour)
+        base = dict(rate_id=r.id, system_id=r.system_id, line=r.line, executor_type=r.executor_type,
+                    vendor=r.vendor, rate_per_hour=own)
+        if ref is None or not float(ref.value):
+            without += 1
+            rows.append(RateDeviationOut(**base, note="нет типовой ставки в справочнике"))
+            continue
+        dev = round((own - float(ref.value)) / float(ref.value) * 100, 1)
+        if abs(dev) <= threshold_pct:
+            continue
+        rows.append(RateDeviationOut(
+            **base, typical_rate=float(ref.value), typical_source=ref.source,
+            typical_observed_on=ref.observed_on, deviation_pct=dev,
+            note=f"{'дороже' if dev > 0 else 'дешевле'} типовой на {abs(dev)}%",
+        ))
+    rows.sort(key=lambda x: abs(x.deviation_pct) if x.deviation_pct is not None else -1, reverse=True)
+    return RateDeviationsOut(threshold_pct=threshold_pct, size_class=profile.size_class,
+                             rows=rows, without_reference=without)
 
 
 def _comparison(

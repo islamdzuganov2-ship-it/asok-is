@@ -67,3 +67,4 @@ def import_models() -> None:
     import app.modules.incidents.models  # noqa: F401  (аналитика техсбоев, T-21)
     import app.modules.econ.models  # noqa: F401  (эконом. справочники контура, BL-007)
     import app.modules.nonconformity.models  # noqa: F401  (несоответствия E3, BL-007)
+    import app.modules.notifications.models  # noqa: F401  (журнал уведомлений, ТЗ v19 УК-15)

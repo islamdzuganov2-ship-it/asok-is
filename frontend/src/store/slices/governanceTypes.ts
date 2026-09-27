@@ -53,6 +53,12 @@ export interface Proposal {
   /** История правок меры (аудит): кто, когда, какое поле, старое → новое значение. */
   history?: ProposalChange[];
   suzLink?: string;
+  /** УК-12: FK ответственного и исполнителя; при совпадении карточка показывает одно поле «Ответственный (ОМ)» (УК-40). */
+  ownerUserId?: string | null;
+  executedByUserId?: string | null;
+  /** УК-38/18: мера взята «в работу» — задача внутреннего Ганта; ссылка от TaskSyncPort. */
+  taskRef?: string | null;
+  takenToWorkAt?: string | null;
   topComment?: string;
   escalated?: boolean;
   escalationReason?: string;

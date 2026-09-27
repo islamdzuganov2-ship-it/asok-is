@@ -77,6 +77,135 @@ def cost_incident(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# RE-02 — стоимость минуты простоя БП `C_мин` по методу и временному профилю (§2.5)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Дефолты ресурсного метода (§2.5): доля простаивающих при отказе и коэффициент наверстывания.
+K_IDLE_DEFAULT = 0.6       # K_простоя ∈ [0.3; 1.0]
+K_CATCHUP_DEFAULT = 1.3    # K_наверстывания ∈ [1.2; 1.5]
+
+COST_METHOD_RESOURCE = "RESOURCE"
+COST_METHOD_TRANSACTIONAL = "TRANSACTIONAL"
+COST_METHOD_EXPERT = "EXPERT"
+
+
+@dataclass
+class MinuteCost:
+    """C_мин и его честный диапазон: у экспертно-ступенчатого метода «одно число» — середина
+    диапазона, а сам диапазон показывается рядом, чтобы CFO видел неопределённость оценки."""
+    base: float
+    low: float | None = None
+    high: float | None = None
+
+
+def cost_per_minute(method: str, params: dict | None) -> MinuteCost | None:
+    """C_мин по методу (§2.5, RE-02). None — параметров не хватает (не 0: «не рассчитано» ≠ «бесплатно»).
+
+    • RESOURCE:      N_сотрудников × Ставка_час × K_простоя / 60 × K_наверстывания;
+    • TRANSACTIONAL: выручка(маржа) за период / минуты работы БП за период × доля процесса;
+    • EXPERT:        ступенчатый диапазон [low; high] → середина.
+    """
+    p = params or {}
+
+    def num(key: str, default: float | None = None) -> float | None:
+        v = p.get(key, default)
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    if method == COST_METHOD_RESOURCE:
+        n, rate = num("n_employees"), num("hourly_rate")
+        if not n or not rate:
+            return None
+        k_idle = num("k_idle", K_IDLE_DEFAULT)
+        k_catchup = num("k_catchup", K_CATCHUP_DEFAULT)
+        return MinuteCost(base=round(n * rate * k_idle / 60.0 * k_catchup, 4))
+    if method == COST_METHOD_TRANSACTIONAL:
+        revenue, minutes = num("revenue_per_period"), num("minutes_per_period")
+        if not revenue or not minutes:
+            return None
+        share = num("process_share", 1.0)
+        return MinuteCost(base=round(revenue / minutes * share, 4))
+    if method == COST_METHOD_EXPERT:
+        low, high = num("low"), num("high")
+        if low is None or high is None or high < low:
+            return None
+        return MinuteCost(base=round((low + high) / 2.0, 4), low=low, high=high)
+    return None
+
+
+# Временной профиль по умолчанию: плоский (множитель 1 всегда) — профиль задаётся на карточке БП.
+def time_profile_factor(profile: dict | None, moment: datetime | None) -> float:
+    """Множитель C_мин по моменту сбоя (§2.5): пик/непик × будни/выходные.
+
+    profile = {"peak_hours": [9, 18], "peak": 1.0, "offpeak": 0.5, "weekend": 0.3}. Минута простоя
+    фронтального процесса в пятницу в 12:00 и в воскресенье в 03:00 стоит по-разному — без профиля
+    сбой ночью выходного оценивался бы как дневной будничный (завышение), и наоборот.
+    """
+    if not profile or moment is None:
+        return 1.0
+    try:
+        if moment.weekday() >= 5 and profile.get("weekend") is not None:
+            return float(profile["weekend"])
+        start, end = profile.get("peak_hours", [9, 18])
+        if int(start) <= moment.hour < int(end):
+            return float(profile.get("peak", 1.0))
+        return float(profile.get("offpeak", 1.0))
+    except (TypeError, ValueError, KeyError):
+        return 1.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RE-03 — ставки сопровождения: квант биллинга, K по времени, пакет и сверхлимит (§2.4)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def billable_hours(hours: float, quantum_min: float | None) -> float:
+    """Округление трудозатрат ВВЕРХ до минимального биллинг-кванта вендора (§2.4).
+    20 минут работы при кванте 60 мин оплачиваются как час — без этого C_восст занижен."""
+    if hours is None or hours <= 0:
+        return 0.0
+    q = float(quantum_min or 0)
+    if q <= 0:
+        return float(hours)
+    minutes = float(hours) * 60.0
+    blocks = -(-minutes // q)   # ceil без math
+    return round(blocks * q / 60.0, 4)
+
+
+def k_time_for_rate(moment: datetime | None, k_evening: float = K_TIME_EVENING,
+                    k_weekend: float = K_TIME_WEEKEND) -> float:
+    """K_время по моменту работ с коэффициентами КОНКРЕТНОЙ ставки (у вендора они свои, §2.4)."""
+    if moment is None:
+        return K_TIME_BUSINESS
+    if moment.weekday() >= 5:
+        return float(k_weekend)
+    if moment.hour < 8 or moment.hour >= 20:
+        return float(k_evening)
+    return K_TIME_BUSINESS
+
+
+def vendor_labor_cost(hours: float, rate_per_hour: float, k_time: float = 1.0,
+                      package_hours_left: float | None = None,
+                      overlimit_rate: float | None = None) -> float:
+    """Стоимость часов вендора с учётом пакета (§2.4): внутри остатка пакета — по ставке пакета,
+    сверх — по сверхлимитному тарифу. Без пакета — всё по ставке. K_время применяется к обоим."""
+    hours = max(0.0, float(hours))
+    if package_hours_left is None or overlimit_rate is None:
+        return round(hours * float(rate_per_hour) * k_time, 2)
+    inside = min(hours, max(0.0, float(package_hours_left)))
+    over = hours - inside
+    return round((inside * float(rate_per_hour) + over * float(overlimit_rate)) * k_time, 2)
+
+
+def internal_hourly_rate(fot_monthly: float, k_overhead: float, fund_hours_monthly: float) -> float | None:
+    """Внутренняя ставка = (ФОТ × K_накладных) / фонд рабочего времени (§2.4)."""
+    if not fot_monthly or not fund_hours_monthly or fund_hours_monthly <= 0:
+        return None
+    return round(float(fot_monthly) * float(k_overhead) / float(fund_hours_monthly), 2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Деградация → K влияния (§2.2, задача 17)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -104,6 +233,24 @@ def k_throughput_degradation(actual: float, required: float) -> float:
     if required <= 0:
         return 0.0
     return round(min(1.0, max(0.0, 1.0 - actual / required)), 4)
+
+
+def k_impact_for_degradation(degradation_type: str | None, inputs: dict | None) -> float | None:
+    """K по типу деградации из входов карточки ТС (RE-06). None — входов нет (K вводится вручную).
+
+    FUNCTIONAL {unavailable_weight, total_weight}; PERFORMANCE {response_ratio};
+    THROUGHPUT {actual, required}."""
+    d = inputs or {}
+    try:
+        if degradation_type == "FUNCTIONAL" and "unavailable_weight" in d and "total_weight" in d:
+            return k_functional_degradation(float(d["unavailable_weight"]), float(d["total_weight"]))
+        if degradation_type == "PERFORMANCE" and "response_ratio" in d:
+            return k_performance_degradation(float(d["response_ratio"]))
+        if degradation_type == "THROUGHPUT" and "actual" in d and "required" in d:
+            return k_throughput_degradation(float(d["actual"]), float(d["required"]))
+    except (TypeError, ValueError):
+        return None
+    return None
 
 
 def degradation_counts_as_downtime(

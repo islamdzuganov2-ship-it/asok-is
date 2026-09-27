@@ -17,16 +17,48 @@ export interface RiskEvent {
 export interface SupportRate {
   id: string; systemId?: string | null; line: string; executorType: string; vendor?: string | null;
   mode?: string | null; ratePerHour: number; kEvening: number; kWeekend: number; isActive: boolean;
+  // RE-03: условия вендорского контракта — пакет часов, сверхлимит, квант биллинга.
+  packageHours?: number | null; overlimitRate?: number | null; billingQuantumMin?: number;
+  // УК-25: MANUAL — вручную; REFERENCE — из справочника типовых (до подтверждения помечается).
+  source?: 'MANUAL' | 'REFERENCE'; confirmedAt?: string | null; confirmedBy?: string | null;
 }
 export interface BusinessProcess {
   id: string; code: string; name: string; kind: string; owner?: string | null; isActive: boolean;
 }
-export interface BpCost { id: string; businessProcessId: string; method: string; costPerMinBase?: number | null }
+export interface BpCost {
+  id: string; businessProcessId: string; method: string; costPerMinBase?: number | null;
+  params?: Record<string, number> | null; timeProfile?: Record<string, unknown> | null;
+  // RE-02: диапазон экспертно-ступенчатой оценки — неопределённость видна рядом с числом.
+  costPerMinLow?: number | null; costPerMinHigh?: number | null;
+}
+
+/** RE-02: параметры метода C_мин из полей формы (ключи — как ждёт бэкенд). */
+export function bpCostParams(method: string, v: Record<string, number | undefined>): Record<string, number> {
+  const keys = method === 'TRANSACTIONAL' ? ['revenue_per_period', 'minutes_per_period', 'process_share']
+    : method === 'EXPERT' ? ['low', 'high']
+      : ['n_employees', 'hourly_rate', 'k_idle', 'k_catchup'];
+  const out: Record<string, number> = {};
+  for (const k of keys) if (typeof v[k] === 'number') out[k] = v[k] as number;
+  return out;
+}
+
+/** RE-02: временной профиль C_мин — пик/непик × будни/выходные; пусто — без профиля. */
+export function bpTimeProfile(v: Record<string, number | undefined>): Record<string, unknown> | null {
+  if (v.peakFrom == null && v.offpeak == null && v.weekend == null) return null;
+  return {
+    peak_hours: [v.peakFrom ?? 9, v.peakTo ?? 18],
+    peak: v.peak ?? 1,
+    offpeak: v.offpeak ?? 1,
+    weekend: v.weekend ?? v.offpeak ?? 1,
+  };
+}
 
 /** ТЗ v19 п.9-10, В-30а: source/observedOn обязательны на бэкенде — бенчмарк без источника
  *  и даты наблюдения отклоняется валидацией, чтобы «рынок» нельзя было выдумать. */
 export interface MarketBenchmark {
   id: string; kind: string; dimension: string; companySizeClass?: string | null;
+  // УК-25: разрез типовой ставки — линия, отрасль, квалификация (пусто = «любая»).
+  line?: string | null; industry?: string | null; qualification?: string | null;
   value: number; unit: string; source: string; observedOn: string; note?: string | null;
 }
 /** УК-24: сравнение «мы/рынок» считает бэкенд (econ/service.py), фронт только показывает. */

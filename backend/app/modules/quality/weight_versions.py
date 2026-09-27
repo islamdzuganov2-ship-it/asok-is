@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.assessment import AssessmentPeriod, AssessmentValue
 from app.modules.quality.models import MetricCatalog, ScoreHistorySnapshot, WeightSetVersion
-from app.modules.quality.quality_model import canonical_characteristic
+from app.modules.quality.quality_model import QUALITY_MODEL, canonical_characteristic
 from app.modules.quality.scoring import SubcharScore, weighted_system_score
 from app.modules.quality.weights import (
     CHARACTERISTIC_WEIGHTS,
@@ -201,6 +201,24 @@ class _RawBucket:
     period_label: str
     profile: str
     points: list[tuple[str, str, float | None]] = field(default_factory=list)
+
+
+async def score_points(
+    db: AsyncSession, profile: str | None, points: list[tuple[str, str, float | None]],
+):
+    """Балл ИС по точкам (характеристика, подхарактеристика, X в процентах) — ТА ЖЕ свёртка и ТЕ
+    ЖЕ активные веса профиля критичности, что на дашбордах (ТЗ v19 п.1, УК-02: «один способ
+    свёртки на всех экранах»). Знаменатель — полная модель 31 подхарактеристики, как на
+    дашборде: незаполненная подхарактеристика выпадает из обеих сумм, а не занижает балл."""
+    version = await ensure_active_version(db)
+    weights = combined_weights_for_version(version)
+    by_pair = {(c, s): x for c, s, x in points}
+    subchars = [
+        SubcharScore(c, s, weight_for(weights, profile, c, s), by_pair.get((c, s)))
+        for c, subs in QUALITY_MODEL
+        for s, _ in subs
+    ]
+    return weighted_system_score(subchars)
 
 
 def _apply_weights(bucket: _RawBucket, weights_by_profile: dict[str, dict[tuple[str, str], float]]):

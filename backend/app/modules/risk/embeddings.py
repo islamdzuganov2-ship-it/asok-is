@@ -55,7 +55,9 @@ def _features(text: str) -> list[tuple[str, float]]:
 def _bucket_sign(feature: str) -> tuple[int, float]:
     """Hashing trick со знаком (снижает смещение от коллизий): бакет из хэша, знак — из отдельного
     бита. hashlib (не встроенный hash()) — чтобы вектор был стабилен между процессами и в тестах."""
-    h = int(hashlib.md5(feature.encode("utf-8")).hexdigest(), 16)
+    # ИБ-15 (SEC-17): MD5 — распределение по бакетам (hashing trick), не криптография;
+    # usedforsecurity=False не меняет значение хэша, векторы в БД остаются совместимыми.
+    h = int(hashlib.md5(feature.encode("utf-8"), usedforsecurity=False).hexdigest(), 16)
     bucket = h % EMBED_DIM
     sign = 1.0 if (h // EMBED_DIM) % 2 == 0 else -1.0
     return bucket, sign

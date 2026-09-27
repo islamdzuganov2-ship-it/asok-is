@@ -5,6 +5,8 @@
 Другие домены берут отсюда зависимости контроля доступа (get_current_user/require_role)
 и, при необходимости, криптофункции.
 """
+# Журнал событий ИБ (ИБ-08): другие домены пишут в него через фасад — `iam.audit.record(...)`.
+from app.modules.iam import audit
 from app.modules.iam.deps import get_current_user, require_permission, require_role
 from app.modules.iam.identity import resolve_user_id
 from app.modules.iam.models import RolePermission, User
@@ -32,6 +34,7 @@ from app.modules.iam.security import (
 )
 
 __all__ = [
+    "audit",
     "User",
     "RolePermission",
     "resolve_user_id",

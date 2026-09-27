@@ -61,7 +61,7 @@ class ProposalOut(_CamelModel):
     executed_by: str | None = None
     executed_by_user_id: uuid.UUID | None = None
     executed_at: datetime | None = None
-    # ТЗ v19 УК-13 (п.13, В-41): трудоёмкость в часах, проставляет исполнитель вручную при
+    # ТЗ v19 УК-31 (п.13, В-41): трудоёмкость в часах, проставляет исполнитель вручную при
     # переводе меры «в работу». None ≠ 0 — считается отдельно как «без оценки часов».
     effort_hours: float | None = None
     effort_hours_set_by: uuid.UUID | None = None
@@ -70,6 +70,8 @@ class ProposalOut(_CamelModel):
     executor_brief: str | None = None
     executor_brief_generated_by: uuid.UUID | None = None
     executor_brief_generated_at: datetime | None = None
+    task_ref: str | None = None
+    taken_to_work_at: datetime | None = None
     suz_link: str | None = None
     top_comment: str | None = None
     escalated: bool = False
@@ -321,6 +323,59 @@ class ExecutionIn(_CamelModel):
 class EffortHoursIn(_CamelModel):
     """ТЗ v19 п.13 (В-41): трудоёмкость проставляет исполнитель вручную в часах."""
     effort_hours: float
+
+
+class TakeToWorkIn(_CamelModel):
+    """УК-38: одно действие «В работу» из карточки меры. executor_brief — текст для исполнителя,
+    уже просмотренный и при необходимости поправленный назначающим (В-51); пусто — сформировать."""
+    owner: str
+    owner_user_id: uuid.UUID | None = None
+    due_date: str | None = None          # ДД.ММ.ГГГГ или ГГГГ-ММ-ДД
+    effort_hours: float | None = None
+    executor_brief: str | None = None
+    send_calendar: bool = True
+
+
+class BudgetQueueRowOut(_CamelModel):
+    """Заявка на CAPEX в очереди приоритета (УК-54) — тот же составной вес, что очередь мер."""
+    rank: int
+    proposal_id: uuid.UUID
+    title: str
+    system_name: str
+    characteristic: str | None = None
+    status: str
+    capex: float
+    opex_per_year: float | None = None
+    rosi: float | None = None
+    characteristic_weight: float
+    money_at_risk: float
+    overdue: bool
+    priority_key: float
+    explained: str
+    cumulative_capex: float
+    within_budget: bool | None = None     # None — бюджет не задан
+    is_atypical: bool = False
+
+
+class BudgetQueueOut(_CamelModel):
+    budget: float | None = None
+    total_capex: float
+    rows: list[BudgetQueueRowOut]
+    note: str
+
+
+class ExecutorBriefPreviewOut(_CamelModel):
+    text: str
+
+
+class TakeToWorkOut(_CamelModel):
+    """Результат «В работу»: обновлённая мера + предупреждение о перегрузке (УК-33)."""
+    proposal: ProposalOut
+    overload: dict
+
+
+class CalendarInviteOut(_CamelModel):
+    sent: bool
 
 
 class TaskUpdateIn(_CamelModel):

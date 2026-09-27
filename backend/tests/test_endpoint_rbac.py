@@ -33,9 +33,7 @@ CLOSED_FOR_EXECUTOR = [
     # Рисковые события — view.risk_economics / view.dashboard.risk
     "/risk-events",
     "/risk-events/by-cell?system_name=X&characteristic=Y",
-    # Оценки — view.assessments и права дашбордов
-    "/assessments/dashboard",
-    "/assessments/periods",
+    # Оценки — view.assessments (суждения)
     "/assessments/judgments-status",
     "/assessments/judgments-pending",
     # Несоответствия — view.risk_economics / nonconformity.edit
@@ -46,6 +44,15 @@ CLOSED_FOR_EXECUTOR = [
     "/econ/business-processes",
     "/econ/measure-catalog",
 ]
+#: Чтения, которые открывает любое из прав «аналитический дашборд / оценки / основное
+#: менеджера». `view.dashboard.analytics` по умолчанию есть у ВСЕХ редактируемых ролей, включая
+#: EXECUTOR (ДЕФ-10: «тот же состав дашбордов, что у топ-менеджера»), поэтому EXECUTOR для них
+#: не отрицательный пробник — это легитимный доступ. Закрытость проверяется ролью без прав.
+CLOSED_FOR_ROLE_WITHOUT_RIGHTS = [
+    "/assessments/dashboard",
+    "/assessments/periods",
+]
+
 # `/reports/system-dynamics` сюда не входит намеренно: у него обязательный `system_id`,
 # и без него FastAPI ответит 422 раньше, чем сработает проверка права — тест проверял бы
 # валидацию параметров, а не RBAC.
@@ -96,7 +103,15 @@ async def test_executor_denied_domain_reads(aclient, db_session, path):
     assert r.status_code == 403, f"{path} отдал {r.status_code}: {r.text[:200]}"
 
 
-@pytest.mark.parametrize("path", CLOSED_FOR_EXECUTOR)
+@pytest.mark.parametrize("path", CLOSED_FOR_ROLE_WITHOUT_RIGHTS)
+async def test_role_without_rights_denied_assessment_reads(aclient, db_session, path):
+    """Роль, которой в матрице не выдано ни одного права, получает 403, а не данные оценки."""
+    await ps.seed_rbac_defaults(db_session)
+    r = await aclient.get(f"{API}{path}", headers=_auth("NO_RIGHTS_ROLE"))
+    assert r.status_code == 403, f"{path} отдал {r.status_code}: {r.text[:200]}"
+
+
+@pytest.mark.parametrize("path", CLOSED_FOR_EXECUTOR + CLOSED_FOR_ROLE_WITHOUT_RIGHTS)
 async def test_entitled_role_still_reads(aclient, db_session, path):
     """Роль с правами читает то же самое — закрытие не сломало легитимный доступ.
 
@@ -128,13 +143,17 @@ async def test_open_surface_did_not_grow(db_session):
 
     root = Path(__file__).resolve().parent.parent / "app"
     open_count = sum(
-        f.read_text(encoding="utf-8").count("Depends(get_current_user)")
+        f.read_text(encoding="utf-8").count(dep)
         for f in root.rglob("*.py")
+        for dep in ("Depends(get_current_user)", "Depends(get_current_user_changing_password)")
         # deps.py — не эндпоинты: там `get_current_user` стоит внутри самих проверяющих
         # `require_role`/`require_permission`, то есть считался бы дважды и не по делу.
         if f.name != "deps.py"
     )
-    assert open_count == 15, (
-        f"эндпоинтов без проверки права: {open_count}, ожидалось 15. "
+    # 17 = 15 по ревью 2026-09-07 + POST /auth/logout (ИБ-12): выход отзывает только
+    # собственную сессию, право на него было бы бессмысленным + POST /auth/change-password
+    # (ИБ-11): смена собственного пароля, доступна и с временным паролем.
+    assert open_count == 17, (
+        f"эндпоинтов без проверки права: {open_count}, ожидалось 17. "
         "Если открытие намеренное — обновите список и обоснование в ТЗ-23 §6."
     )

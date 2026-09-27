@@ -12,8 +12,8 @@ ORM-модель домена incidents (T-21, код-ревью 2026-07-06): т
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database import Base
@@ -125,6 +125,52 @@ class TechIncident(Base, TimestampMixin):
     vendor_involved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Кэш стоимости единичной реализации C_ТС (движок RE-07). NULL — ещё не считалось.
     cost_total: Mapped[float | None] = mapped_column(Numeric(16, 2), nullable=True)
+    # Разложение C_ТС (RE-07): {recovery, downtime, secondary, lines:[...]} — чтобы на карточке было
+    # видно, из чего сложилась цифра, и чтобы C_деградации считался отдельно от простоев (RE-06).
+    cost_breakdown: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # ── RE-06: деградация — входы расчёта K по типу и правило «деградация → простой» ──
+    # FUNCTIONAL {unavailable_weight, total_weight}; PERFORMANCE {response_ratio};
+    # THROUGHPUT {actual, required}. Пусто — K вводится экспертно вручную (k_impact).
+    degradation_inputs: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Итог правила конвертации (K ≥ порога дольше N минут → учитывается как простой для SLA и
+    # отчётности). NULL — не оценивалось (старые записи): аналитика считает по дефолтным порогам.
+    counts_as_downtime: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    # ── RE-03/RE-05: линии, закрытые вендором (остальные — внутренней командой): ставка берётся
+    # по связке ИС × линия × исполнитель, у вендора — пакет часов, сверхлимит и квант биллинга.
+    labor_vendor_lines: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # RE-24: откуда трудозатраты — ввод аналитика или восстановлены из журнала переназначений ITSM.
+    labor_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+
+    # ── RE-23/RE-26: автовыгрузка ITSM — внешний номер тикета и корреляция дублей ──
+    external_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # Дочерний тикет того же сбоя (без родительского тикета в ITSM, Пробел C): ссылка на «главный».
+    # Дочерние не участвуют в ARO/доступности повторно — один сбой, а не N.
+    parent_incident_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
 
     source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
     created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class ItsmGroupMapping(Base, TimestampMixin):
+    """RE-25 (Пробел A): группа назначения ITSM → ИС. В ITSM тикет часто несёт только группу
+    сопровождения, а не систему — без справочника сбой не привязать к ИС и он выпадает из ALE."""
+    __tablename__ = "itsm_group_mappings"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    group_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    system_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("systems.id"), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class SystemAlias(Base, TimestampMixin):
+    """RE-25: алиас ИС — как система называется в ITSM/APM/переписке («АБС», «ЦФТ-Банк»,
+    «core-banking»). Сравнение без регистра и лишних пробелов (нормализация в itsm.normalize_name)."""
+    __tablename__ = "system_aliases"
+    __table_args__ = (UniqueConstraint("alias_norm", name="uq_system_alias_norm"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    alias: Mapped[str] = mapped_column(String(255), nullable=False)
+    alias_norm: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    system_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("systems.id"), nullable=False)

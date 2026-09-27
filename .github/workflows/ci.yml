@@ -1,0 +1,115 @@
+# CI на GitHub Actions (часть ИБ-29, docs/BACKLOG_ИБ.md).
+#
+# Репозиторий живёт на GitHub, а единственный пайплайн был в .gitlab-ci.yml — проверки PR не
+# запускались вообще. Здесь — те же проверки, что обязательны перед PR по CLAUDE.md:
+#   backend  — pytest в образе бэкенда (тот же рантайм, что на стенде) против PostgreSQL 14 +
+#              pgvector и Redis; манифесты compose (прод и демо-оверлей) валидны;
+#   frontend — typecheck, vitest, контраст WCAG AA, UI-инварианты, потолок размера модулей,
+#              прод-сборка и прод-образ nginx (сборка падает, если в dist попали sourcemap).
+# Гейты ИБ (SAST, SCA, поиск секретов, сканирование образов) — отдельные задачи ИБ-29, `queued`.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend — pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: pgvector/pgvector:pg14
+        env:
+          POSTGRES_DB: asok_is_test
+          POSTGRES_USER: asok_user
+          POSTGRES_PASSWORD: ci_test_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U asok_user -d asok_is_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Образ бэкенда — как на стенде (готовое колесо llama-cpp-python, системные библиотеки).
+      - name: Сборка образа бэкенда
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/dockerfile
+          tags: asok-backend-ci:latest
+          load: true
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      # Исходники монтируются поверх /app (как на демо-стенде): демо-учётки и демо-сиды,
+      # исключённые из прод-образа (ИБ-02), тестам нужны. Корень репозитория — в /deploy
+      # (тесты манифестов compose и .env.example). Сеть хоста — доступ к сервисам на localhost.
+      - name: pytest
+        run: |
+          docker run --rm --network host \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$GITHUB_WORKSPACE/backend:/app" -v "$GITHUB_WORKSPACE:/deploy:ro" -w /app \
+            -e TEST_DATABASE_URL=postgresql+asyncpg://asok_user:ci_test_password@localhost:5432/asok_is_test \
+            -e DATABASE_URL=postgresql+asyncpg://asok_user:ci_test_password@localhost:5432/asok_is_test \
+            -e REDIS_URL=redis://localhost:6379/15 \
+            -e LLM_ENABLED=false -e LLM_WARMUP=false -e DEMO_MODE=true \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            asok-backend-ci:latest python -m pytest -q -p no:cacheprovider
+
+      - name: Манифесты compose (прод и демо-оверлей)
+        run: |
+          cp .env.example .env
+          docker compose -f docker-compose.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.demo.yml \
+            --profile tunnel --profile named --profile ngrok --profile direct --profile ddns config -q
+
+  frontend:
+    name: Frontend — проверки и сборка
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - name: Типы
+        run: npm run typecheck
+      - name: Тесты
+        run: npm test
+      - name: Контраст WCAG 2.1 AA
+        run: npm run check:contrast
+      - name: UI-инварианты
+        run: npm run check:ui
+      - name: Потолок размера модулей
+        run: npm run check:size
+      - name: Прод-сборка
+        run: npm run build
+      - name: Прод-образ (nginx, без sourcemap — ИБ-04)
+        run: docker build -f dockerfile.prod -t asok-frontend-ci .

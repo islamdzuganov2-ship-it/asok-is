@@ -23,21 +23,31 @@ from app.modules.quality import (
     QUALITY_MODEL,
     QUALITY_PAIR_KEYS,
     TOTAL_SUBS,
+    DEPTH_LABELS,
     FormulaType,
     MetricCatalog,
     SubcharScore,
     calculate_metric,
     canonical_characteristic,
     combined_weights_for_version,
+    depth_for_criticality,
+    required_set,
     ensure_active_version,
     map_to_level,
     portfolio_score,
+    score_reading,
     weight_for,
     weighted_system_score,
 )
 from app.modules.assessment.models import AssessmentPeriod, AssessmentValue, ProfessionalJudgment
+from app.modules.assessment import analyst_load_service as analyst_load
 from app.modules.assessment.schemas import (
     CalculatedMetricOut,
+    ChecklistAnswerIn,
+    ChecklistItemOut,
+    ChecklistVerifyIn,
+    DepthIn,
+    FinalizeIn,
     EditableMetricIn,
     EditableMetricOut,
     JudgmentIn,
@@ -49,7 +59,9 @@ from app.modules.assessment.schemas import (
     PeriodSummaryOut,
     ValueAddIn,
 )
+from app.modules.notifications import emit as notifications_emit
 from app.modules.risk import RiskBase
+from app.shared.notification_events import EVENT_ASSESSMENT_AWAITING_APPROVAL
 from app.modules.systems import System
 from app.shared.periods import (
     PERIOD_LOCKED_MESSAGE,
@@ -80,6 +92,7 @@ def _empty_dashboard() -> dict:
         "characteristics": [],
         "systemDetails": [],
         "periodsUsed": {"distinct": [], "earliest": None, "latest": None, "bySystem": {}},
+        "scoreScale": None,
     }
 
 
@@ -168,12 +181,27 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
         for value, period, system, metric in rows
         if latest_period_per_system.get(str(system.id)) == str(period.id)
     ]
+    # УК-03: прошлый период каждой ИС — для дельты «к прошлому периоду» (та же свёртка).
+    periods_seen: dict[str, list[str]] = defaultdict(list)
+    for _, period, system, _ in rows:
+        seen = periods_seen[str(system.id)]
+        if str(period.id) not in seen:
+            seen.append(str(period.id))
+    previous_rows = [
+        (value, system, metric)
+        for value, period, system, metric in rows
+        if len(periods_seen[str(system.id)]) > 1 and periods_seen[str(system.id)][1] == str(period.id)
+    ]
+    previous_label_by_system = {
+        system.name: period.period for _, period, system, _ in rows
+        if len(periods_seen[str(system.id)]) > 1 and periods_seen[str(system.id)][1] == str(period.id)
+    }
 
     # Дерево: ИС → каноническая характеристика → {подхарактеристика: балл%} (-1 = невозможно измерить).
     # Имена характеристик нормализуются к модели 25010 (DEF-02): дашборд = 8 характеристик, как в моках.
     tree: dict[str, dict[str, dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
     crit_by_name: dict[str, str] = {}
-    # ТЗ v19 п.5 (УК-05): ответственный за ИС — по имени системы (как crit_by_name), а не
+    # ТЗ v19 п.5 (УК-12, УК-14): ответственный за ИС — по имени системы (как crit_by_name), а не
     # общая заглушка на все системы (см. reporting/router.py get_executive_dashboard).
     owner_by_name: dict[str, tuple] = {}
     level_counts: dict[str, int] = defaultdict(int)
@@ -197,7 +225,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     if not tree:
         return _empty_dashboard()
 
-    # Метаданные по каждой ИС: баллы характеристик, итоговый ВЗВЕШЕННЫЙ балл (ТЗ v19 УК-06/07),
+    # Метаданные по каждой ИС: баллы характеристик, итоговый ВЗВЕШЕННЫЙ балл (ТЗ v19 УК-02, УК-06, УК-07),
     # число «низких» метрик. char_scores — по-прежнему плоское среднее ВНУТРИ характеристики
     # (для теплокарты/системных карточек, где сравниваются сами характеристики между собой);
     # sys_meta[name]["score"] — взвешенный балл ИС, а не среднее средних (было: среднее по
@@ -307,6 +335,27 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
     # Контракт со фронтом — 0..1 (как и раньше: DashboardPage.tsx делает *100 сам).
     global_health_score = round(portfolio.score / 100, 4) if portfolio.score is not None else 0.0
 
+    # УК-03: шкала прочтения — уровень словами, цель, дельта к прошлому периоду по тем же ИС.
+    previous_scores = _system_scores(previous_rows, weights_by_profile, crit_by_name)
+    common = [n for n, s in previous_scores.items()
+              if s is not None and portfolio_system_scores.get(n) is not None]
+    previous_pct = comparable_pct = None
+    if common:
+        prev_port = portfolio_score({n: previous_scores[n] for n in common}, crit_by_name, DEFAULT_CRITICALITY_WEIGHTS)
+        cur_port = portfolio_score({n: portfolio_system_scores[n] for n in common}, crit_by_name, DEFAULT_CRITICALITY_WEIGHTS)
+        previous_pct = round(prev_port.score, 1) if prev_port.score is not None else None
+        comparable_pct = round(cur_port.score, 1) if cur_port.score is not None else None
+    from app.modules.econ import config_value  # отложенно: econ тянет governance → цикл при старте
+
+    target = await config_value(db, "quality_score_target", 0.81)
+    scale = score_reading(
+        round(portfolio.score, 1) if portfolio.score is not None else None,
+        previous_pct=previous_pct, comparable_pct=comparable_pct,
+        target_pct=round(float(target) * 100, 1) if target is not None else None,
+        compared_systems=len(common), total_systems=len(sys_meta),
+        previous_periods={n: previous_label_by_system[n] for n in common if n in previous_label_by_system},
+    )
+
     distinct_periods = sorted(set(period_label_by_system.values()), key=period_sort_key)
     periods_used = {
         "distinct": distinct_periods,
@@ -317,7 +366,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
 
     return {
         "globalHealthScore": global_health_score,
-        # ТЗ v19 УК-01..03: объяснимая цифра — из чего сложился portfolio-балл (какая ИС сколько
+        # ТЗ v19 УК-01, УК-02, УК-03: объяснимая цифра — из чего сложился portfolio-балл (какая ИС сколько
         # баллов внесла) и, по каждой ИС в systemDetails, из чего сложился её собственный балл.
         "scoreBreakdown": {
             "criticalityWeightApplied": portfolio.criticality_weight_applied,
@@ -332,7 +381,34 @@ async def get_dashboard(db: AsyncSession = Depends(get_db),
         "characteristics": characteristics_out,
         "systemDetails": system_details,
         "periodsUsed": periods_used,
+        "scoreScale": scale,
     }
+
+
+def _system_scores(value_rows, weights_by_profile, crit_by_name) -> dict[str, float | None]:
+    """Балл ИС по набору значений — ТА ЖЕ свёртка, что для последнего периода выше (УК-02):
+    канонические характеристики, X в целых процентах, полная модель в знаменателе."""
+    tree: dict[str, dict[str, dict[str, float | None]]] = defaultdict(lambda: defaultdict(dict))
+    for value, system, metric in value_rows:
+        canon = canonical_characteristic(metric.characteristic)
+        if canon is None:
+            continue
+        tree[system.name][canon][metric.subcharacteristic] = (
+            None if value.unmeasurable or value.calculated_x is None else round(float(value.calculated_x) * 100)
+        )
+    out: dict[str, float | None] = {}
+    for name, chars in tree.items():
+        breakdown = weighted_system_score([
+            SubcharScore(
+                characteristic=char_title, subcharacteristic=sub,
+                weight=weight_for(weights_by_profile, crit_by_name.get(name), char_title, sub),
+                x=chars.get(char_title, {}).get(sub),
+            )
+            for char_title, subs_def in QUALITY_MODEL
+            for sub, _formula in subs_def
+        ])
+        out[name] = breakdown.score
+    return out
 
 
 @router.post("/periods", response_model=PeriodOut, status_code=status.HTTP_201_CREATED)
@@ -354,7 +430,11 @@ async def create_assessment_period(
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="Assessment period already exists")
 
-    period = AssessmentPeriod(system_id=payload.system_id, period=payload.period, status=STATUS_DRAFT)
+    # RE-19: глубина оценки по классу ИС — Support проходит только скрининг, Business — профиль.
+    period = AssessmentPeriod(
+        system_id=payload.system_id, period=payload.period, status=STATUS_DRAFT,
+        depth=depth_for_criticality(system.criticality_class.value if system.criticality_class else None),
+    )
     db.add(period)
     await db.flush()
     await ensure_period_values(db, period)
@@ -429,6 +509,7 @@ async def list_period_summaries(
         if (characteristic, subcharacteristic) in QUALITY_PAIR_KEYS:
             filled[period_id].add((characteristic, subcharacteristic))
 
+    # RE-19: полнота — по обязательному набору глубины периода, а не всегда по 31.
     return [
         PeriodSummaryOut(
             id=period.id,
@@ -436,9 +517,10 @@ async def list_period_summaries(
             system_name=system.name,
             period=period.period,
             status=period.status,
-            filled=len(filled.get(period.id, set())),
-            total=TOTAL_SUBS,
-            complete=len(filled.get(period.id, set())) >= TOTAL_SUBS,
+            filled=len(filled.get(period.id, set()) & required_set(period.depth)),
+            total=len(required_set(period.depth)),
+            complete=len(filled.get(period.id, set()) & required_set(period.depth)) >= len(required_set(period.depth)),
+            depth=period.depth,
         )
         for period, system in rows
     ]
@@ -502,6 +584,7 @@ async def save_assessment_metrics(
         value, metric = row
         value.expert_comment = item.expert_comment
         value.unmeasurable = bool(item.unmeasurable)
+        value.carried_over = False   # RE-19: правка = подхарактеристика переоценена, не перенесена
         if value.unmeasurable:
             # «Невозможно измерить»: комментарий с причиной обязателен.
             if not (item.expert_comment or "").strip():
@@ -623,6 +706,7 @@ async def add_assessment_value(
         value.calculated_x = None
         value.quality_level = None
     value.data_source = "MANUAL"
+    value.carried_over = False   # RE-19: переоценено вручную
 
     await db.commit()
     await db.refresh(value)
@@ -647,23 +731,28 @@ async def finalize_assessment(
     period_id: UUID,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("assessment.edit")),
+    payload: FinalizeIn | None = None,
 ) -> PeriodSummaryOut:
-    """Завершить оценку: разрешено только при полном заполнении (все подхарактеристики модели).
+    """Завершить оценку: разрешено только при заполнении ОБЯЗАТЕЛЬНОГО набора глубины периода
+    (RE-19: полная — 31, профильная — профиль + скрининг, скрининг — 8).
 
-    Иначе 409 — «оценка не может попасть в оценку», пока заполнены не все характеристики.
+    Иначе 409 — «оценка не может попасть в оценку», пока обязательный набор не заполнен.
     """
     period = await _require_period(db, period_id)
     system = await db.get(System, period.system_id)
 
-    filled = len(await _filled_pairs(db, period_id))
-    if filled < TOTAL_SUBS:
+    required = required_set(period.depth)
+    filled = len(await _filled_pairs(db, period_id) & required)
+    if filled < len(required):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Оценка неполная: заполнено {filled} из {TOTAL_SUBS} подхарактеристик. "
-                f"Заполните все характеристики, чтобы оценка была учтена."
+                f"Оценка неполная: заполнено {filled} из {len(required)} обязательных подхарактеристик "
+                f"({DEPTH_LABELS[analyst_load.depth_of(period)]}). "
+                f"Заполните обязательный набор, чтобы оценка была учтена."
             ),
         )
+    await analyst_load.set_analyst_hours(db, period, payload.analyst_hours if payload else None)
 
     # T-55: метрика «Невозможно измерить» обязана иметь ПРИЧИНУ (expert_comment). Профессиональное
     # суждение и меры по таким метрикам ведутся в соответствующих разделах; здесь жёстко гарантируем
@@ -690,6 +779,12 @@ async def finalize_assessment(
 
     period.status = STATUS_COMPLETE
     await db.commit()
+    # УК-15: «оценка ждёт согласования» — владелец ИС проверяет и согласует результат аналитика.
+    if system is not None:
+        await notifications_emit(
+            db, EVENT_ASSESSMENT_AWAITING_APPROVAL, system.owner, entity_type="assessment_period",
+            entity_id=str(period.id), system=system.name, period=period.period,
+        )
     return PeriodSummaryOut(
         id=period.id,
         system_id=period.system_id,
@@ -697,8 +792,9 @@ async def finalize_assessment(
         period=period.period,
         status=period.status,
         filled=filled,
-        total=TOTAL_SUBS,
+        total=len(required),
         complete=True,
+        depth=period.depth,
     )
 
 
@@ -725,7 +821,8 @@ async def reopen_assessment(
 
     period.status = STATUS_CALCULATED
     await db.commit()
-    filled = len(await _filled_pairs(db, period_id))
+    required = required_set(period.depth)
+    filled = len(await _filled_pairs(db, period_id) & required)
     return PeriodSummaryOut(
         id=period.id,
         system_id=period.system_id,
@@ -733,8 +830,9 @@ async def reopen_assessment(
         period=period.period,
         status=period.status,
         filled=filled,
-        total=TOTAL_SUBS,
-        complete=filled >= TOTAL_SUBS,
+        total=len(required),
+        complete=filled >= len(required),
+        depth=period.depth,
     )
 
 
@@ -1155,3 +1253,81 @@ def _ensure_editable(period: AssessmentPeriod) -> AssessmentPeriod:
     if is_period_locked(period.status):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PERIOD_LOCKED_MESSAGE)
     return period
+
+
+# ═══════════════ BL-007 RE-19: снятие объёма с роли аналитика ═══════════════
+# Глубина по классу ИС (рычаг 2), дельта-переоценка (рычаг 4), self-service чек-лист владельца
+# ИС с выборочной проверкой (рычаг 3), норматив часов на оценку. ORM — в analyst_load_service.
+
+@router.get("/{period_id}/depth")
+async def get_period_depth(period_id: UUID, db: AsyncSession = Depends(get_db),
+                           _: dict = Depends(require_permission("view.assessments"))) -> dict:
+    return await analyst_load.depth_info(db, period_id)
+
+
+@router.put("/{period_id}/depth")
+async def put_period_depth(period_id: UUID, payload: DepthIn, db: AsyncSession = Depends(get_db),
+                           _: dict = Depends(require_permission("assessment.review"))) -> dict:
+    """Переопределить глубину (напр. Business-ИС под проверкой регулятора → полная). QM, не аналитик:
+    сам себе объём оценки аналитик не урезает."""
+    return await analyst_load.set_depth(db, period_id, payload.depth)
+
+
+@router.post("/{period_id}/carry-over")
+async def carry_over_values(period_id: UUID, source_period_id: UUID | None = None,
+                            db: AsyncSession = Depends(get_db),
+                            _: dict = Depends(require_permission("assessment.edit"))) -> dict:
+    """Дельта-переоценка: перенести значения прошлого завершённого периода туда, где пусто."""
+    return await analyst_load.carry_over(db, period_id, source_period_id)
+
+
+@router.get("/{period_id}/delta-summary")
+async def get_delta_summary(period_id: UUID, db: AsyncSession = Depends(get_db),
+                            _: dict = Depends(require_permission("view.assessments"))) -> dict:
+    return await analyst_load.delta_summary(db, period_id)
+
+
+@router.post("/{period_id}/checklist/generate", response_model=list[ChecklistItemOut])
+async def generate_owner_checklist(period_id: UUID, db: AsyncSession = Depends(get_db),
+                                   _: dict = Depends(require_permission("assessment.edit"))):
+    return await analyst_load.generate_checklist(db, period_id)
+
+
+@router.get("/{period_id}/checklist", response_model=list[ChecklistItemOut])
+async def get_owner_checklist(period_id: UUID, db: AsyncSession = Depends(get_db),
+                              _: dict = Depends(require_permission("assessment.edit", "assessment.checklist.fill"))):
+    return await analyst_load.list_checklist(db, period_id)
+
+
+@router.get("/checklist/open")
+async def open_owner_checklist(db: AsyncSession = Depends(get_db),
+                               _: dict = Depends(require_permission("assessment.checklist.fill"))) -> list[dict]:
+    """Рабочий список владельца ИС: пункты чек-листов, ждущие ответа или исправления."""
+    return await analyst_load.open_items(db)
+
+
+@router.put("/checklist/{item_id}/answer", response_model=ChecklistItemOut)
+async def answer_owner_checklist(item_id: UUID, payload: ChecklistAnswerIn, db: AsyncSession = Depends(get_db),
+                                 user: dict = Depends(require_permission("assessment.checklist.fill"))):
+    return await analyst_load.answer_item(db, item_id, payload.answer, payload.artifact_url,
+                                          user.get("username") or "—")
+
+
+@router.post("/{period_id}/checklist/sample")
+async def sample_owner_checklist(period_id: UUID, share: float | None = None, db: AsyncSession = Depends(get_db),
+                                 _: dict = Depends(require_permission("assessment.edit"))) -> dict:
+    return await analyst_load.sample_checklist(db, period_id, share)
+
+
+@router.put("/checklist/{item_id}/verify", response_model=ChecklistItemOut)
+async def verify_owner_checklist(item_id: UUID, payload: ChecklistVerifyIn, db: AsyncSession = Depends(get_db),
+                                 user: dict = Depends(require_permission("assessment.edit"))):
+    return await analyst_load.verify_item(db, item_id, payload.verdict, payload.comment,
+                                          user.get("username") or "—")
+
+
+@router.get("/analyst-effort/report")
+async def analyst_effort_report(db: AsyncSession = Depends(get_db),
+                                _: dict = Depends(require_permission("view.assessments"))) -> dict:
+    """Норматив человеко-часов на оценку по глубине: факт против норматива (продуктовая метрика)."""
+    return await analyst_load.effort_report(db)

@@ -1,5 +1,5 @@
 """
-ORM-модели домена econ (BL-007, RE-01…RE-04): экономические справочники контура.
+ORM-модели домена econ (BL-007, RE-01, RE-02, RE-03, RE-04): экономические справочники контура.
 
 Домен несёт «фундамент денег»:
 - E9 бизнес-процесс + связь ИС↔БП + стоимость минуты простоя `C_мин` (§2.5 ТЗ);
@@ -10,9 +10,9 @@ ORM-модели домена econ (BL-007, RE-01…RE-04): экономичес
 здесь только данные. Кросс-доменные связи — строковыми ForeignKey (правило зависимостей §B4).
 """
 import uuid
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -97,6 +97,12 @@ class BusinessProcessCost(Base, TimestampMixin):
     )
 
 
+# ТЗ v19 п.10 (УК-25): откуда взялась ставка — введена вручную или подставлена из справочника.
+RATE_SOURCE_MANUAL = "MANUAL"
+RATE_SOURCE_REFERENCE = "REFERENCE"
+RATE_SOURCES = (RATE_SOURCE_MANUAL, RATE_SOURCE_REFERENCE)
+
+
 class SupportRate(Base, TimestampMixin):
     """Ставка сопровождения (E8) — атрибут связки ИС × линия × исполнитель (§2.4).
 
@@ -123,6 +129,17 @@ class SupportRate(Base, TimestampMixin):
     overlimit_rate: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
     billing_quantum_min: Mapped[int] = mapped_column(Numeric(6, 0), nullable=False, default=60)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # ТЗ v19 п.10 (УК-25): ставка, подставленная из справочника типовых ставок, визуально
+    # отличается от подтверждённой вручную — «по справочнику, не подтверждена», пока её не
+    # подтвердят или не поправят. Подтверждённые ставки при смене размера предприятия не
+    # переписываются (критерий УК-25): обновление дефолтов трогает только неподтверждённые.
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default=RATE_SOURCE_MANUAL,
+                                        server_default=RATE_SOURCE_MANUAL)
+    reference_benchmark_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("market_benchmarks.id", ondelete="SET NULL"), nullable=True,
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class EconConfig(Base, TimestampMixin):
@@ -177,7 +194,7 @@ class EnterpriseProfile(Base, TimestampMixin):
     )
 
 
-# --- Рыночные бенчмарки (ТЗ v19 п.9-10, УК-09/10, В-30а) ---
+# --- Рыночные бенчмарки (ТЗ v19 п.9-10, УК-23, УК-25, В-30а) ---
 BENCHMARK_BP_COST = "BP_COST_PER_MIN"            # рыночная C_мин по типу БП (BP_KINDS, п.9)
 BENCHMARK_SUPPORT_RATE = "SUPPORT_RATE_PER_HOUR"  # рыночная ставка специалиста (EXECUTOR_TYPES × размер компании, п.10)
 BENCHMARK_KINDS = (BENCHMARK_BP_COST, BENCHMARK_SUPPORT_RATE)
@@ -211,6 +228,11 @@ class MarketBenchmark(Base, TimestampMixin):
     kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     dimension: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     company_size_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # ТЗ v19 п.10 (УК-25): справочник ТИПОВЫХ ставок — та же таблица ориентиров, разрез
+    # размер × отрасль × линия × квалификация. NULL = «любая» (общий ориентир на все значения).
+    line: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    qualification: Mapped[str | None] = mapped_column(String(64), nullable=True)
     value: Mapped[float] = mapped_column(Numeric(16, 2), nullable=False)
     unit: Mapped[str] = mapped_column(String(32), nullable=False)  # "₽/мин" | "₽/час"
     source: Mapped[str] = mapped_column(Text, nullable=False)

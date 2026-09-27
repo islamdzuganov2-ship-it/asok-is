@@ -85,3 +85,25 @@ class ScoreHistorySnapshot(Base):
     coverage = Column(Numeric(5, 4), nullable=False, default=0)
     breakdown = Column(JSONB, nullable=True)              # contributions из scoring.SystemScoreBreakdown
     computed_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class QmNode(Base):
+    """Узел модели качества — справочник в БД (BL-001 E3, ТЗ СИИ ч. D2 `qm_node`).
+
+    Единое дерево для обеих моделей: ISO 25010 (ГОСТ Р ИСО/МЭК 25010-2015, 8/31) и ГОСТ Р
+    59898-2021 (4 группы / 8 характеристик / 37 субхарактеристик). Источник истины остаётся в
+    коде (quality_model.py, ai_quality_model.py) — таблица заполняется из него идемпотентно
+    (quality/qm_nodes.py) и нужна внешним потребителям и отчётам: «какие узлы у модели», без
+    чтения исходников. `model_kind` разводит модели, чтобы контуры не смешивались (ч. G).
+    """
+    __tablename__ = "qm_nodes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    model_kind = Column(String(16), nullable=False, index=True)       # ISO25010 | GOST59898
+    level = Column(String(20), nullable=False)                        # GROUP | CHARACTERISTIC | SUBCHARACTERISTIC
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("qm_nodes.id", ondelete="CASCADE"), nullable=True, index=True)
+    code = Column(String(32), nullable=False)                         # устойчивый код узла внутри модели
+    name_ru = Column(String(255), nullable=False)
+    metric_kind = Column(String(20), nullable=True)                   # для субхарактеристик 59898
+    is_ai_specific = Column(Boolean, nullable=False, default=False)
+    sort = Column(Integer, nullable=False, default=0)
