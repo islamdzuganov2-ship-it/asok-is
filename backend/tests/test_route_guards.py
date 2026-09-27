@@ -18,7 +18,7 @@ from __future__ import annotations
 from fastapi.routing import APIRoute
 
 from app.main import app
-from app.modules.iam.deps import get_current_user
+from app.modules.iam.deps import get_current_user, get_current_user_changing_password
 
 # Маршруты, которым аутентификация не нужна по определению.
 PUBLIC_PATHS = {
@@ -30,6 +30,9 @@ PUBLIC_PATHS = {
     "/redoc",
     "/api/v1/auth/login",    # сам вход
     "/api/v1/auth/refresh",  # обмен refresh-токена
+    # ИБ-11: формулировки требований к паролю — статичный текст без данных; нужен экрану смены
+    # пароля и форме администратора.
+    "/api/v1/auth/password-policy",
 }
 
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -41,7 +44,14 @@ SELF_SCOPED_WRITES = {
     "/api/v1/iam/me/preferences",
     # ИБ-12: серверный выход — отзывает ТОЛЬКО собственную сессию (sid текущего токена).
     "/api/v1/auth/logout",
+    # ИБ-11: смена СОБСТВЕННОГО пароля (с проверкой текущего) — нужна каждой роли.
+    "/api/v1/auth/change-password",
 }
+
+# Гейты аутентификации. `get_current_user_changing_password` — тот же 401 на отсутствующий или
+# невалидный токен, но пропускает токен временного пароля (ИБ-11): им закрыты только смена
+# пароля и выход, остальное через `get_current_user` отвечает 403 PASSWORD_CHANGE_REQUIRED.
+AUTH_GATES = (get_current_user, get_current_user_changing_password)
 
 
 def _dependency_calls(dependant) -> list:
@@ -59,7 +69,7 @@ def _api_routes() -> list[APIRoute]:
 
 
 def _has_auth(route: APIRoute) -> bool:
-    return get_current_user in _dependency_calls(route.dependant)
+    return any(gate in _dependency_calls(route.dependant) for gate in AUTH_GATES)
 
 
 def _has_permission_gate(route: APIRoute) -> bool:
@@ -111,3 +121,14 @@ def test_systems_and_quality_routers_are_gated():
                 seen.add((method, route.path))
                 assert _has_permission_gate(route), f"{method} {route.path} без проверки права"
     assert seen == watched, f"Не найдены маршруты: {sorted(watched - seen)}"
+
+
+def test_temporary_password_gate_is_limited_to_change_and_logout():
+    """ИБ-11: зависимость, пропускающая токен временного пароля, стоит только на смене пароля и
+    выходе — иначе временный пароль открывал бы API в обход обязательной смены."""
+    lenient = {
+        r.path for r in _api_routes()
+        if get_current_user_changing_password in _dependency_calls(r.dependant)
+        and get_current_user not in _dependency_calls(r.dependant)
+    }
+    assert lenient == {"/api/v1/auth/logout", "/api/v1/auth/change-password"}, lenient
