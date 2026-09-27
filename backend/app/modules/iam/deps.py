@@ -32,13 +32,13 @@ async def get_current_user(
 ) -> dict:
     """Текущий пользователь из bearer-токена.
 
-    Обход аутентификации (ДЕФ-02) допускается ТОЛЬКО при `DEMO_AUTH_BYPASS=true` и ТОЛЬКО
-    для запроса без заголовка Authorization. Невалидный или просроченный токен — всегда 401,
+    Обход аутентификации (ДЕФ-02) допускается ТОЛЬКО при `DEMO_AUTH_BYPASS=true` на демо-стенде
+    (`DEMO_MODE=true`, ИБ-02) и ТОЛЬКО для запроса без заголовка Authorization. Невалидный или просроченный токен — всегда 401,
     в любом режиме: иначе подделанная подпись молча повышалась бы до ADMIN, а фронт не видел
     бы 401 и не отправлял пользователя на релогин.
     """
     if not credentials or not credentials.credentials:
-        if settings.DEMO_AUTH_BYPASS:
+        if settings.DEMO_AUTH_BYPASS and settings.DEMO_MODE:
             logger.warning(
                 "DEMO_AUTH_BYPASS: запрос без токена обслужен как %s (роль %s)",
                 DEMO_USER["username"], DEMO_USER["roles"][0],

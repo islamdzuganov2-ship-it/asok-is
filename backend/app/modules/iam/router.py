@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import get_db
 from app.modules.iam import auth_service
-from app.modules.iam.auth_service import DEMO_USERS  # noqa: F401 — обратная совместимость импорта
 from app.modules.iam.deps import get_current_user, security
 from app.modules.iam.schemas import LoginRequest, LogoutRequest, TokenRefreshRequest
 from app.modules.iam.security import decode_token

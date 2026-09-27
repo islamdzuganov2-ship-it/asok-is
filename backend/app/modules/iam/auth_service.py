@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,6 +35,8 @@ from app.modules.iam.security import (
     verify_password,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class InvalidCredentials(Exception):
     pass
@@ -48,20 +51,18 @@ class RefreshDenied(Exception):
     pass
 
 
-# Встроенные демо-учётки: активны ТОЛЬКО в DEMO_MODE (ГОСТ Р 57580, 152-ФЗ — в проде
-# встроенных паролей нет). Их нет в БД, поэтому сверка активности при refresh для них
-# пропускается — но лишь пока DEMO_MODE включён.
-DEMO_USERS = {
-    "superadmin": {"id": "00000000-0000-0000-0000-000000000000", "username": "superadmin",
-                   "password": "Super123!", "role": "SUPER_ADMIN", "full_name": "Супер-администратор"},
-    "admin": {"id": "00000000-0000-0000-0000-000000000001", "username": "admin",
-              "password": "Admin123!", "role": "ADMIN", "full_name": "Демо-доступ"},
-    "analyst": {"id": "00000000-0000-0000-0000-000000000002", "username": "analyst",
-                "password": "Analyst123!", "role": "TEST_ANALYST", "full_name": "Демо-доступ"},
-    "manager": {"id": "00000000-0000-0000-0000-000000000003", "username": "manager",
-                "password": "Manager123!", "role": "QUALITY_MANAGER", "full_name": "Демо-доступ"},
-}
-_DEMO_IDS = {u["id"] for u in DEMO_USERS.values()}
+def demo_users() -> dict[str, dict]:
+    """Встроенные демо-учётки (ИБ-02): только при DEMO_MODE и только если модуль есть в сборке —
+    из продуктивного образа он исключён (.dockerignore). Нет модуля — демо-вход недоступен,
+    приложение работает дальше (предупреждение в лог), а не падает."""
+    if not settings.DEMO_MODE:
+        return {}
+    try:
+        from app.modules.iam.demo_users import DEMO_USERS
+    except ImportError:
+        logger.warning("DEMO_MODE включён, но демо-учётки не входят в эту сборку — демо-вход недоступен")
+        return {}
+    return DEMO_USERS
 
 
 def _token_response(user: dict, sid: str | None = None) -> dict[str, str]:
@@ -86,8 +87,9 @@ async def login(db: AsyncSession, username: str, password: str) -> dict[str, str
         raise LoginLocked(state.retry_after)
 
     if settings.DEMO_MODE:
-        demo = DEMO_USERS.get(username)
-        if demo and password == demo["password"]:
+        demo = demo_users().get(username)
+        # Сверка bcrypt-хэша (за постоянное время), а не сравнение открытого текста через ==.
+        if demo and verify_password(password, demo["password_hash"]):
             await throttle.register_success(username, ip)
             await audit.record_now(db, audit.AUTH_LOGIN, user=demo, entity_type="user", entity_id=demo["id"],
                                    new={"role": demo["role"], "source": "demo"})
@@ -134,7 +136,7 @@ async def refresh(db: AsyncSession, refresh_token: str) -> dict[str, str]:
         raise RefreshDenied()
 
     role = token.role
-    is_demo = settings.DEMO_MODE and token.sub in _DEMO_IDS
+    is_demo = token.sub in {u["id"] for u in demo_users().values()}
     if not is_demo:
         try:
             user = await db.get(User, uuid.UUID(token.sub))

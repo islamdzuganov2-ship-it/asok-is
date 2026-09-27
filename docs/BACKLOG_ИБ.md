@@ -71,7 +71,7 @@ SEC-01…SEC-23, ссылки на нормы (152-ФЗ, ГОСТ Р 57580.1, п
 
 | # | Задача | Приоритет | Статус |
 |---|--------|-----------|--------|
-| ИБ-02 | Вырезать `DEMO_MODE`/`DEMO_USERS`/`DEMO_AUTH_BYPASS` из прод-сборки | 🔴 | `in-progress` (анализ 26.09.2026 — ниже) |
+| ИБ-02 | Вырезать `DEMO_MODE`/`DEMO_USERS`/`DEMO_AUTH_BYPASS` из прод-сборки | 🔴 | `done` (26.09.2026) — DEMO_MODE по умолчанию false; демо-учётки — iam/demo_users.py с bcrypt-хэшами, подключаются только при DEMO_MODE, из образа исключены (.dockerignore вместе с демо-сидами с паролями); DEMO_AUTH_BYPASS действует только вместе с DEMO_MODE; тесты test_ib_phase0.py |
 | ИБ-03 | Обновить `python-jose`→3.4.0+, `python-multipart`→0.0.31+, `fastapi`→0.109.1+ | 🔴 | `done` (26.09.2026) — fastapi 0.109.2, python-jose 3.5.0, python-multipart 0.0.32 в requirements.txt и pyproject.toml; полный регресс на новых пакетах — 866 passed; страж версий в test_ib_phase0.py; ручной шаг — docker compose build backend celery_worker |
 | ИБ-04 | Прод-раздача фронта: `vite build` + nginx вместо `npm run dev` | 🔴 | `in-progress` (анализ 26.09.2026 — ниже) |
 | ИБ-06 | Вынести профили `tunnel`/`tunnel-named`/`tunnel-ngrok`/`ddns` из прод-манифеста | 🟡 | `in-progress` (анализ 26.09.2026 — ниже) |
