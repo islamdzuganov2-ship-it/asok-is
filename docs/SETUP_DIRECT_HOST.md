@@ -1,5 +1,11 @@
 # Полная пошаговая инструкция — прямой хостинг asokis.ai с вашего ПК (без туннеля)
 
+> **ИБ-06.** Сервисы публикации (туннели, Caddy, DDNS) живут в оверлее демо-стенда
+> `docker-compose.demo.yml`, а не в продуктивном `docker-compose.yml`. Перед командами ниже
+> подключите оверлей в `.env` (корень репозитория) — см. [REMOTE_ACCESS.md](REMOTE_ACCESS.md):
+> `COMPOSE_PATH_SEPARATOR=:` и
+> `COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.demo.yml`.
+
 Результат: `https://asokis.ai` отдаётся **напрямую вашим ПК**. Cloudflare работает только как DNS
 (серое облако), трафик через него НЕ идёт — «без прокладок». TLS-сертификат ваш ПК получает сам
 (Let's Encrypt через Caddy).

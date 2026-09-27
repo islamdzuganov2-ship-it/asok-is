@@ -192,3 +192,23 @@ def test_nginx_proxies_api_and_pins_client_ip():
     # IP клиента перезаписывается: дописанный к присланному заголовку позволил бы его подделать.
     assert "X-Forwarded-For $remote_addr" in conf
     assert "$proxy_add_x_forwarded_for" not in conf
+
+
+# ═══════════════════ ИБ-06: публикация наружу — только в демо-оверлее ═══════════════════
+
+PUBLISHING = {"tunnel", "tunnel-named", "tunnel-ngrok", "webserver", "ddns"}
+
+
+def test_base_manifest_has_no_publishing_services():
+    services = _compose("docker-compose.yml")["services"]
+    assert not PUBLISHING & set(services), PUBLISHING & set(services)
+    assert not [n for n, s in services.items() if s.get("profiles")], "профили публикации в прод-манифесте"
+    published = [str(p) for s in services.values() for p in s.get("ports", [])]
+    assert not [p for p in published if p.split(":")[0] in ("80", "443")], published
+
+
+def test_demo_overlay_keeps_all_publishing_profiles():
+    services = _compose("docker-compose.demo.yml")["services"]
+    assert PUBLISHING <= set(services)
+    for name in PUBLISHING:
+        assert services[name].get("profiles"), f"{name} поднимется без явного --profile"

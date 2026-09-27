@@ -1,5 +1,11 @@
 # Полная пошаговая инструкция — публикация asokis.ai через Cloudflare Tunnel (named)
 
+> **ИБ-06.** Сервисы публикации (туннели, Caddy, DDNS) живут в оверлее демо-стенда
+> `docker-compose.demo.yml`, а не в продуктивном `docker-compose.yml`. Перед командами ниже
+> подключите оверлей в `.env` (корень репозитория) — см. [REMOTE_ACCESS.md](REMOTE_ACCESS.md):
+> `COMPOSE_PATH_SEPARATOR=:` и
+> `COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.demo.yml`.
+
 Результат: стабильный адрес `https://asok.asokis.ai`, который ведёт на ваш ПК через
 зашифрованный туннель Cloudflare. **Не нужны** проброс портов, белый IP и открытый firewall.
 Туннель сам устанавливает исходящее соединение наружу.
