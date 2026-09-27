@@ -1,0 +1,36 @@
+# docker-compose.demo.yml — оверлей ДЕМО-СТЕНДА поверх базового (продуктивного) манифеста.
+#
+# Базовый docker-compose.yml — продуктивный профиль: DEMO_MODE по умолчанию выключен (ИБ-02),
+# фронт — статическая сборка под nginx (ИБ-04). Всё, что нужно только для показа и разработки,
+# включается здесь явно:
+#   · DEMO_MODE=true — демо-данные, моки и встроенные демо-учётки (ИБ-02);
+#   · фронт — dev-сервер Vite с HMR и исходниками с хоста (ИБ-04).
+#
+# Запуск (docker-compose.override.yml при явных -f сам НЕ подхватывается — указывается явно):
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.demo.yml up -d
+# Чтобы не набирать каждый раз — в .env (разделитель «:» на Linux/macOS, «;» на Windows):
+#   COMPOSE_FILE=docker-compose.yml;docker-compose.override.yml;docker-compose.demo.yml
+
+services:
+  backend:
+    environment:
+      - DEMO_MODE=true
+
+  celery_worker:
+    environment:
+      - DEMO_MODE=true
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: dockerfile
+    image: asok-is-frontend:dev
+    environment:
+      # Относительный путь — запросы идут на тот же хост и проксируются Vite на бэкенд.
+      # Работает и на localhost, и по публичной ссылке туннеля (один источник, без CORS).
+      - VITE_API_BASE_URL=/api/v1
+      - VITE_PROXY_TARGET=http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0 --port 3000

@@ -157,24 +157,22 @@ services:
       - asok_net
 
   frontend:
+    # ИБ-04 (SEC-04): прод-раздача — статическая сборка Vite под nginx (frontend/dockerfile.prod):
+    # без dev-сервера, исходников и sourcemap в контейнере; /api nginx проксирует на бэкенд
+    # (один origin, без CORS). Dev-сервер Vite с HMR — оверлей docker-compose.demo.yml.
     build:
       context: ./frontend
-      dockerfile: dockerfile
+      dockerfile: dockerfile.prod
+      args:
+        VITE_API_BASE_URL: /api/v1
+    # Явный тег: прод- и dev-образ фронта не подменяют друг друга при смене оверлея.
+    image: asok-is-frontend:prod
     container_name: asok_frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      # Относительный путь — запросы идут на тот же хост и проксируются Vite на бэкенд.
-      # Работает и на localhost, и по публичной ссылке туннеля (один источник, без CORS).
-      - VITE_API_BASE_URL=/api/v1
-      - VITE_PROXY_TARGET=http://backend:8000
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm run dev -- --host 0.0.0.0 --port 3000
     networks:
       - asok_net
 

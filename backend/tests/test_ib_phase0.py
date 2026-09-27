@@ -117,12 +117,16 @@ def test_prod_image_excludes_demo_credentials():
         assert path in ignored, path
 
 
+def _repo_file(rel: str) -> Path:
+    """Файл из корня репозитория: в контейнере тестов корень смонтирован в /deploy."""
+    for base in (REPO, Path("/deploy")):
+        if (base / rel).is_file():
+            return base / rel
+    pytest.skip(f"{rel} вне смонтированных каталогов")
+
+
 def test_env_example_defaults_to_prod():
-    # В контейнере тестов корень репозитория смонтирован в /deploy (как docker-compose.yml).
-    found = [p for p in (REPO / ".env.example", Path("/deploy/.env.example")) if p.is_file()]
-    if not found:
-        pytest.skip(".env.example вне смонтированных каталогов")
-    env = found[0].read_text(encoding="utf-8")
+    env = _repo_file(".env.example").read_text(encoding="utf-8")
     assert re.search(r"^DEMO_MODE=false\b", env, re.M)
 
 
@@ -154,3 +158,37 @@ async def test_demo_login_closed_outside_demo_mode(aclient, monkeypatch):
     monkeypatch.setattr(settings, "DEMO_MODE", False)
     r = await aclient.post("/api/v1/auth/login", json={"username": "manager", "password": "Manager123!"})
     assert r.status_code == 401
+
+
+# ═══════════════════ ИБ-04: прод-раздача фронта без dev-сервера ═══════════════════
+
+def _compose(rel: str) -> dict:
+    yaml = pytest.importorskip("yaml")
+    return yaml.safe_load(_repo_file(rel).read_text(encoding="utf-8"))
+
+
+def test_base_manifest_serves_built_frontend():
+    fe = _compose("docker-compose.yml")["services"]["frontend"]
+    assert fe["build"]["dockerfile"] == "dockerfile.prod"
+    assert "npm run dev" not in str(fe.get("command", ""))
+    assert not any(str(v).startswith("./frontend") for v in fe.get("volumes", [])), "исходники в прод-контейнере"
+
+
+def test_dev_server_only_in_demo_overlay():
+    fe = _compose("docker-compose.demo.yml")["services"]["frontend"]
+    assert "npm run dev" in str(fe["command"])
+    assert fe["image"] != _compose("docker-compose.yml")["services"]["frontend"]["image"]
+
+
+def test_prod_image_is_unprivileged_and_without_sourcemaps():
+    dockerfile = _repo_file("frontend/dockerfile.prod").read_text(encoding="utf-8")
+    assert "nginx-unprivileged" in dockerfile
+    assert "*.map" in dockerfile and "exit 1" in dockerfile
+
+
+def test_nginx_proxies_api_and_pins_client_ip():
+    conf = _repo_file("frontend/nginx.conf").read_text(encoding="utf-8")
+    assert re.search(r"location /api/ \{[^}]*proxy_pass", conf, re.S), "без прокси /api прод-фронт нерабочий"
+    # IP клиента перезаписывается: дописанный к присланному заголовку позволил бы его подделать.
+    assert "X-Forwarded-For $remote_addr" in conf
+    assert "$proxy_add_x_forwarded_for" not in conf
