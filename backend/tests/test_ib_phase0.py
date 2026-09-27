@@ -4,6 +4,9 @@
 """
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.infrastructure.config import Settings
@@ -39,3 +42,27 @@ def test_cors_rejects_arbitrary_subdomain():
 def test_cors_wildcard_is_a_config_issue():
     s = Settings(CORS_ORIGINS=["*"], JWT_SECRET_KEY="x" * 40)
     assert any("CORS_ORIGINS" in i for i in s.security_issues())
+
+
+# ═══════════════════ ИБ-03: безопасные версии зависимостей ═══════════════════
+
+BACKEND = Path(__file__).resolve().parents[1]
+MIN_SAFE = {"fastapi": (0, 109, 1), "python-jose": (3, 4, 0), "python-multipart": (0, 0, 31)}
+
+
+def _pins(text: str) -> dict[str, tuple[int, ...]]:
+    found = {}
+    for name, version in re.findall(r"([a-z][a-z0-9-]+)(?:\[[a-z,]+\])?==([0-9.]+)", text):
+        if name in MIN_SAFE:
+            found[name] = tuple(int(x) for x in version.split("."))
+    return found
+
+
+def test_requirements_pin_safe_versions():
+    """Пины и в requirements.txt, и в pyproject.toml: образ ставит оба (pip install -r и -e .),
+    и расхождение даёт конфликт зависимостей, а уязвимую версию — «победившему» списку."""
+    for fname in ("requirements.txt", "pyproject.toml"):
+        pins = _pins((BACKEND / fname).read_text(encoding="utf-8"))
+        assert set(pins) == set(MIN_SAFE), (fname, pins)
+        for name, minimum in MIN_SAFE.items():
+            assert pins[name] >= minimum, f"{fname}: {name} {pins[name]} ниже безопасной {minimum}"
