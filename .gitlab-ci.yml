@@ -28,7 +28,10 @@ lint:frontend:
   before_script:
     - cd frontend && npm ci --silent
   script:
-    - npm run lint
+    - npm run typecheck
+    - npm run check:contrast
+    - npm run check:ui
+    - npm run check:size
   rules:
     - changes: ["frontend/**/*"]
 

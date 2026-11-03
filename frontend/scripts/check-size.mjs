@@ -15,7 +15,7 @@
  *
  * Запуск: npm run check:size   (ненулевой код возврата = есть нарушения)
  */
-import { globSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,9 +40,16 @@ const SIZE_BUDGET_KB = {
   'pages/ExcelReportsPage.tsx': 29,
 };
 
-const sources = globSync('**/*.{ts,tsx}', { cwd: SRC })
-  .map((p) => p.replace(/\\/g, '/'))
-  .filter((p) => !p.includes('__tests__'));
+function sourceFiles(dir, prefix = '') {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const absolute = resolve(dir, entry.name);
+    if (entry.isDirectory()) return sourceFiles(absolute, relative);
+    return /\.tsx?$/.test(entry.name) && !relative.includes('__tests__') ? [relative] : [];
+  });
+}
+
+const sources = sourceFiles(SRC);
 
 /** Размер в LF-нормализованном виде: иначе один и тот же файл на Windows-чекауте (CRLF)
  *  оказывается на ~1 КБ «тяжелее», чем в репозитории и на CI, и проверка зависит от ОС. */
