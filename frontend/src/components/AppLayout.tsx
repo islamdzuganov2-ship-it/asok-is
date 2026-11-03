@@ -205,7 +205,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             <Sider
                 collapsible collapsed={collapsed} onCollapse={setCollapsed} theme="dark" width={244}
                 breakpoint="lg" collapsedWidth={56}
-                style={{ background: PREMIUM.gradient.sider, boxShadow: '2px 0 24px -12px rgba(16,24,40,0.45)' }}
+                className="asok-glass-sider"
             >
                 {/* Премиальный логотип: графит-плашка с золотым акцентом */}
                 <div style={{ height: 56, margin: `${SPACE.base}px ${SPACE.base}px ${SPACE.cozy}px`, display: 'flex', alignItems: 'center', gap: SPACE.cozy, justifyContent: collapsed ? 'center' : 'flex-start' }}>

@@ -3,6 +3,128 @@
  * через каждый рендер ячейки. Дополняет a11y-overrides.css (там — контраст, здесь — подача).
  */
 
+/* Стеклянная навигация и входная карточка по визуальным образцам. */
+.asok-glass-sider.ant-layout-sider {
+  background: linear-gradient(160deg, rgba(19, 30, 44, 0.88), rgba(27, 43, 59, 0.82)) !important;
+  border-right: 1px solid rgba(214, 228, 241, 0.18);
+  box-shadow: 8px 0 34px rgba(18, 31, 46, 0.14), inset -1px 0 0 rgba(255,255,255,0.04);
+  -webkit-backdrop-filter: blur(24px) saturate(135%);
+  backdrop-filter: blur(24px) saturate(135%);
+}
+
+.asok-glass-sider .ant-menu-item,
+.asok-glass-sider .ant-menu-submenu-title {
+  border: 1px solid transparent;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.asok-glass-sider .ant-menu-item:hover,
+.asok-glass-sider .ant-menu-submenu-title:hover {
+  background: rgba(204, 225, 245, 0.11) !important;
+  border-color: rgba(214, 232, 249, 0.15);
+}
+
+.asok-glass-sider .ant-menu-item-selected {
+  background: linear-gradient(100deg, rgba(90, 165, 207, 0.26), rgba(185, 154, 85, 0.14)) !important;
+  border-color: rgba(203, 223, 241, 0.2);
+  box-shadow: inset 3px 0 0 #82c5e9;
+}
+
+.login-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse at 18% 24%, rgba(68, 150, 197, 0.25), transparent 36%),
+    radial-gradient(ellipse at 82% 78%, rgba(179, 143, 69, 0.2), transparent 34%),
+    linear-gradient(145deg, #101a27 0%, #17283a 52%, #101b2a 100%) !important;
+}
+
+.login-shell::before,
+.login-shell::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: min(54vw, 560px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(162, 208, 237, 0.13);
+  border-radius: 42% 58% 59% 41% / 48% 42% 58% 52%;
+  box-shadow: 0 0 80px rgba(84, 166, 209, 0.1), inset 0 0 70px rgba(84, 166, 209, 0.06);
+  pointer-events: none;
+  animation: login-orbit 24s ease-in-out infinite alternate;
+}
+
+.login-shell::before { top: -28%; left: -14%; }
+.login-shell::after { right: -15%; bottom: -42%; animation-delay: -12s; }
+
+.login-glass-card.ant-card {
+  position: relative;
+  width: min(400px, 100%);
+  border-radius: 22px;
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  backdrop-filter: blur(28px) saturate(140%);
+  animation: login-card-enter 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.login-glass-card .ant-card-body { padding: 38px 36px; }
+.login-glass-card .ant-input-affix-wrapper,
+.login-glass-card .ant-input {
+  color: #f4f7fb;
+  background: rgba(235, 244, 251, 0.07);
+  border-color: rgba(213, 229, 241, 0.2);
+}
+.login-glass-card .ant-input::placeholder,
+.login-glass-card .ant-input-password-icon,
+.login-glass-card .ant-input-prefix { color: rgba(224, 236, 247, 0.56); }
+.login-glass-card .ant-input-affix-wrapper:hover,
+.login-glass-card .ant-input-affix-wrapper-focused {
+  background: rgba(235, 244, 251, 0.11);
+  border-color: rgba(130, 197, 233, 0.7);
+  box-shadow: 0 0 0 3px rgba(91, 168, 212, 0.14);
+}
+
+.asok-dashboard {
+  position: relative;
+  isolation: isolate;
+  background-image:
+    radial-gradient(ellipse at 94% 0%, rgba(89, 152, 190, 0.08), transparent 36%),
+    radial-gradient(ellipse at 2% 18%, rgba(185, 154, 85, 0.065), transparent 30%);
+}
+
+.asok-dashboard .dash-grid > .react-grid-item,
+.asok-dashboard [data-card] {
+  transition: filter 200ms ease;
+}
+.asok-dashboard .dash-grid > .react-grid-item:hover,
+.asok-dashboard [data-card]:hover { filter: drop-shadow(0 14px 22px rgba(34, 55, 77, 0.08)); }
+
+.asok-dashboard [data-card] .ant-card:not(.ant-card .ant-card) {
+  background: color-mix(in srgb, var(--surface) 94%, transparent) !important;
+  border-color: color-mix(in srgb, var(--border) 86%, rgba(255,255,255,0.5)) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+  backdrop-filter: blur(14px) saturate(115%);
+}
+
+@keyframes login-orbit {
+  from { transform: rotate(-9deg) scale(0.96); }
+  to { transform: rotate(9deg) scale(1.04); }
+}
+@keyframes login-card-enter {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 575px) {
+  .login-glass-card .ant-card-body { padding: 30px 24px; }
+  .asok-glass-sider { -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-shell::before, .login-shell::after, .login-glass-card { animation: none !important; }
+  .asok-glass-sider .ant-menu-item, .asok-glass-sider .ant-menu-submenu-title { transition: none; }
+}
+
 /*
  * Табличные цифры для числовых колонок (UI-08). Класс проставляет `numericColumn()` из
  * theme/table.ts — и на ячейки, и на заголовок, чтобы шапка не «съезжала» относительно данных.

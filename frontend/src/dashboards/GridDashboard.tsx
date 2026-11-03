@@ -209,7 +209,7 @@ export const GridDashboard: React.FC<GridDashboardProps> = ({
 
   return (
     <ScopeHost scopes={scopes}>
-      <div style={pageContainer}>
+      <div className="asok-dashboard" style={pageContainer}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SPACE.base, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 0 }}>
             <Title level={4} style={pageTitle}>{icon}{title ?? def.label}</Title>
