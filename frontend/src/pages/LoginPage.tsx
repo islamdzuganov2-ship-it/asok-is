@@ -7,7 +7,6 @@ import { useNavigate } from 'react-router-dom';
 import { setCredentials } from '../store/slices/authSlice';
 import { loginErrorText } from '../utils/serverLogout';
 import { premiumCard, PREMIUM, GOLD, TYPE, SPACE } from '../theme/premium';
-import { BRAND } from '../theme/ragPalette';
 
 const { Title, Text } = Typography;
 
@@ -66,28 +65,31 @@ export const LoginPage: React.FC = () => {
     };
 
     return (
-        <Layout style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: PREMIUM.gradient.canvas }}>
+        <Layout className="login-shell" style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: PREMIUM.gradient.canvas }}>
             {/* Первый экран продукта: держим тот же premium-слой и тот же фирменный знак, что
                 в сайдбаре, — иначе впечатление «дорого» ломается ещё до входа (UI-01).
                 Акцент `premiumCard` красит ШАПКУ, а у этой карточки шапки нет — поэтому золотую
                 грань задаём явно сверху, иначе акцент не виден вообще (найдено на скриншоте). */}
-            <Card {...premiumCard('gold', {
+            <Card className="login-glass-card" {...premiumCard('gold', {
                 width: 400,
+                background: 'rgba(20, 31, 45, 0.82)',
+                border: '1px solid rgba(192, 219, 239, 0.24)',
                 borderTop: `2px solid ${GOLD.base}`,
+                boxShadow: '0 28px 90px rgba(7, 14, 24, 0.48), inset 0 1px 0 rgba(255,255,255,0.16)',
             })}>
                 <div style={{ textAlign: 'center', marginBottom: SPACE.page }}>
                     <div style={{
                         width: 44, height: 44, borderRadius: 12, margin: '0 auto',
-                        background: PREMIUM.gradient.ink, border: `1px solid ${GOLD.line}`,
+                        background: 'linear-gradient(145deg, rgba(87, 174, 223, 0.36), rgba(23, 45, 68, 0.72))', border: `1px solid ${GOLD.line}`,
                         boxShadow: `0 0 0 4px ${GOLD.glow}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
                         <span style={{ color: GOLD.soft, fontWeight: 800, fontSize: TYPE.metricSm.fontSize }}>А</span>
                     </div>
-                    <Title level={3} style={{ ...TYPE.pageTitle, color: BRAND.ink, marginTop: SPACE.cozy, letterSpacing: 1.2 }}>
+                    <Title level={3} style={{ ...TYPE.pageTitle, color: '#F4F7FB', marginTop: SPACE.cozy, letterSpacing: 1.2 }}>
                         АСОК ИС
                     </Title>
-                    <Text type="secondary" style={TYPE.caption}>Автоматизированная система оценки качества</Text>
+                    <Text style={{ ...TYPE.caption, color: 'rgba(231, 239, 248, 0.72)' }}>Автоматизированная система оценки качества</Text>
                 </div>
 
                 <Form name="login_form" onFinish={onFinish} size="large">
